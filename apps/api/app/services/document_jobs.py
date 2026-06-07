@@ -20,6 +20,6 @@ def enqueue_parse_document(document_id: UUID) -> None:
     queue.enqueue_call(
         func=PARSE_DOCUMENT_JOB_PATH,
         args=(str(document_id),),
-        job_timeout="10m",
+        timeout=600,
         result_ttl=3600,
     )

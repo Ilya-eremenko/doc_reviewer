@@ -1,0 +1,67 @@
+from cryptography.fernet import InvalidToken
+
+from app.models.provider_key import ProviderKey
+from app.schemas.enums import Provider
+from app.security.secrets import decrypt_secret, encrypt_secret
+
+from test_documents_upload import create_user, login
+
+
+def test_provider_key_roundtrip_is_masked_and_encrypted(client, db_session):
+    create_user(db_session, "author", "secret")
+    login(client, "author", "secret")
+
+    save = client.put(
+        f"/settings/provider-keys/{Provider.OPENAI_COMPATIBLE.value}",
+        json={
+            "api_key": "sk-test-SECRET1234",
+            "base_url": "https://api.example.test/v1",
+            "default_model": "gpt-test",
+        },
+    )
+
+    assert save.status_code == 200
+    payload = save.json()
+    assert payload == {
+        "provider": "openai_compatible",
+        "base_url": "https://api.example.test/v1",
+        "default_model": "gpt-test",
+        "api_key_fingerprint": "openai_compatible:...1234",
+        "has_key": True,
+    }
+    stored = db_session.query(ProviderKey).one()
+    assert stored.encrypted_api_key != b"sk-test-SECRET1234"
+
+    listing = client.get("/settings/provider-keys")
+    assert listing.status_code == 200
+    assert listing.json()["provider_keys"] == [payload]
+    assert "SECRET" not in listing.text
+
+
+def test_provider_key_delete_removes_row(client, db_session):
+    create_user(db_session, "author", "secret")
+    login(client, "author", "secret")
+    response = client.put(
+        f"/settings/provider-keys/{Provider.ANTHROPIC_COMPATIBLE.value}",
+        json={"api_key": "anthropic-secret", "default_model": "claude-test"},
+    )
+    assert response.status_code == 200
+
+    delete = client.delete(f"/settings/provider-keys/{Provider.ANTHROPIC_COMPATIBLE.value}")
+
+    assert delete.status_code == 200
+    assert delete.json() == {"status": "deleted"}
+    assert db_session.query(ProviderKey).count() == 0
+
+
+def test_secret_encryption_roundtrip_and_wrong_key_rejection():
+    encrypted = encrypt_secret("sk-secret", secret_key="correct-key")
+
+    assert encrypted != b"sk-secret"
+    assert decrypt_secret(encrypted, secret_key="correct-key") == "sk-secret"
+    try:
+        decrypt_secret(encrypted, secret_key="wrong-key")
+    except InvalidToken:
+        pass
+    else:
+        raise AssertionError("wrong key decrypted provider secret")

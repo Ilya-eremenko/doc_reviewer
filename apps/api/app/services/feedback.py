@@ -1,0 +1,64 @@
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.authz.policies import can_read_analysis, can_manage_benchmarks
+from app.models.analysis import Analysis
+from app.models.base import utc_now
+from app.models.feedback import Feedback
+from app.models.user import User
+from app.schemas.feedback import FeedbackCreate
+
+
+class FeedbackNotFoundError(ValueError):
+    pass
+
+
+class FeedbackForbiddenError(ValueError):
+    pass
+
+
+def create_feedback(*, db: Session, actor: User, analysis_id: UUID, payload: FeedbackCreate) -> Feedback:
+    analysis = db.get(Analysis, analysis_id)
+    if analysis is None or not can_read_analysis(actor, analysis):
+        raise FeedbackNotFoundError("Analysis not found")
+
+    feedback = Feedback(
+        user_id=actor.id,
+        document_id=analysis.document_id,
+        analysis_id=analysis.id,
+        provider=analysis.provider,
+        model=analysis.model,
+        skill_id=analysis.skill_id,
+        skill_version=analysis.skill_version,
+        usefulness=payload.usefulness.value,
+        verdict_correct=payload.verdict_correct,
+        has_false_findings=payload.has_false_findings,
+        has_missed_findings=payload.has_missed_findings,
+        comment=payload.comment,
+        can_use_for_benchmark=payload.can_use_for_benchmark,
+    )
+    db.add(feedback)
+    db.commit()
+    db.refresh(feedback)
+    return feedback
+
+
+def list_feedback_for_admin(*, db: Session, actor: User) -> list[Feedback]:
+    if not can_manage_benchmarks(actor):
+        raise FeedbackForbiddenError("Admin access required")
+    statement = select(Feedback).order_by(Feedback.created_at.desc())
+    return list(db.execute(statement).scalars().all())
+
+
+def mark_feedback_processed(*, db: Session, actor: User, feedback_id: UUID) -> Feedback:
+    if not can_manage_benchmarks(actor):
+        raise FeedbackForbiddenError("Admin access required")
+    feedback = db.get(Feedback, feedback_id)
+    if feedback is None:
+        raise FeedbackNotFoundError("Feedback not found")
+    feedback.processed_at = utc_now()
+    db.commit()
+    db.refresh(feedback)
+    return feedback

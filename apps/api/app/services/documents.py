@@ -92,6 +92,33 @@ def get_document_for_actor(*, db: Session, actor: User, document_id: UUID) -> Do
     return document
 
 
+def update_manual_document_type(
+    *,
+    db: Session,
+    actor: User,
+    document_id: UUID,
+    manual_document_type: DocumentType | None,
+) -> Document:
+    document = get_document_for_actor(db=db, actor=actor, document_id=document_id)
+    document.manual_document_type = manual_document_type.value if manual_document_type else None
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+def reset_document_for_reparse(*, db: Session, actor: User, document_id: UUID) -> Document:
+    document = get_document_for_actor(db=db, actor=actor, document_id=document_id)
+    document.parse_status = DocumentParseStatus.QUEUED.value
+    document.detected_document_type = DocumentType.UNKNOWN.value
+    document.document_type_confidence = None
+    document.document_type_explanation = None
+    document.parsed_text = None
+    document.parse_error = None
+    db.commit()
+    db.refresh(document)
+    return document
+
+
 def _supported_extension(filename: str) -> str:
     extension = Path(filename).suffix.lower()
     if extension not in SUPPORTED_EXTENSIONS_TO_MIME_TYPES:

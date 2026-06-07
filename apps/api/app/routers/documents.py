@@ -2,6 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -9,8 +10,8 @@ from app.db.session import get_db
 from app.dependencies.auth import require_current_user
 from app.models.document import Document
 from app.models.user import User
-from app.schemas.documents import DocumentRead, DocumentsListResponse
-from app.schemas.enums import DocumentType
+from app.schemas.documents import DocumentRead, DocumentTypePatch, DocumentsListResponse
+from app.schemas.enums import DocumentParseStatus, DocumentType
 from app.services.document_jobs import ParseDocumentEnqueue, enqueue_parse_document
 from app.services.documents import (
     DocumentNotFoundError,
@@ -19,6 +20,8 @@ from app.services.documents import (
     create_document_from_upload,
     get_document_for_actor,
     list_documents_for_actor,
+    reset_document_for_reparse,
+    update_manual_document_type,
 )
 from app.storage.local import LocalDocumentStorage
 
@@ -84,3 +87,68 @@ def get_document(
         return get_document_for_actor(db=db, actor=current_user, document_id=document_id)
     except DocumentNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+
+
+@router.patch("/{document_id}/document-type", response_model=DocumentRead)
+def patch_document_type(
+    document_id: UUID,
+    payload: DocumentTypePatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+) -> Document:
+    try:
+        return update_manual_document_type(
+            db=db,
+            actor=current_user,
+            document_id=document_id,
+            manual_document_type=payload.manual_document_type,
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+
+
+@router.get("/{document_id}/parsed-text", response_class=PlainTextResponse)
+def get_parsed_text(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+) -> PlainTextResponse:
+    try:
+        document = get_document_for_actor(db=db, actor=current_user, document_id=document_id)
+    except DocumentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+
+    if document.parse_status != DocumentParseStatus.COMPLETED.value or document.parsed_text is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Parsed text is not available")
+
+    return PlainTextResponse(document.parsed_text)
+
+
+@router.get("/{document_id}/raw")
+def get_raw_document(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+) -> FileResponse:
+    try:
+        document = get_document_for_actor(db=db, actor=current_user, document_id=document_id)
+    except DocumentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+
+    return FileResponse(document.storage_path, filename=document.original_filename, media_type=document.mime_type)
+
+
+@router.post("/{document_id}/reparse", response_model=DocumentRead)
+def reparse_document(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+    enqueue: ParseDocumentEnqueue = Depends(get_parse_document_enqueue),
+) -> Document:
+    try:
+        document = reset_document_for_reparse(db=db, actor=current_user, document_id=document_id)
+    except DocumentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+
+    enqueue(document.id)
+    return document

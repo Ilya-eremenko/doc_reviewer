@@ -10,7 +10,7 @@ from app.main import app
 from app.models.document import Document
 from app.routers import documents as documents_router
 from app.models.user import User
-from app.schemas.enums import Role, UserStatus
+from app.schemas.enums import DocumentParseStatus, DocumentType, Role, UserStatus
 from app.security.passwords import hash_password
 
 
@@ -193,6 +193,100 @@ def test_user_cannot_get_another_users_document_detail_but_admin_can(api_client,
     admin_detail = api_client.get(f"/documents/{alice_document_id}")
     assert admin_detail.status_code == 200
     assert admin_detail.json()["original_filename"] == "alice.txt"
+
+
+def test_manual_document_type_override_is_saved_separately(api_client, db_session):
+    create_user(db_session, "author", "secret")
+    login(api_client, "author", "secret")
+    upload = upload_document(api_client, "gate.txt", b"Gate 2 MVP metrics")
+    document_id = UUID(upload.json()["id"])
+
+    response = api_client.patch(f"/documents/{document_id}/document-type", json={"manual_document_type": "gate_3"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["manual_document_type"] == "gate_3"
+    assert payload["detected_document_type"] == "unknown"
+    document = db_session.get(Document, document_id)
+    assert document.manual_document_type == DocumentType.GATE_3.value
+
+
+def test_get_parsed_text_requires_owner_and_completed_parse(api_client, db_session):
+    create_user(db_session, "alice", "secret")
+    create_user(db_session, "bob", "secret")
+    login(api_client, "alice", "secret")
+    upload = upload_document(api_client, "gate.txt", b"Gate 2 MVP metrics")
+    document_id = UUID(upload.json()["id"])
+    document = db_session.get(Document, document_id)
+    document.parse_status = DocumentParseStatus.COMPLETED.value
+    document.parsed_text = "Parsed Gate 2 text"
+    db_session.commit()
+
+    response = api_client.get(f"/documents/{document_id}/parsed-text")
+    assert response.status_code == 200
+    assert response.text == "Parsed Gate 2 text"
+    assert response.headers["content-type"].startswith("text/plain")
+
+    api_client.post("/auth/logout")
+    login(api_client, "bob", "secret")
+    forbidden = api_client.get(f"/documents/{document_id}/parsed-text")
+    assert forbidden.status_code == 404
+
+
+def test_get_parsed_text_returns_409_before_completed_parse(api_client, db_session):
+    create_user(db_session, "author", "secret")
+    login(api_client, "author", "secret")
+    upload = upload_document(api_client, "gate.txt", b"Gate 2 MVP metrics")
+
+    response = api_client.get(f"/documents/{upload.json()['id']}/parsed-text")
+
+    assert response.status_code == 409
+
+
+def test_get_raw_download_requires_owner_and_preserves_content(api_client, db_session):
+    create_user(db_session, "alice", "secret")
+    create_user(db_session, "bob", "secret")
+    content = b"raw Gate 2 defense"
+    login(api_client, "alice", "secret")
+    upload = upload_document(api_client, "gate.txt", content)
+    document_id = UUID(upload.json()["id"])
+
+    response = api_client.get(f"/documents/{document_id}/raw")
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-disposition"].endswith('filename="gate.txt"')
+
+    api_client.post("/auth/logout")
+    login(api_client, "bob", "secret")
+    forbidden = api_client.get(f"/documents/{document_id}/raw")
+    assert forbidden.status_code == 404
+
+
+def test_reparse_resets_parse_state_and_enqueues_job(api_client, db_session, enqueued_parse_jobs):
+    create_user(db_session, "author", "secret")
+    login(api_client, "author", "secret")
+    upload = upload_document(api_client, "gate.txt", b"Gate 2 MVP metrics")
+    document_id = UUID(upload.json()["id"])
+    enqueued_parse_jobs.clear()
+    document = db_session.get(Document, document_id)
+    document.parse_status = DocumentParseStatus.COMPLETED.value
+    document.parsed_text = "old parsed text"
+    document.parse_error = None
+    document.detected_document_type = DocumentType.GATE_2.value
+    document.document_type_confidence = "0.90"
+    document.document_type_explanation = "old"
+    db_session.commit()
+
+    response = api_client.post(f"/documents/{document_id}/reparse")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parse_status"] == "queued"
+    assert payload["detected_document_type"] == "unknown"
+    assert enqueued_parse_jobs == [str(document_id)]
+    db_session.refresh(document)
+    assert document.parsed_text is None
+    assert document.parse_error is None
 
 
 def test_rejects_oversized_upload_with_413(api_client, db_session):

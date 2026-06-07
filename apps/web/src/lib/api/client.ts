@@ -31,13 +31,17 @@ export type ApiError = {
 };
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers =
+    init.body instanceof FormData
+      ? init.headers
+      : {
+          "Content-Type": "application/json",
+          ...(init.headers ?? {}),
+        };
   const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
     ...init,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -51,4 +55,24 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
 
   return response.json() as Promise<T>;
+}
+
+export async function apiFetchText(path: string, init: RequestInit = {}): Promise<string> {
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: init.headers,
+  });
+
+  if (!response.ok) {
+    let error: ApiError = {};
+    try {
+      error = await response.json();
+    } catch {
+      error = { detail: response.statusText };
+    }
+    throw new Error(error.detail ?? `Request failed with ${response.status}`);
+  }
+
+  return response.text();
 }

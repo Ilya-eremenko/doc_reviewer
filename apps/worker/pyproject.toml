@@ -8,6 +8,10 @@ dependencies = [
   "rq",
   "python-docx",
   "pypdf",
+  "jsonschema",
+  "openai",
+  "anthropic",
+  "httpx",
 ]
 
 [project.optional-dependencies]
@@ -21,4 +25,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["jobs*", "parsers*"]
+include = ["jobs*", "parsers*", "providers*", "results*", "skills*"]

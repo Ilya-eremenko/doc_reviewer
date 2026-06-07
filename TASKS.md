@@ -39,6 +39,10 @@ Primary plan index:
 - [x] Implement Phase 2 backend parser/job slice: `.txt`, `.md`, `.docx`, and
   `.pdf` parsers, parsed artifact storage, deterministic type detection, parse
   status updates, and upload enqueue wiring.
+- [x] Implement document detail API/UI slice plus Phase 3 main-analysis MVP:
+  parsed/raw/reparse endpoints, manual type override, provider key settings,
+  skill list, analysis launch/detail, worker main-analysis job, provider
+  adapters, and feedback capture.
 
 ## Phase 1: Skeleton And Data Foundation
 
@@ -88,15 +92,15 @@ Tasks:
 - [x] Implement document upload for `.docx`, `.pdf`, `.md`, and `.txt`.
 - [x] Store raw files under local MVP storage with database ownership checks.
 - [x] Parse and persist document text.
-- [~] Detect document type and support manual override.
-- [ ] Show document history and document detail pages.
+- [x] Detect document type and support manual override.
+- [x] Show document history and document detail pages.
 - [x] Enforce user/admin document visibility.
 
 Exit criteria:
 
 - [x] Authenticated user uploads supported files.
 - [x] Raw file and parsed text are persisted.
-- [ ] Document type can be manually overridden.
+- [x] Document type can be manually overridden.
 - [x] User sees own documents; admin sees all documents.
 
 ## Phase 3: AI Analysis Runtime
@@ -110,25 +114,25 @@ Source plans:
 
 Tasks:
 
-- [ ] Implement encrypted provider key storage and masked settings API.
-- [ ] Implement provider adapters for OpenAI-compatible, Anthropic-compatible,
+- [x] Implement encrypted provider key storage and masked settings API.
+- [x] Implement provider adapters for OpenAI-compatible, Anthropic-compatible,
   and Hermes modes.
-- [ ] Implement versioned skill registry and source snapshotting.
-- [ ] Render Gate2-challenger and Devil's Advocate prompts into normalized
+- [~] Implement versioned skill registry and source snapshotting.
+- [~] Render Gate2-challenger and Devil's Advocate prompts into normalized
   schema contracts.
-- [ ] Enqueue and execute analysis jobs in workers.
-- [ ] Persist structured output, raw output, run parameters, cost/token metadata,
+- [x] Enqueue and execute analysis jobs in workers.
+- [x] Persist structured output, raw output, run parameters, cost/token metadata,
   and errors.
-- [ ] Add analysis result UI and feedback flow.
+- [~] Add analysis result UI and feedback flow.
 
 Exit criteria:
 
-- [ ] User can save an encrypted provider key.
-- [ ] User can launch an analysis.
-- [ ] Worker persists structured and raw outputs.
+- [x] User can save an encrypted provider key.
+- [x] User can launch an analysis.
+- [x] Worker persists structured and raw outputs.
 - [ ] Predicted-comments or Devil's Advocate second stage runs after main
   analysis.
-- [ ] User can leave feedback.
+- [x] User can leave feedback.
 
 ## Phase 4: Etalons And Benchmarks
 
@@ -249,3 +253,10 @@ Exit criteria:
   the web API client align local API hostname with the current browser hostname.
   Verified browser login reaches `/documents` and the admin users UI creates and
   lists a user.
+- 2026-06-07: Completed the document detail and main-analysis MVP slice. The API
+  exposes parsed text, raw download, manual document type override, reparse,
+  provider key settings, skills, analyses, and feedback. The worker now has
+  OpenAI-compatible, Anthropic-compatible, Hermes, and mock provider adapters,
+  validates structured output against shared schemas, and persists raw output,
+  token/cost metadata, verdict, summary, status, and errors. Predicted-comments
+  and specialized Gate2/Devil's Advocate renderers remain open Phase 3 work.

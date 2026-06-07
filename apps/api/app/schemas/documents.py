@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus
 
 
+class DocumentTypePatch(BaseModel):
+    manual_document_type: DocumentType | None
+
+
 class DocumentRead(BaseModel):
     id: UUID
     owner_id: UUID
