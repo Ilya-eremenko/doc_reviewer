@@ -34,6 +34,8 @@ Primary plan index:
   npm audit threshold.
 - [x] Verify Phase 1 API login/admin/ownership smoke and Alembic
   upgrade/downgrade in a local backend venv.
+- [x] Implement Phase 2 backend document upload slice: supported file upload,
+  local raw storage, queued document rows, and user/admin ownership visibility.
 
 ## Phase 1: Skeleton And Data Foundation
 
@@ -80,19 +82,19 @@ Source plans:
 
 Tasks:
 
-- [ ] Implement document upload for `.docx`, `.pdf`, `.md`, and `.txt`.
-- [ ] Store raw files under local MVP storage with database ownership checks.
+- [x] Implement document upload for `.docx`, `.pdf`, `.md`, and `.txt`.
+- [x] Store raw files under local MVP storage with database ownership checks.
 - [ ] Parse and persist document text.
 - [ ] Detect document type and support manual override.
 - [ ] Show document history and document detail pages.
-- [ ] Enforce user/admin document visibility.
+- [x] Enforce user/admin document visibility.
 
 Exit criteria:
 
-- [ ] Authenticated user uploads supported files.
-- [ ] Raw file and parsed text are persisted.
+- [x] Authenticated user uploads supported files.
+- [~] Raw file and parsed text are persisted.
 - [ ] Document type can be manually overridden.
-- [ ] User sees own documents; admin sees all documents.
+- [x] User sees own documents; admin sees all documents.
 
 ## Phase 3: AI Analysis Runtime
 

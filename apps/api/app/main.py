@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import admin_users, auth
+from app.routers import admin_users, auth, documents
 
 
 def create_app() -> FastAPI:
@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
 
     api.include_router(auth.router)
     api.include_router(admin_users.router)
+    api.include_router(documents.router)
     return api
 
 

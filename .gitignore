@@ -22,10 +22,11 @@ out/
 dist/
 coverage/
 
-storage/
+/storage/
 .local/
 *.log
 *.db
+*.docx
 
 .DS_Store
 .worktrees/
