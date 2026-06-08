@@ -49,6 +49,9 @@ Primary plan index:
 - [x] Close Phase 3 skill admin/runtime hardening: admin skill create, archive,
   patch, source refresh, schema/source validation, provider key test endpoint,
   and worker skill-source availability checks.
+- [x] Implement Phase 4 backend etalon foundation: Layer 1/Layer 2 payload
+  validation, draft creation from completed analyses, ownership checks, and
+  admin/annotator active-status guard.
 
 ## Phase 1: Skeleton And Data Foundation
 
@@ -151,7 +154,7 @@ Source plans:
 
 Tasks:
 
-- [ ] Create etalon drafts from analysis results.
+- [x] Create etalon drafts from analysis results.
 - [ ] Implement admin etalon review and activation.
 - [ ] Implement benchmark runs over active etalons.
 - [ ] Persist judge output, aggregate metrics, misses, false positives, and
@@ -278,3 +281,9 @@ Exit criteria:
   key configuration test endpoint without plaintext key exposure; provider-key
   and skill audit events; and worker failures for unavailable or changed
   external skill sources before provider calls.
+- 2026-06-08: Started Phase 4 with the backend etalon foundation. Added
+  Pydantic validation for expected verdict, Layer 1, Layer 2, evidence, and
+  Layer 2 parent links; added `POST /analyses/{analysis_id}/etalon-draft`;
+  draft creation now enforces analysis ownership, completed-analysis
+  precondition, source `ai_post_annotation`, and admin/annotator-only active
+  status.

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import admin_users, analyses, auth, documents, feedback, provider_settings, skills
+from app.routers import admin_users, analyses, auth, documents, etalons, feedback, provider_settings, skills
 
 
 def create_app() -> FastAPI:
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     api.include_router(skills.router)
     api.include_router(skills.admin_router)
     api.include_router(analyses.router)
+    api.include_router(etalons.router)
     api.include_router(feedback.router)
     api.include_router(documents.router)
     return api
