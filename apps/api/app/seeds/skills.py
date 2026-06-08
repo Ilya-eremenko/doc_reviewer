@@ -5,6 +5,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.session import SessionLocal
 from app.models.skill import Skill
 from app.schemas.enums import DocumentType, EntityStatus, SkillSourceType, SkillType
 
@@ -157,3 +158,16 @@ def seed_baseline_skills(db: Session) -> list[Skill]:
     seeded = [_upsert_skill(db, values) for values in skills]
     db.commit()
     return seeded
+
+
+def main() -> None:
+    db = SessionLocal()
+    try:
+        seeded = seed_baseline_skills(db)
+        print(f"baseline skills ready: {len(seeded)}")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()

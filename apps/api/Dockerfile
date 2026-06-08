@@ -6,10 +6,11 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-COPY app ./app
-COPY alembic.ini ./alembic.ini
-COPY alembic ./alembic
+COPY apps/api/pyproject.toml ./
+COPY apps/api/app ./app
+COPY apps/api/alembic.ini ./alembic.ini
+COPY apps/api/alembic ./alembic
+COPY contracts ./contracts
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -e .

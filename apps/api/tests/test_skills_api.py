@@ -1,11 +1,25 @@
+from pathlib import Path
 from uuid import UUID
 
 from app.models.audit_log import AuditLog
 from app.models.skill import Skill
 from app.schemas.enums import EntityStatus, Role
 from app.seeds.skills import seed_baseline_skills
+from app.services.skill_sources import CONTRACTS_SCHEMAS_ROOT, _find_repo_root
 
 from test_documents_upload import create_user, login
+
+
+def test_skill_source_schema_root_resolves_to_existing_contracts():
+    assert (CONTRACTS_SCHEMAS_ROOT / "main-analysis-result.schema.json").is_file()
+
+
+def test_find_repo_root_does_not_require_fixed_parent_depth(tmp_path):
+    packaged_file = tmp_path / "app" / "services" / "skill_sources.py"
+    packaged_file.parent.mkdir(parents=True)
+    packaged_file.write_text("# packaged layout", encoding="utf-8")
+
+    assert _find_repo_root(packaged_file) == Path.cwd()
 
 
 def test_authenticated_user_can_list_active_skills(client, db_session):

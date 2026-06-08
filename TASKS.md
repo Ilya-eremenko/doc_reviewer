@@ -190,9 +190,8 @@ Tasks:
 - [x] Add reproducibility contract tests for analyses and benchmarks.
 - [x] Create `docs/acceptance/mvp-checklist.md`.
 - [x] Add one root-level `test` command or Makefile target.
-- [!] Run the full MVP acceptance suite. Blocked locally until a stack is
-  running with `E2E_BASE_URL`, seeded admin credentials, and Playwright
-  installed for `apps/web`.
+- [x] Run the full MVP acceptance suite with seeded admin credentials and the
+  local API/worker stack.
 
 Exit criteria:
 
@@ -308,6 +307,11 @@ Exit criteria:
   sections for documents, analyses, skills, etalons, benchmarks, and feedback;
   centralized audit recording with secret redaction; request/job/provider
   structured logging; reproducibility contract tests; MVP acceptance checklist;
-  root `make test`; and a Playwright e2e spec/preflight. `make test` runs
-  unit/build/config checks and stops at e2e until `E2E_BASE_URL`, admin
-  credentials, and Playwright are available.
+  root `make test`; and the initial Playwright e2e spec/preflight.
+- 2026-06-08: Closed MVP acceptance testing. Added Playwright as a web dev
+  dependency, expanded the e2e spec into the full admin/user document-analysis
+  flow, made the e2e runner start the production Next.js build automatically,
+  excluded e2e specs from Vitest, ignored Playwright artifacts, and verified
+  `make test` end-to-end: 106 backend/worker tests, 16 frontend unit tests,
+  Next.js production build, Docker Compose config, and the full Playwright MVP
+  flow pass.

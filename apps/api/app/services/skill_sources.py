@@ -6,7 +6,16 @@ from pathlib import Path
 from app.schemas.enums import SkillSourceType
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+def _find_repo_root(start: Path | None = None) -> Path:
+    current = (start or Path(__file__).resolve()).resolve()
+    search_from = current if current.is_dir() else current.parent
+    for candidate in (search_from, *search_from.parents):
+        if (candidate / "contracts" / "schemas").is_dir():
+            return candidate
+    return Path.cwd()
+
+
+REPO_ROOT = _find_repo_root()
 CONTRACTS_SCHEMAS_ROOT = REPO_ROOT / "contracts" / "schemas"
 
 

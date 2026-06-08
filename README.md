@@ -43,6 +43,12 @@ Create the first admin account:
 python -m app.seeds.admin --login admin --password 'change-me-now'
 ```
 
+Seed baseline skills:
+
+```bash
+python -m app.seeds.skills
+```
+
 Useful checks:
 
 ```bash
@@ -51,3 +57,15 @@ pytest apps/worker/tests -q
 npm --prefix apps/web run test
 docker compose -f infra/docker-compose.yml config
 ```
+
+Full MVP acceptance:
+
+```bash
+E2E_ADMIN_LOGIN=admin \
+E2E_ADMIN_PASSWORD='change-me-now' \
+make test
+```
+
+The e2e runner starts the built web app with `next start` on port `3000` when
+`E2E_BASE_URL` is omitted. Set `E2E_BASE_URL` only when intentionally testing an
+already running web server.

@@ -6,7 +6,12 @@ def test_health_returns_ok(client):
 
 
 def test_cors_allows_localhost_and_loopback_frontend_origins(client):
-    for origin in ("http://localhost:3000", "http://127.0.0.1:3000"):
+    for origin in (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3100",
+        "http://127.0.0.1:3100",
+    ):
         response = client.options(
             "/auth/login",
             headers={

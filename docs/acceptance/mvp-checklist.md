@@ -4,7 +4,7 @@ Source: section 18 of `ТЗ- сайт-анализатор документов 
 
 | Criterion | Verification |
 | --- | --- |
-| Administrator can create a user. | API: `apps/api/tests/test_admin_users.py`; UI smoke: `apps/web/tests/e2e/mvp-flow.playwright.cjs`. |
+| Administrator can create a user. | API: `apps/api/tests/test_admin_users.py`; UI smoke: `apps/web/tests/e2e/mvp-flow.spec.cjs`. |
 | User can log in with login and password. | API: `apps/api/tests/test_auth.py`; frontend API: `apps/web/src/lib/api/auth.test.ts`; e2e smoke. |
 | User can upload a document. | API: `apps/api/tests/test_documents_upload.py`; e2e upload page reachability. |
 | Original file is saved as raw. | API: `apps/api/tests/test_documents_upload.py::test_upload_supported_file_creates_queued_document_and_raw_file`. |
@@ -30,4 +30,8 @@ Full local verification entrypoint:
 make test
 ```
 
-The `test` target runs API tests, worker tests, frontend unit tests, frontend production build, Docker Compose config validation, and the web e2e command. The e2e command requires `E2E_BASE_URL`, `E2E_ADMIN_LOGIN`, and `E2E_ADMIN_PASSWORD` so it cannot pass without an explicitly started stack and seeded admin account.
+The `test` target runs API tests, worker tests, frontend unit tests, frontend
+production build, Docker Compose config validation, and the web e2e command. If
+`E2E_BASE_URL` is omitted, the e2e runner starts the built web app on port
+`3000`. The local API/worker stack must be running, and `E2E_ADMIN_LOGIN` plus
+`E2E_ADMIN_PASSWORD` must point to a seeded admin account.
