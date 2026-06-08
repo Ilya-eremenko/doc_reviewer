@@ -53,7 +53,7 @@ def test_admin_can_create_and_list_user_without_password_fields(client, db_sessi
 
     assert list_response.status_code == 200
     assert {user["login"] for user in list_response.json()["users"]} == {"admin", "analyst1"}
-    assert db_session.query(AuditLog).filter_by(action="user.create").count() == 1
+    assert db_session.query(AuditLog).filter_by(action="user.created").count() == 1
 
 
 def test_non_admin_cannot_manage_users(client, db_session):
@@ -96,4 +96,4 @@ def test_admin_can_patch_user_and_reset_password(client, db_session):
     assert login(client, "analyst", "new-password").status_code == 200
 
     actions = {row.action for row in db_session.query(AuditLog).all()}
-    assert {"user.role_change", "user.block", "user.password_reset"}.issubset(actions)
+    assert {"user.role_changed", "user.status_changed", "user.password_reset"}.issubset(actions)

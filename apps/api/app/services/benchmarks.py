@@ -12,6 +12,7 @@ from app.schemas.benchmarks import BenchmarkCreate
 from app.schemas.enums import EntityStatus, EtalonStatus, Provider, RunStatus, SkillType
 from app.services.provider_keys import get_provider_key
 from app.services.skills import skill_source_snapshot
+from app.services.audit import record_audit
 
 
 class BenchmarkForbiddenError(ValueError):
@@ -71,6 +72,20 @@ def create_benchmark(*, db: Session, actor: User, payload: BenchmarkCreate) -> B
         run_parameters=run_parameters,
     )
     db.add(benchmark)
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="benchmark.created",
+        entity_type="benchmark",
+        entity_id=benchmark.id,
+        metadata={
+            "etalon_ids": [str(item.id) for item in etalons],
+            "provider": payload.provider.value,
+            "model": payload.model,
+            "skill_id": str(skill.id),
+            "judge_skill_id": str(judge_skill.id),
+        },
+    )
     db.commit()
     db.refresh(benchmark)
     return benchmark

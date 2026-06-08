@@ -14,6 +14,7 @@ from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus, P
 from app.services.documents import DocumentNotFoundError, get_document_for_actor
 from app.services.provider_keys import get_provider_key
 from app.services.skills import skill_source_snapshot
+from app.services.audit import record_audit
 
 
 class AnalysisNotFoundError(ValueError):
@@ -65,6 +66,20 @@ def create_analysis_for_document(
         run_parameters=merged_parameters,
     )
     db.add(analysis)
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="analysis.created",
+        entity_type="analysis",
+        entity_id=analysis.id,
+        metadata={
+            "document_id": str(document.id),
+            "provider": provider.value,
+            "model": model,
+            "skill_id": str(skill.id),
+            "skill_version": skill.version,
+        },
+    )
     db.commit()
     db.refresh(analysis)
     return analysis

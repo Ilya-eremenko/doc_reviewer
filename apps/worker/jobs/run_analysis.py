@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.logging import worker_logger
 from app.models.analysis import Analysis, PredictedCommentRun
 from app.models.document import Document
 from app.models.provider_key import ProviderKey
@@ -13,6 +14,7 @@ from app.models.skill import Skill
 from app.models.base import utc_now
 from app.schemas.enums import EntityStatus, Provider, RunStatus, SkillSourceType, SkillType
 from app.security.secrets import decrypt_secret
+from app.services.audit import record_audit
 from app.services.skill_sources import SkillSourceValidationError, refresh_skill_source_material
 from app.services.skills import skill_source_snapshot
 from jobs.run_predicted_comments import enqueue_run_predicted_comments
@@ -26,7 +28,12 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
     owns_session = db is None
     session = db or SessionLocal()
     analysis_uuid = UUID(str(analysis_id))
+    provider_raw_output = None
     try:
+        worker_logger.info(
+            "worker_job_started",
+            extra={"job_type": "run_analysis", "entity_id": str(analysis_uuid), "status": "running"},
+        )
         analysis = session.get(Analysis, analysis_uuid)
         if analysis is None:
             raise ValueError(f"Analysis {analysis_id} not found")
@@ -58,6 +65,7 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
             run_parameters=analysis.run_parameters,
         )
         result = get_provider_adapter(provider, analysis.run_parameters).run(request)
+        provider_raw_output = result.raw_output
         structured = parse_and_validate_json_output(
             structured_text=result.structured_text,
             schema_path=skill.result_schema_path,
@@ -73,12 +81,30 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
         analysis.estimated_cost = result.estimated_cost
         analysis.status = RunStatus.COMPLETED.value
         analysis.completed_at = utc_now()
+        record_audit(
+            db=session,
+            actor_id=analysis.user_id,
+            action="analysis.completed",
+            entity_type="analysis",
+            entity_id=analysis.id,
+            metadata={
+                "document_id": str(analysis.document_id),
+                "provider": analysis.provider,
+                "model": analysis.model,
+                "input_tokens": analysis.input_tokens,
+                "output_tokens": analysis.output_tokens,
+            },
+        )
         session.commit()
         _create_and_enqueue_predicted_comments(
             session=session,
             analysis=analysis,
             document=document,
             enqueue=enqueue_predicted_comments or enqueue_run_predicted_comments,
+        )
+        worker_logger.info(
+            "worker_job_completed",
+            extra={"job_type": "run_analysis", "entity_id": str(analysis_uuid), "status": "completed"},
         )
     except Exception as exc:
         session.rollback()
@@ -87,8 +113,32 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
             raise
         failed.status = RunStatus.FAILED.value
         failed.error_message = str(exc)
+        if provider_raw_output is not None and failed.raw_output is None:
+            failed.raw_output = provider_raw_output
         failed.completed_at = utc_now()
+        record_audit(
+            db=session,
+            actor_id=failed.user_id,
+            action="analysis.failed",
+            entity_type="analysis",
+            entity_id=failed.id,
+            metadata={
+                "document_id": str(failed.document_id),
+                "provider": failed.provider,
+                "model": failed.model,
+                "error_class": exc.__class__.__name__,
+            },
+        )
         session.commit()
+        worker_logger.info(
+            "worker_job_failed",
+            extra={
+                "job_type": "run_analysis",
+                "entity_id": str(analysis_uuid),
+                "status": "failed",
+                "error_class": exc.__class__.__name__,
+            },
+        )
     finally:
         if owns_session:
             session.close()

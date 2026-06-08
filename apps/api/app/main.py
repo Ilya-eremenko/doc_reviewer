@@ -1,12 +1,29 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import admin_users, analyses, auth, benchmarks, documents, etalons, feedback, provider_settings, skills
+from app.logging import RequestIdMiddleware
+from app.routers import (
+    admin_analyses,
+    admin_benchmarks,
+    admin_documents,
+    admin_etalons,
+    admin_feedback,
+    admin_users,
+    analyses,
+    auth,
+    benchmarks,
+    documents,
+    etalons,
+    feedback,
+    provider_settings,
+    skills,
+)
 
 
 def create_app() -> FastAPI:
     api = FastAPI(title="Gate Challenger Service API")
 
+    api.add_middleware(RequestIdMiddleware)
     api.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -21,6 +38,11 @@ def create_app() -> FastAPI:
 
     api.include_router(auth.router)
     api.include_router(admin_users.router)
+    api.include_router(admin_documents.router)
+    api.include_router(admin_analyses.router)
+    api.include_router(admin_etalons.router)
+    api.include_router(admin_benchmarks.router)
+    api.include_router(admin_feedback.router)
     api.include_router(provider_settings.router)
     api.include_router(skills.router)
     api.include_router(skills.admin_router)

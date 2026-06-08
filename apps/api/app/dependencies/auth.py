@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -14,6 +14,7 @@ def _load_user(db: Session, user_id: UUID) -> User | None:
 
 
 def require_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> User:
@@ -31,6 +32,7 @@ def require_current_user(
     if user.status != UserStatus.ACTIVE.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is blocked")
 
+    request.state.actor_id = user.id
     return user
 
 

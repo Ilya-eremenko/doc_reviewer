@@ -9,6 +9,7 @@ from app.models.base import utc_now
 from app.models.feedback import Feedback
 from app.models.user import User
 from app.schemas.feedback import FeedbackCreate
+from app.services.audit import record_audit
 
 
 class FeedbackNotFoundError(ValueError):
@@ -40,6 +41,14 @@ def create_feedback(*, db: Session, actor: User, analysis_id: UUID, payload: Fee
         can_use_for_benchmark=payload.can_use_for_benchmark,
     )
     db.add(feedback)
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="feedback.created",
+        entity_type="feedback",
+        entity_id=feedback.id,
+        metadata={"analysis_id": str(analysis.id), "document_id": str(analysis.document_id)},
+    )
     db.commit()
     db.refresh(feedback)
     return feedback
@@ -59,6 +68,14 @@ def mark_feedback_processed(*, db: Session, actor: User, feedback_id: UUID) -> F
     if feedback is None:
         raise FeedbackNotFoundError("Feedback not found")
     feedback.processed_at = utc_now()
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="feedback.processed",
+        entity_type="feedback",
+        entity_id=feedback.id,
+        metadata={"analysis_id": str(feedback.analysis_id), "user_id": str(feedback.user_id)},
+    )
     db.commit()
     db.refresh(feedback)
     return feedback

@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.logging import worker_logger
 from app.models.benchmark import Benchmark
 from app.models.document import Document
 from app.models.etalon import Etalon
@@ -14,6 +15,7 @@ from app.models.skill import Skill
 from app.models.base import utc_now
 from app.schemas.enums import Provider, RunStatus
 from app.security.secrets import decrypt_secret
+from app.services.audit import record_audit
 from benchmark.judge_prompt import build_judge_prompt
 from benchmark.report_builder import build_benchmark_report
 from benchmark.scoring import score_judge_output
@@ -28,6 +30,10 @@ def run_benchmark(benchmark_id: str, *, db: Session | None = None) -> None:
     session = db or SessionLocal()
     benchmark_uuid = UUID(str(benchmark_id))
     try:
+        worker_logger.info(
+            "worker_job_started",
+            extra={"job_type": "run_benchmark", "entity_id": str(benchmark_uuid), "status": "running"},
+        )
         benchmark = session.get(Benchmark, benchmark_uuid)
         if benchmark is None:
             raise ValueError(f"Benchmark {benchmark_id} not found")
@@ -71,7 +77,24 @@ def run_benchmark(benchmark_id: str, *, db: Session | None = None) -> None:
         )
         benchmark.status = RunStatus.COMPLETED.value if any(item["status"] == "completed" for item in document_results) else RunStatus.FAILED.value
         benchmark.completed_at = utc_now()
+        record_audit(
+            db=session,
+            actor_id=benchmark.started_by_id,
+            action="benchmark.completed" if benchmark.status == RunStatus.COMPLETED.value else "benchmark.failed",
+            entity_type="benchmark",
+            entity_id=benchmark.id,
+            metadata={
+                "provider": benchmark.provider,
+                "model": benchmark.model,
+                "etalon_count": len(benchmark.etalon_ids),
+                "f1": str(benchmark.f1),
+            },
+        )
         session.commit()
+        worker_logger.info(
+            "worker_job_completed",
+            extra={"job_type": "run_benchmark", "entity_id": str(benchmark_uuid), "status": benchmark.status},
+        )
     except Exception as exc:
         session.rollback()
         failed = session.get(Benchmark, benchmark_uuid)
@@ -80,7 +103,24 @@ def run_benchmark(benchmark_id: str, *, db: Session | None = None) -> None:
         failed.status = RunStatus.FAILED.value
         failed.error_message = str(exc)
         failed.completed_at = utc_now()
+        record_audit(
+            db=session,
+            actor_id=failed.started_by_id,
+            action="benchmark.failed",
+            entity_type="benchmark",
+            entity_id=failed.id,
+            metadata={"provider": failed.provider, "model": failed.model, "error_class": exc.__class__.__name__},
+        )
         session.commit()
+        worker_logger.info(
+            "worker_job_failed",
+            extra={
+                "job_type": "run_benchmark",
+                "entity_id": str(benchmark_uuid),
+                "status": "failed",
+                "error_class": exc.__class__.__name__,
+            },
+        )
     finally:
         if owns_session:
             session.close()

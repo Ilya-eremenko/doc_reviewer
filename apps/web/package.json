@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "node tests/e2e/run-e2e.mjs"
   },
   "dependencies": {
     "next": "^15.3.3",

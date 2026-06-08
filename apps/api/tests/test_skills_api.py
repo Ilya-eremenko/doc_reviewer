@@ -94,7 +94,7 @@ def test_admin_can_create_archive_and_read_skill_version(client, db_session, tmp
     direct_read = client.get(f"/skills/{payload['id']}")
     assert direct_read.status_code == 200
     assert direct_read.json()["status"] == "archived"
-    assert {row.action for row in db_session.query(AuditLog).all()} >= {"skill.create", "skill.archive"}
+    assert {row.action for row in db_session.query(AuditLog).all()} >= {"skill.created", "skill.archived"}
 
 
 def test_admin_refresh_source_updates_prompt_and_fingerprint(client, db_session, tmp_path):
@@ -129,7 +129,7 @@ def test_admin_refresh_source_updates_prompt_and_fingerprint(client, db_session,
     assert refreshed["source_snapshot"]["source_fingerprint"] != original_fingerprint
     skill = db_session.get(Skill, UUID(skill_id))
     assert skill.prompt_text == "Updated Gate 2 instructions with stronger source checks."
-    assert db_session.query(AuditLog).filter_by(action="skill.refresh_source").count() == 1
+    assert db_session.query(AuditLog).filter_by(action="skill.source_refreshed").count() == 1
 
 
 def test_admin_create_skill_rejects_schema_outside_contracts(client, db_session, tmp_path):

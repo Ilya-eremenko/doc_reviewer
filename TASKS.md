@@ -183,21 +183,23 @@ Source plans:
 
 Tasks:
 
-- [ ] Implement admin views for users, documents, analyses, skills, etalons,
+- [x] Implement admin views for users, documents, analyses, skills, etalons,
   benchmarks, and feedback.
-- [ ] Add audit log service and required audit events.
-- [ ] Add structured API and worker logging with request/job IDs.
-- [ ] Add reproducibility contract tests for analyses and benchmarks.
-- [ ] Create `docs/acceptance/mvp-checklist.md`.
-- [ ] Add one root-level `test` command or Makefile target.
-- [ ] Run the full MVP acceptance suite.
+- [x] Add audit log service and required audit events.
+- [x] Add structured API and worker logging with request/job IDs.
+- [x] Add reproducibility contract tests for analyses and benchmarks.
+- [x] Create `docs/acceptance/mvp-checklist.md`.
+- [x] Add one root-level `test` command or Makefile target.
+- [!] Run the full MVP acceptance suite. Blocked locally until a stack is
+  running with `E2E_BASE_URL`, seeded admin credentials, and Playwright
+  installed for `apps/web`.
 
 Exit criteria:
 
-- [ ] Admin sections cover all MVP operational entities.
-- [ ] Audit log records sensitive actions without secrets.
-- [ ] Reproducibility metadata is covered by automated tests.
-- [ ] MVP checklist maps each acceptance criterion to a verification method.
+- [x] Admin sections cover all MVP operational entities.
+- [x] Audit log records sensitive actions without secrets.
+- [x] Reproducibility metadata is covered by automated tests.
+- [x] MVP checklist maps each acceptance criterion to a verification method.
 
 ## Out Of MVP
 
@@ -302,3 +304,10 @@ Exit criteria:
   precision/recall/F1 scoring with partial-match reporting; persisted benchmark
   report JSON; and frontend pages for etalons, annotation, benchmark launch, and
   benchmark results.
+- 2026-06-08: Implemented Phase 5 admin/audit/hardening slice. Added admin
+  sections for documents, analyses, skills, etalons, benchmarks, and feedback;
+  centralized audit recording with secret redaction; request/job/provider
+  structured logging; reproducibility contract tests; MVP acceptance checklist;
+  root `make test`; and a Playwright e2e spec/preflight. `make test` runs
+  unit/build/config checks and stops at e2e until `E2E_BASE_URL`, admin
+  credentials, and Playwright are available.

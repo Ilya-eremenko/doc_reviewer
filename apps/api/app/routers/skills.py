@@ -22,6 +22,7 @@ from app.services.skills import (
     read_skill,
     refresh_skill_source,
 )
+from app.services.audit import record_audit
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 admin_router = APIRouter(prefix="/admin/skills", tags=["admin-skills"])
@@ -47,6 +48,15 @@ def get_skill_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found") from exc
 
 
+@admin_router.get("", response_model=SkillsListResponse)
+def list_admin_skills(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> SkillsListResponse:
+    del admin
+    return SkillsListResponse(skills=[read_skill(skill) for skill in db.query(Skill).order_by(Skill.created_at.desc()).all()])
+
+
 @admin_router.post("", response_model=SkillRead, status_code=status.HTTP_201_CREATED)
 def create_skill(
     payload: SkillCreate,
@@ -60,7 +70,7 @@ def create_skill(
     except SkillSourceValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    _audit(db, admin, "skill.create", skill)
+    _audit(db, admin, "skill.created", skill)
     db.commit()
     db.refresh(skill)
     return read_skill(skill)
@@ -80,7 +90,7 @@ def patch_skill(
     except SkillSourceValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    _audit(db, admin, "skill.update", skill)
+    _audit(db, admin, "skill.updated", skill)
     db.commit()
     db.refresh(skill)
     return read_skill(skill)
@@ -97,7 +107,7 @@ def archive_skill(
     except SkillNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found") from exc
 
-    _audit(db, admin, "skill.archive", skill)
+    _audit(db, admin, "skill.archived", skill)
     db.commit()
     db.refresh(skill)
     return read_skill(skill)
@@ -116,24 +126,23 @@ def refresh_skill(
     except SkillSourceValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    _audit(db, admin, "skill.refresh_source", skill)
+    _audit(db, admin, "skill.source_refreshed", skill)
     db.commit()
     db.refresh(skill)
     return read_skill(skill)
 
 
 def _audit(db: Session, actor: User, action: str, skill: Skill) -> None:
-    db.add(
-        AuditLog(
-            actor_id=actor.id,
-            action=action,
-            entity_type="skill",
-            entity_id=skill.id,
-            metadata_={
-                "name": skill.name,
-                "version": skill.version,
-                "skill_type": skill.skill_type,
-                "source_fingerprint": skill.source_fingerprint,
-            },
-        )
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action=action,
+        entity_type="skill",
+        entity_id=skill.id,
+        metadata={
+            "name": skill.name,
+            "version": skill.version,
+            "skill_type": skill.skill_type,
+            "source_fingerprint": skill.source_fingerprint,
+        },
     )

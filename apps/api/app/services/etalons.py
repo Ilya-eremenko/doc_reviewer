@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.enums import CheckStatus, DocumentType, EtalonSource, EtalonStatus, Role, RunStatus, Severity, Verdict
 from app.schemas.etalons import EtalonDraftCreate, EtalonPayload, EtalonUpdate
 from app.services.analyses import get_analysis_for_actor
+from app.services.audit import record_audit
 from app.services.documents import create_document_from_upload
 from app.storage.local import LocalDocumentStorage
 
@@ -65,6 +66,14 @@ def create_etalon_draft_from_analysis(
         raw_file_visible_to_all=False,
     )
     db.add(etalon)
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="etalon.created",
+        entity_type="etalon",
+        entity_id=etalon.id,
+        metadata={"document_id": str(document.id), "source": etalon.source, "status": etalon.status},
+    )
     db.commit()
     db.refresh(etalon)
     return etalon
@@ -114,6 +123,14 @@ def create_past_defense_etalon(
         raw_file_visible_to_all=raw_file_visible_to_all,
     )
     db.add(etalon)
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="etalon.created",
+        entity_type="etalon",
+        entity_id=etalon.id,
+        metadata={"document_id": str(document.id), "source": etalon.source, "status": etalon.status},
+    )
     db.commit()
     db.refresh(document)
     db.refresh(etalon)
@@ -176,6 +193,14 @@ def update_etalon(*, db: Session, actor: User, etalon_id: UUID, payload: EtalonU
     if "raw_file_visible_to_all" in payload.model_fields_set:
         etalon.raw_file_visible_to_all = bool(payload.raw_file_visible_to_all)
     etalon.version += 1
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="etalon.updated",
+        entity_type="etalon",
+        entity_id=etalon.id,
+        metadata={"version": etalon.version, "status": etalon.status},
+    )
     db.commit()
     db.refresh(etalon)
     return etalon
@@ -189,6 +214,14 @@ def publish_etalon(*, db: Session, actor: User, etalon_id: UUID) -> Etalon:
         raise EtalonPreconditionError("Archived etalon cannot be published")
     etalon.status = EtalonStatus.ACTIVE.value
     etalon.version += 1
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="etalon.published",
+        entity_type="etalon",
+        entity_id=etalon.id,
+        metadata={"version": etalon.version},
+    )
     db.commit()
     db.refresh(etalon)
     return etalon
@@ -200,6 +233,14 @@ def archive_etalon(*, db: Session, actor: User, etalon_id: UUID) -> Etalon:
         raise EtalonForbiddenError("Only admin or annotator can archive etalons")
     etalon.status = EtalonStatus.ARCHIVED.value
     etalon.version += 1
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="etalon.archived",
+        entity_type="etalon",
+        entity_id=etalon.id,
+        metadata={"version": etalon.version},
+    )
     db.commit()
     db.refresh(etalon)
     return etalon

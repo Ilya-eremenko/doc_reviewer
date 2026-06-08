@@ -11,19 +11,19 @@ from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.schemas.users import PasswordReset, UserCreate, UserPatch, UserRead, UsersListResponse
 from app.security.passwords import hash_password
+from app.services.audit import record_audit
 
 router = APIRouter(prefix="/admin/users", tags=["admin-users"])
 
 
 def _audit(db: Session, actor: User, action: str, target: User, metadata: dict | None = None) -> None:
-    db.add(
-        AuditLog(
-            actor_id=actor.id,
-            action=action,
-            entity_type="user",
-            entity_id=target.id,
-            metadata_=metadata or {},
-        )
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action=action,
+        entity_type="user",
+        entity_id=target.id,
+        metadata=metadata or {},
     )
 
 
@@ -56,7 +56,7 @@ def create_user(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Login already exists") from exc
 
-    _audit(db, admin, "user.create", user, {"role": user.role, "status": user.status})
+    _audit(db, admin, "user.created", user, {"role": user.role, "status": user.status})
     db.commit()
     db.refresh(user)
     return user
@@ -77,7 +77,7 @@ def patch_user(
         _audit(
             db,
             admin,
-            "user.update",
+            "user.updated",
             user,
             {"display_name": {"from": user.display_name, "to": payload.display_name}},
         )
@@ -86,13 +86,13 @@ def patch_user(
         _audit(
             db,
             admin,
-            "user.role_change",
+            "user.role_changed",
             user,
             {"role": {"from": user.role, "to": payload.role.value}},
         )
         user.role = payload.role.value
     if payload.status is not None and payload.status.value != user.status:
-        action = "user.block" if payload.status.value == "blocked" else "user.unblock"
+        action = "user.status_changed"
         _audit(
             db,
             admin,

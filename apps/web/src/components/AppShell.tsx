@@ -42,7 +42,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <Link href="/etalons">Etalons</Link>
           <Link href="/benchmarks">Benchmarks</Link>
           <Link href="/settings">Settings</Link>
-          {user.role === "admin" ? <Link href="/admin/users">Users</Link> : null}
+          {user.role === "admin" ? <Link href="/admin/users">Admin</Link> : null}
         </nav>
         <button className="secondary" type="button" onClick={handleLogout}>
           Log out

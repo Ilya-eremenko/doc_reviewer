@@ -9,6 +9,7 @@ from app.authz.policies import can_read_document
 from app.models.document import Document
 from app.models.user import User
 from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus, Role
+from app.services.audit import record_audit
 from app.storage.local import LocalDocumentStorage, StoredFileTooLargeError, safe_filename
 
 
@@ -72,6 +73,19 @@ def create_document_from_upload(
         status=EntityStatus.ACTIVE.value,
     )
     db.add(document)
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="document.uploaded",
+        entity_type="document",
+        entity_id=document.id,
+        metadata={
+            "owner_id": str(actor.id),
+            "original_filename": document.original_filename,
+            "file_size_bytes": document.file_size_bytes,
+            "file_hash_sha256": document.file_hash_sha256,
+        },
+    )
     db.commit()
     db.refresh(document)
     return document
@@ -100,7 +114,16 @@ def update_manual_document_type(
     manual_document_type: DocumentType | None,
 ) -> Document:
     document = get_document_for_actor(db=db, actor=actor, document_id=document_id)
+    previous = document.manual_document_type
     document.manual_document_type = manual_document_type.value if manual_document_type else None
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="document.type_overridden",
+        entity_type="document",
+        entity_id=document.id,
+        metadata={"from": previous, "to": document.manual_document_type},
+    )
     db.commit()
     db.refresh(document)
     return document
