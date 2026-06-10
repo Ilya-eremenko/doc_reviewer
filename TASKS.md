@@ -108,6 +108,17 @@ Primary plan index:
   Model and Start new analysis actions, keeping file actions separate.
 - [x] Shorten failed analysis messages in document history cards by showing a
   compact provider error summary while keeping the raw error in hover details.
+- [x] Simplify the analysis result page: remove the Evidence Workbench eyebrow
+  and duplicate hero summary, move provider/model/skill and run metrics into a
+  Run details modal with trace data, and remove the duplicate side trace card.
+- [x] Switch analysis result display to skill-level markdown passthrough: show
+  Gate Challenger and Devil's Advocate outputs as the model-facing markdown
+  fields first, with structured JSON kept only in Full Output for diagnostics.
+- [x] Keep Gate Challenger main analysis text separate from detailed checks:
+  Layer 1 and Layer 2 markdown now render below it under a collapsed
+  `Детализированные проверки` section.
+- [x] Remove duplicate verdict display from the analysis result sidebar so the
+  verdict appears only once in the page header.
 
 ## Phase 1: Skeleton And Data Foundation
 

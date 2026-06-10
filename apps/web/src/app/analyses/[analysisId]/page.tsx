@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
@@ -17,7 +17,7 @@ import { createEtalonDraft } from "@/lib/api/etalons";
 import { submitFeedback } from "@/lib/api/feedback";
 import { formatDate, formatLabel } from "@/lib/format";
 
-type AnalysisTab = "summary" | "layer1" | "layer2" | "devilsAdvocate" | "fullOutput";
+type AnalysisTab = "mainOutput" | "devilsAdvocate" | "fullOutput";
 
 type EvidenceItem = {
   id: string;
@@ -29,9 +29,7 @@ type EvidenceItem = {
 };
 
 const analysisTabs: Array<{ id: AnalysisTab; label: string }> = [
-  { id: "summary", label: "Summary" },
-  { id: "layer1", label: "Layer 1" },
-  { id: "layer2", label: "Layer 2" },
+  { id: "mainOutput", label: "Gate Challenger" },
   { id: "devilsAdvocate", label: "Devil's Advocate" },
   { id: "fullOutput", label: "Full Output" },
 ];
@@ -45,7 +43,8 @@ export default function AnalysisDetailPage() {
   const [usefulness, setUsefulness] = useState<"useful" | "partially_useful" | "useless">("useful");
   const [canUseForBenchmark, setCanUseForBenchmark] = useState(false);
   const [etalonPending, setEtalonPending] = useState(false);
-  const [activeTab, setActiveTab] = useState<AnalysisTab>("summary");
+  const [activeTab, setActiveTab] = useState<AnalysisTab>("mainOutput");
+  const [runDetailsOpen, setRunDetailsOpen] = useState(false);
 
   useEffect(() => {
     getAnalysis(params.analysisId)
@@ -91,10 +90,20 @@ export default function AnalysisDetailPage() {
     }
   }
 
-  const inspector = useMemo(() => (analysis ? buildInspector(analysis) : null), [analysis]);
-  const inspectorQuestions = analysis
-    ? asStringArray(analysis.predicted_comment_run?.structured_output?.predicted_questions).slice(0, 3)
-    : [];
+  useEffect(() => {
+    if (!runDetailsOpen) {
+      return;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setRunDetailsOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [runDetailsOpen]);
 
   return (
     <AppShell>
@@ -105,30 +114,21 @@ export default function AnalysisDetailPage() {
           <>
             <section className="analysis-hero">
               <div className="analysis-hero__main">
-                <div className="analysis-eyebrow">Evidence workbench</div>
                 <h1>Analysis</h1>
-                <p className="analysis-hero__summary">
-                  {analysis.summary || summaryFromOutput(analysis.structured_output) || "Analysis output is loading."}
-                </p>
                 <div className="analysis-chip-row">
                   <span className={`analysis-verdict analysis-verdict--${toneForValue(analysis.verdict)}`}>
                     {formatLabel(analysis.verdict)}
                   </span>
                   <StatusBadge status={analysis.status} />
-                  <TraceChip label="Provider" value={formatLabel(analysis.provider)} />
-                  <TraceChip label="Model" value={analysis.model} />
-                  <TraceChip label="Skill" value={`${analysis.skill_name} · ${analysis.skill_version}`} />
                   <TraceChip label="Created" value={formatDate(analysis.created_at)} />
+                  <button className="analysis-secondary-action" type="button" onClick={() => setRunDetailsOpen(true)}>
+                    Run details
+                  </button>
                 </div>
               </div>
-              <TracePanel
-                title="Run Trace"
-                sourceTrace={analysis.source_trace}
-                runParameters={analysis.run_parameters}
-                startedAt={analysis.started_at}
-                completedAt={analysis.completed_at}
-              />
             </section>
+
+            {runDetailsOpen ? <RunDetailsDialog analysis={analysis} onClose={() => setRunDetailsOpen(false)} /> : null}
 
             {analysis.error_message ? <section className="analysis-alert">{analysis.error_message}</section> : null}
 
@@ -148,105 +148,19 @@ export default function AnalysisDetailPage() {
                   ))}
                 </nav>
 
-                {activeTab === "summary" ? <SummaryPanel analysis={analysis} /> : null}
-                {activeTab === "layer1" ? (
-                  <LayerPanel
-                    emptyMessage="No Layer 1 output yet."
-                    items={extractEvidenceItems(analysis.structured_output, "layer_1")}
-                    markdown={asString(analysis.structured_output?.layer_1_markdown)}
-                    raw={analysis.structured_output?.layer_1}
-                    title="Layer 1"
-                  />
-                ) : null}
-                {activeTab === "layer2" ? (
-                  <LayerPanel
-                    emptyMessage="No Layer 2 output yet."
-                    items={extractEvidenceItems(analysis.structured_output, "layer_2")}
-                    markdown={asString(analysis.structured_output?.layer_2_markdown)}
-                    raw={analysis.structured_output?.layer_2}
-                    title="Layer 2"
-                  />
-                ) : null}
+                {activeTab === "mainOutput" ? <MainSkillMarkdownPanel analysis={analysis} /> : null}
                 {activeTab === "devilsAdvocate" ? (
-                  <DevilsAdvocatePanel run={analysis.predicted_comment_run} />
+                  <PredictedSkillMarkdownPanel run={analysis.predicted_comment_run} />
                 ) : null}
                 {activeTab === "fullOutput" ? <FullOutputPanel analysis={analysis} /> : null}
               </section>
 
               <aside className="analysis-inspector">
                 <section className="analysis-card stack">
-                  <div>
-                    <div className="analysis-card__label">Verdict</div>
-                    <div className={`analysis-inspector__verdict analysis-verdict--${toneForValue(analysis.verdict)}`}>
-                      {formatLabel(analysis.verdict)}
-                    </div>
-                  </div>
-                  <div className="analysis-score-grid">
-                    <Metric label="Input" value={formatNumber(analysis.input_tokens)} />
-                    <Metric label="Output" value={formatNumber(analysis.output_tokens)} />
-                    <Metric label="Latency" value={analysis.latency_ms ? `${analysis.latency_ms} ms` : "-"} />
-                    <Metric label="Cost" value={analysis.estimated_cost ?? "-"} />
-                  </div>
+                  <h2>Etalon draft</h2>
                   <button disabled={etalonPending || analysis.status !== "completed"} type="button" onClick={createDraft}>
                     Create etalon draft
                   </button>
-                </section>
-
-                <section className="analysis-card stack">
-                  <h2>Top risks</h2>
-                  {inspector?.topRisks.length ? (
-                    <div className="analysis-risk-list">
-                      {inspector.topRisks.map((risk) => (
-                        <article className="analysis-risk" key={`${risk.id}-${risk.title}`}>
-                          <div>
-                            <span className={`analysis-severity analysis-severity--${toneForValue(risk.severity)}`}>
-                              {formatLabel(risk.severity)}
-                            </span>
-                          </div>
-                          <strong>{risk.title}</strong>
-                          {risk.evidence ? <p>{risk.evidence}</p> : null}
-                        </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="analysis-muted">No structured risk items found yet.</p>
-                  )}
-                </section>
-
-                <section className="analysis-card stack">
-                  <h2>Evidence trace</h2>
-                  <InspectorTrace label="Source" value={analysis.source_trace?.source_slug} />
-                  <InspectorTrace label="Snapshot" value={shortHash(analysis.source_trace?.source_snapshot_id)} />
-                  <InspectorTrace label="Prompt" value={shortHash(analysis.source_trace?.prompt_fingerprint)} />
-                  <InspectorTrace label="DA source" value={analysis.predicted_comment_run?.source_trace?.source_slug} />
-                  <InspectorTrace
-                    label="DA corpus"
-                    value={shortHash(analysis.predicted_comment_run?.retrieval_trace?.corpus_fingerprint)}
-                  />
-                </section>
-
-                <section className="analysis-card stack">
-                  <h2>Devil&apos;s Advocate</h2>
-                  <InspectorTrace label="Decision" value={inspector?.daDecision} />
-                  <InspectorTrace label="Retrieval" value={analysis.predicted_comment_run?.retrieval_trace?.retrieval_mode} />
-                  {inspectorQuestions.length ? (
-                    <div className="analysis-question-list">
-                      {inspectorQuestions.map((question) => (
-                        <p key={question}>{question}</p>
-                      ))}
-                    </div>
-                  ) : null}
-                  {inspector?.consultedPages.length ? (
-                    <div className="analysis-token-list">
-                      {inspector.consultedPages.slice(0, 6).map((page) => (
-                        <span className="analysis-token" key={page}>
-                          {page}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="analysis-muted">No consulted pages reported.</p>
-                  )}
                 </section>
 
                 <section className="analysis-card stack" id="feedback">
@@ -289,91 +203,92 @@ export default function AnalysisDetailPage() {
   );
 }
 
-function SummaryPanel({ analysis }: { analysis: AnalysisRecord }) {
-  const output = analysis.structured_output;
-  const assessment = asString(output?.assessment_markdown);
-  const summary = analysis.summary || summaryFromOutput(output);
-  const keyFindings = asStringArray(output?.key_findings);
-  const findings = extractEvidenceItems(output, "findings");
-  const checks = extractChecks(output);
+function RunDetailsDialog({ analysis, onClose }: { analysis: AnalysisRecord; onClose: () => void }) {
+  return (
+    <div className="analysis-modal-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-labelledby="analysis-run-details-title"
+        aria-modal="true"
+        className="analysis-modal stack"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="analysis-modal__header">
+          <div>
+            <div className="analysis-card__label">Run metadata</div>
+            <h2 id="analysis-run-details-title">Run details</h2>
+          </div>
+          <button className="analysis-secondary-action" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="analysis-modal__chips">
+          <TraceChip label="Provider" value={formatLabel(analysis.provider)} />
+          <TraceChip label="Model" value={analysis.model} />
+          <TraceChip label="Skill" value={`${analysis.skill_name} · ${analysis.skill_version}`} />
+          <TraceChip label="Created" value={formatDate(analysis.created_at)} />
+        </div>
+
+        <div className="analysis-score-grid analysis-score-grid--modal">
+          <Metric label="Input" value={formatNumber(analysis.input_tokens)} />
+          <Metric label="Output" value={formatNumber(analysis.output_tokens)} />
+          <Metric label="Latency" value={analysis.latency_ms ? `${analysis.latency_ms} ms` : "-"} />
+          <Metric label="Cost" value={analysis.estimated_cost ?? "-"} />
+        </div>
+
+        <TracePanel
+          title="Run trace"
+          sourceTrace={analysis.source_trace}
+          runParameters={analysis.run_parameters}
+          startedAt={analysis.started_at}
+          completedAt={analysis.completed_at}
+        />
+
+        <details className="analysis-details">
+          <summary>Run parameters</summary>
+          <JsonBlock value={analysis.run_parameters} />
+        </details>
+      </section>
+    </div>
+  );
+}
+
+function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
+  const sections = mainSkillMarkdownSections(analysis);
+  const hasDetailedChecks = Boolean(sections.layer1 || sections.layer2);
 
   return (
     <section className="analysis-card stack">
       <div className="analysis-section-heading">
         <div>
-          <h2>Summary</h2>
-          <p>Gate Challenger assessment with supporting structured findings.</p>
+          <h2>Gate Challenger</h2>
+          <p>
+            {analysis.skill_name} · {formatLabel(analysis.provider)} · {analysis.model}
+          </p>
         </div>
+        <StatusBadge status={analysis.status} />
       </div>
-      {summary ? <p className="analysis-lead">{summary}</p> : null}
-      {assessment ? <MarkdownBlock title="Native assessment" value={assessment} /> : null}
-      {keyFindings.length ? (
-        <div className="analysis-callout-grid">
-          {keyFindings.slice(0, 7).map((finding) => (
-            <div className="analysis-callout" key={finding}>
-              {finding}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {findings.length ? <EvidenceGrid items={findings} /> : null}
-      {checks.length ? (
-        <div className="analysis-check-grid">
-          {checks.map((check) => (
-            <article className="analysis-check" key={`${check.name}-${check.status}`}>
-              <span className={`analysis-severity analysis-severity--${toneForValue(check.status)}`}>
-                {formatLabel(check.status)}
-              </span>
-              <strong>{check.name}</strong>
-              {check.explanation ? <p>{check.explanation}</p> : null}
-            </article>
-          ))}
-        </div>
-      ) : null}
-      {output ? (
-        <details className="analysis-details">
-          <summary>Structured summary JSON</summary>
-          <JsonBlock value={pickSummaryOutput(output)} />
-        </details>
+      {analysis.error_message ? <div className="analysis-alert">{analysis.error_message}</div> : null}
+      {sections.main ? (
+        <MarkdownPreview markdown={sections.main} className="gc-markdown-preview--narrative" />
+      ) : hasDetailedChecks ? (
+        <p className="analysis-muted">Main analysis text is unavailable. Detailed checks are available below.</p>
+      ) : (
+        <p className="analysis-muted">No markdown output is available for this run yet.</p>
+      )}
+      {hasDetailedChecks ? (
+        <section className="analysis-detail-checks" aria-label="Детализированные проверки">
+          <h3>Детализированные проверки</h3>
+          {sections.layer1 ? <CollapsibleMarkdown title="Layer 1" markdown={sections.layer1} /> : null}
+          {sections.layer2 ? <CollapsibleMarkdown title="Layer 2" markdown={sections.layer2} /> : null}
+        </section>
       ) : null}
     </section>
   );
 }
 
-function LayerPanel({
-  emptyMessage,
-  items,
-  markdown,
-  raw,
-  title,
-}: {
-  emptyMessage: string;
-  items: EvidenceItem[];
-  markdown: string | null;
-  raw: unknown;
-  title: string;
-}) {
-  return (
-    <section className="analysis-card stack">
-      <div className="analysis-section-heading">
-        <div>
-          <h2>{title}</h2>
-          <p>{items.length ? `${items.length} structured items` : "Native text is shown when available."}</p>
-        </div>
-      </div>
-      {markdown ? <MarkdownBlock title={`${title} native output`} value={markdown} /> : null}
-      {items.length ? <EvidenceGrid items={items} /> : markdown ? null : <p className="analysis-muted">{emptyMessage}</p>}
-      {raw ? (
-        <details className="analysis-details">
-          <summary>{title} structured JSON</summary>
-          <JsonBlock value={raw} />
-        </details>
-      ) : null}
-    </section>
-  );
-}
-
-function DevilsAdvocatePanel({ run }: { run: PredictedCommentRunRecord | null }) {
+function PredictedSkillMarkdownPanel({ run }: { run: PredictedCommentRunRecord | null }) {
   if (!run) {
     return (
       <section className="analysis-card stack">
@@ -383,17 +298,7 @@ function DevilsAdvocatePanel({ run }: { run: PredictedCommentRunRecord | null })
     );
   }
 
-  const output = run.structured_output;
-  const nativeMarkdown = asString(output?.native_markdown);
-  const roleComments = asRecordArray(output?.role_comments);
-  const anchoredComments = asRecordArray(output?.anchored_comments);
-  const contradictions = asRecordArray(output?.detected_contradictions);
-  const toughQuestions = asRecordArray(output?.tough_questions);
-  const jtbds = asStringArray(output?.actionable_jtbds);
-  const predictedQuestions = asStringArray(output?.predicted_questions);
-  const consultedPages = asStringArray(output?.consulted_wiki_pages);
-  const icDecision = asRecord(output?.ic_decision);
-  const trailer = asRecord(output?.trailer);
+  const markdown = predictedSkillMarkdown(run);
 
   return (
     <section className="analysis-card stack">
@@ -407,50 +312,40 @@ function DevilsAdvocatePanel({ run }: { run: PredictedCommentRunRecord | null })
         <StatusBadge status={run.status} />
       </div>
       {run.error_message ? <div className="analysis-alert">{run.error_message}</div> : null}
-      <TracePanel
-        retrievalTrace={run.retrieval_trace}
-        runParameters={run.run_parameters}
-        sourceTrace={run.source_trace}
-        title="Devil's Advocate Trace"
-        startedAt={run.started_at}
-        completedAt={run.completed_at}
-      />
-      {nativeMarkdown ? <MarkdownBlock title="Native IC voting output" value={nativeMarkdown} /> : null}
-      {icDecision ? (
-        <div className="analysis-split">
-          <div>
-            <div className="analysis-card__label">IC decision</div>
-            <strong>{formatLabel(asString(icDecision.verdict))}</strong>
-          </div>
-          <div>
-            <div className="analysis-card__label">Rationale</div>
-            <p>{asString(icDecision.rationale) || "-"}</p>
-          </div>
-        </div>
-      ) : null}
-      {trailer?.executive_summary ? <p className="analysis-lead">{asString(trailer.executive_summary)}</p> : null}
-      {roleComments.length ? <RecordList title="Role comments" records={roleComments} /> : null}
-      {anchoredComments.length ? <RecordList title="Anchored comments" records={anchoredComments} /> : null}
-      {contradictions.length ? <RecordList title="Contradictions and missing proofs" records={contradictions} /> : null}
-      {toughQuestions.length ? <RecordList title="Tough questions" records={toughQuestions} /> : null}
-      {predictedQuestions.length ? <StringList title="Predicted Questions" values={predictedQuestions} /> : null}
-      {jtbds.length ? <StringList title="Actionable JTBDs" values={jtbds} /> : null}
-      {consultedPages.length ? (
-        <p className="analysis-muted analysis-wrap">Consulted pages: {consultedPages.join(", ")}</p>
-      ) : null}
-      {output ? (
-        <details className="analysis-details">
-          <summary>Structured Devil&apos;s Advocate JSON</summary>
-          <JsonBlock value={output} />
-        </details>
-      ) : null}
-      {run.raw_output ? (
-        <details className="analysis-details">
-          <summary>Raw Devil&apos;s Advocate Output</summary>
-          <pre className="analysis-pre">{run.raw_output}</pre>
-        </details>
-      ) : null}
+      {markdown ? (
+        <MarkdownPreview markdown={markdown} className="gc-markdown-preview--narrative" />
+      ) : (
+        <p className="analysis-muted">No markdown output is available for this run yet.</p>
+      )}
     </section>
+  );
+}
+
+function mainSkillMarkdownSections(analysis: AnalysisRecord): { main: string | null; layer1: string | null; layer2: string | null } {
+  const output = analysis.structured_output;
+  const layer1 = asString(output?.layer_1_markdown);
+  const layer2 = asString(output?.layer_2_markdown);
+  const main =
+    asString(output?.assessment_markdown) ||
+    asString(output?.native_markdown) ||
+    asString(output?.markdown) ||
+    asString(output?.output_markdown) ||
+    asString(output?.summary_markdown) ||
+    (!layer1 && !layer2 ? extractProviderMessageContent(analysis.raw_output) : null);
+
+  return { main, layer1, layer2 };
+}
+
+function predictedSkillMarkdown(run: PredictedCommentRunRecord): string | null {
+  return bestMarkdownOutput(run.structured_output) || extractProviderMessageContent(run.raw_output);
+}
+
+function CollapsibleMarkdown({ markdown, title }: { markdown: string; title: string }) {
+  return (
+    <details className="analysis-markdown-details">
+      <summary>{title}</summary>
+      <MarkdownPreview markdown={markdown} className="gc-markdown-preview--narrative" />
+    </details>
   );
 }
 
@@ -796,6 +691,72 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function bestMarkdownOutput(output: Record<string, unknown> | null | undefined): string | null {
+  if (!output) {
+    return null;
+  }
+
+  const directFields = [
+    output.native_markdown,
+    output.markdown,
+    output.output_markdown,
+    output.assessment_markdown,
+    output.summary_markdown,
+  ];
+  const direct = directFields.map(asString).find(Boolean);
+  if (direct) {
+    return direct;
+  }
+
+  const sections = [output.layer_1_markdown, output.layer_2_markdown].map(asString).filter((section): section is string => Boolean(section));
+  return sections.length ? sections.join("\n\n---\n\n") : null;
+}
+
+function extractProviderMessageContent(rawOutput: string | null): string | null {
+  const raw = asString(rawOutput);
+  if (!raw) {
+    return null;
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return trimmed;
+  }
+
+  try {
+    return extractMessageContent(JSON.parse(trimmed));
+  } catch {
+    return null;
+  }
+}
+
+function extractMessageContent(value: unknown): string | null {
+  if (typeof value === "string") {
+    return asString(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map(extractMessageContent).filter((part): part is string => Boolean(part));
+    return parts.length ? parts.join("\n") : null;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const direct = [record.structured_text, record.content, record.output, record.text].map(asString).find(Boolean);
+  if (direct) {
+    return direct;
+  }
+
+  const openAiContent = asRecord(asRecordArray(record.choices)[0]?.message)?.content;
+  const openAiText = extractMessageContent(openAiContent);
+  if (openAiText) {
+    return openAiText;
+  }
+
+  return extractMessageContent(record.content);
+}
+
 const analysisStyles = `
 .analysis-workbench {
   width: min(100%, 1480px);
@@ -837,6 +798,16 @@ const analysisStyles = `
 .analysis-workbench button:hover:not(:disabled) {
   border-color: rgba(94, 234, 212, 0.55);
   transform: translateY(-1px);
+}
+
+.analysis-secondary-action {
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .analysis-workbench button:focus-visible,
@@ -901,7 +872,7 @@ const analysisStyles = `
 
 .analysis-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  grid-template-columns: 1fr;
   gap: 18px;
   margin-bottom: 18px;
   padding: 22px;
@@ -913,7 +884,6 @@ const analysisStyles = `
   gap: 14px;
 }
 
-.analysis-hero__summary,
 .analysis-lead {
   max-width: 82ch;
   color: #cbd5e1;
@@ -952,6 +922,40 @@ const analysisStyles = `
   padding: 6px 10px;
   color: #cbd5e1;
   font-size: 12px;
+}
+
+.analysis-modal-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.74);
+  padding: 24px;
+}
+
+.analysis-modal {
+  width: min(920px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #08111f;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+  padding: 18px;
+}
+
+.analysis-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.analysis-modal__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .analysis-chip span,
@@ -1171,6 +1175,10 @@ const analysisStyles = `
   gap: 8px;
 }
 
+.analysis-score-grid--modal {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .analysis-metric {
   display: grid;
   gap: 4px;
@@ -1193,6 +1201,38 @@ const analysisStyles = `
 .analysis-risk-list {
   display: grid;
   gap: 10px;
+}
+
+.analysis-detail-checks {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  margin-top: 4px;
+  padding-top: 16px;
+}
+
+.analysis-detail-checks h3 {
+  color: #f8fafc;
+}
+
+.analysis-markdown-details {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.4);
+  padding: 0;
+}
+
+.analysis-markdown-details summary {
+  min-height: 46px;
+  cursor: pointer;
+  color: #bae6fd;
+  font-weight: 800;
+  padding: 13px 14px;
+}
+
+.analysis-markdown-details .gc-markdown-preview {
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 14px;
 }
 
 .analysis-details {
@@ -1290,8 +1330,24 @@ const analysisStyles = `
   }
 
   .analysis-split,
-  .analysis-score-grid {
+  .analysis-score-grid,
+  .analysis-score-grid--modal {
     grid-template-columns: 1fr;
+  }
+
+  .analysis-modal-backdrop {
+    align-items: stretch;
+    padding: 10px;
+  }
+
+  .analysis-modal {
+    max-height: calc(100vh - 20px);
+    padding: 14px;
+  }
+
+  .analysis-modal__header {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 `;
