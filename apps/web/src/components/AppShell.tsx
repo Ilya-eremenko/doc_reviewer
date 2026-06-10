@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { logout, me } from "@/lib/api/auth";
 import type { User } from "@/lib/api/types";
 
-type NavIconName = "documents" | "upload" | "etalons" | "benchmarks" | "settings" | "admin";
+type NavIconName = "documents" | "etalons" | "benchmarks" | "settings" | "admin";
 
 type NavItem = {
   href: string;
@@ -18,14 +18,11 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/documents", icon: "documents", label: "Documents" },
-  { href: "/documents/upload", icon: "upload", label: "Upload" },
   { href: "/etalons", icon: "etalons", label: "Etalons" },
   { href: "/benchmarks", icon: "benchmarks", label: "Benchmarks" },
   { href: "/settings", icon: "settings", label: "Settings" },
   { href: "/admin/users", icon: "admin", label: "Admin", requiresAdmin: true },
 ];
-
-const APP_ENV = process.env.NEXT_PUBLIC_APP_ENV?.trim() || "MVP";
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
@@ -54,7 +51,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     () => NAV_ITEMS.filter((item) => !item.requiresAdmin || user?.role === "admin"),
     [user?.role],
   );
-  const activeItem = visibleNav.find((item) => isActivePath(pathname, item.href)) ?? visibleNav[0];
 
   if (!user) {
     return (
@@ -66,7 +62,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   return (
     <div className="shell app-shell">
-      <aside className="sidebar" aria-label="Gate Challenger navigation">
+      <header className="app-header" aria-label="Gate Challenger navigation">
         <Link className="brand" href="/documents" aria-label="Gate Challenger documents">
           <span className="brand-mark" aria-hidden="true">
             GC
@@ -96,33 +92,17 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           })}
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="env-card" aria-label={`${APP_ENV} environment`}>
-            <div className="env-label">{APP_ENV} environment</div>
-            <p className="env-copy">Traceable analysis workspace</p>
-          </div>
+        <div className="topbar-actions">
+          <span className="user-chip" title={user.login}>
+            {user.display_name || user.login}
+          </span>
+          <button className="secondary" type="button" onClick={handleLogout}>
+            Log out
+          </button>
         </div>
-      </aside>
+      </header>
 
       <div className="content-shell">
-        <header className="topbar">
-          <div className="topbar-title">
-            <span className="topbar-eyebrow">Workspace</span>
-            <span className="topbar-heading">{activeItem?.label ?? "Gate Challenger"}</span>
-          </div>
-
-          <div className="topbar-actions">
-            <span className="mvp-chip">{APP_ENV}</span>
-            <span className="role-chip">{user.role}</span>
-            <span className="user-chip" title={user.login}>
-              {user.display_name || user.login}
-            </span>
-            <button className="secondary" type="button" onClick={handleLogout}>
-              Log out
-            </button>
-          </div>
-        </header>
-
         {error ? <div className="shell-alert panel error">{error}</div> : null}
         <div className="content-scroll">{children}</div>
       </div>
@@ -132,7 +112,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
 function isActivePath(pathname: string, href: string) {
   if (href === "/documents") {
-    return pathname === href || (pathname.startsWith("/documents/") && !pathname.startsWith("/documents/upload"));
+    return pathname === href || pathname.startsWith("/documents/");
   }
 
   if (href === "/admin/users") {
@@ -151,14 +131,6 @@ function NavIcon({ name }: { name: NavIconName }) {
           <path d="M14 3v5h5" />
           <path d="M9 13h6" />
           <path d="M9 17h5" />
-        </svg>
-      );
-    case "upload":
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 16V4" />
-          <path d="m7 9 5-5 5 5" />
-          <path d="M5 17v3h14v-3" />
         </svg>
       );
     case "etalons":

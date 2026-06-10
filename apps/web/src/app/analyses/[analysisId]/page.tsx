@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   getAnalysis,
@@ -558,7 +559,7 @@ function MarkdownBlock({ title, value }: { title: string; value: string }) {
   return (
     <div className="analysis-markdown">
       <div className="analysis-card__label">{title}</div>
-      <pre className="analysis-pre analysis-pre--narrative">{value}</pre>
+      <MarkdownPreview markdown={value} className="gc-markdown-preview--narrative" />
     </div>
   );
 }

@@ -88,9 +88,13 @@ Canonical external skill sources:
 6. Add or update tests for behavior that can regress.
 7. Run the narrowest useful verification first, then broader checks when the
    touched surface warrants it.
-8. Record meaningful decisions or milestones in `TASKS.md` or the relevant
+8. After frontend changes that the user should inspect at `localhost:3000`,
+   rebuild and restart the local web container with
+   `docker compose -f infra/docker-compose.yml up -d --build web`; otherwise
+   the browser may keep showing the previous image.
+9. Record meaningful decisions or milestones in `TASKS.md` or the relevant
    project handoff document.
-9. Do not create commits unless the user explicitly asks.
+10. Do not create commits unless the user explicitly asks.
 
 ## Coding Standards
 
@@ -127,6 +131,7 @@ pytest apps/worker/tests -q
 npm --prefix apps/web run test
 npm --prefix apps/web run e2e
 docker compose -f infra/docker-compose.yml config
+docker compose -f infra/docker-compose.yml up -d --build web
 ```
 
 When a command cannot run because the scaffold is not implemented yet, state

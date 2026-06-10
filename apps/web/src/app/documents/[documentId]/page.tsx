@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { StatusBadge } from "@/components/StatusBadge";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { resolveApiBaseUrl } from "@/lib/api/client";
 import {
   getProviderDefaultModel,
@@ -13,17 +13,14 @@ import {
   type ProviderKeyRecord,
 } from "@/lib/api/provider-settings";
 import {
-  USER_SELECTABLE_DOCUMENT_TYPES,
   createAnalysis,
   deleteDocument,
   getDocument,
   getParsedText,
   listAnalyses,
-  patchDocumentType,
   reparseDocument,
   type AnalysisRecord,
   type DocumentRecord,
-  type DocumentType,
   type Provider,
   type RunStatus,
 } from "@/lib/api/documents";
@@ -35,27 +32,11 @@ type WorkflowStep = {
   state: "done" | "active" | "blocked" | "idle";
 };
 
-type ParsedSection = {
-  id: string;
-  label: string;
-  line: number;
-};
-
 const providerLabels: Record<Provider, string> = {
   openai_compatible: "OpenAI compatible",
   anthropic_compatible: "Anthropic compatible",
   hermes: "Hermes",
 };
-
-function formatBytes(value: number): string {
-  if (value < 1024) {
-    return `${value} B`;
-  }
-  if (value < 1024 * 1024) {
-    return `${(value / 1024).toFixed(1)} KB`;
-  }
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function buildWorkflowSteps(document: DocumentRecord, analyses: AnalysisRecord[]): WorkflowStep[] {
   const hasCompletedAnalysis = analyses.some((analysis) => analysis.status === "completed");
@@ -88,57 +69,6 @@ function buildWorkflowSteps(document: DocumentRecord, analyses: AnalysisRecord[]
   ];
 }
 
-function extractSections(text: string): ParsedSection[] {
-  if (!text) {
-    return [];
-  }
-
-  return text
-    .split(/\r?\n/)
-    .map((line, index) => ({ line: line.trim(), index }))
-    .filter(({ line }) => {
-      if (!line) {
-        return false;
-      }
-      return /^#{1,4}\s+\S/.test(line) || (/^[A-Z0-9][A-Z0-9\s:.-]{6,80}$/.test(line) && line.length <= 90);
-    })
-    .slice(0, 8)
-    .map(({ line, index }) => ({
-      id: `${index}-${line.slice(0, 20)}`,
-      label: line.replace(/^#{1,4}\s+/, ""),
-      line: index + 1,
-    }));
-}
-
-function countMatches(text: string, query: string): number {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return 0;
-  }
-  return text.toLowerCase().split(normalizedQuery).length - 1;
-}
-
-function getPreviewText(text: string, query: string): string {
-  const trimmedQuery = query.trim().toLowerCase();
-  if (!text) {
-    return "";
-  }
-  if (!trimmedQuery) {
-    return text;
-  }
-
-  const index = text.toLowerCase().indexOf(trimmedQuery);
-  if (index === -1) {
-    return "";
-  }
-
-  const start = Math.max(0, index - 1200);
-  const end = Math.min(text.length, index + trimmedQuery.length + 2400);
-  const prefix = start > 0 ? "...\n" : "";
-  const suffix = end < text.length ? "\n..." : "";
-  return `${prefix}${text.slice(start, end)}${suffix}`;
-}
-
 function getAnalysisTone(status: RunStatus): "good" | "info" | "bad" | "neutral" {
   if (status === "completed") {
     return "good";
@@ -166,25 +96,59 @@ function getSourceTraceLabel(analysis: AnalysisRecord): string {
   return "-";
 }
 
+function formatAnalysisError(message: string): string {
+  const normalized = message
+    .replace(/\\n/g, " ")
+    .replace(/\\"/g, "\"")
+    .replace(/\\'/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  const code = /Error code:\s*(\d+)/i.exec(normalized)?.[1] ?? /["']code["']:\s*(\d+)/i.exec(normalized)?.[1] ?? "";
+  const doubleQuotedMessages = Array.from(normalized.matchAll(/"message"\s*:\s*"([^"]+)"/g));
+  const singleQuotedMessages = Array.from(normalized.matchAll(/'message'\s*:\s*'([^']+)'/g));
+  const messages = [...doubleQuotedMessages, ...singleQuotedMessages]
+    .map((match) => match[1].trim())
+    .filter((item) => item && !/provider returned error/i.test(item));
+  const usefulMessage = messages.find((item) => /invalid schema|invalid request|response_format|required/i.test(item)) ?? messages[0];
+
+  if (usefulMessage) {
+    return compactErrorText(usefulMessage, code);
+  }
+
+  return compactErrorText(normalized.replace(/^Error code:\s*\d+\s*-\s*/i, ""), code);
+}
+
+function compactErrorText(message: string, code: string): string {
+  if (/Invalid schema for response_format/i.test(message)) {
+    const schemaName = /Invalid schema for response_format\s+['"]?([^'":\s]+)?/i.exec(message)?.[1];
+    const suffix = schemaName ? ` (${schemaName})` : "";
+    return `${code ? `${code}: ` : ""}Invalid response schema${suffix}. Required fields are missing.`;
+  }
+
+  const firstSentence = message.split(/(?<=[.!?])\s+/)[0] ?? message;
+  const compact = firstSentence.length > 150 ? `${firstSentence.slice(0, 147)}...` : firstSentence;
+  return code && !compact.startsWith(code) ? `${code}: ${compact}` : compact;
+}
+
 export default function DocumentDetailPage() {
   const params = useParams<{ documentId: string }>();
   const documentId = params.documentId;
   const [document, setDocument] = useState<DocumentRecord | null>(null);
   const [parsedText, setParsedText] = useState("");
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
-  const [manualType, setManualType] = useState<DocumentType | "">("");
   const [providerKeys, setProviderKeys] = useState<ProviderKeyRecord[]>([]);
   const [provider, setProvider] = useState<Provider>("openai_compatible");
   const [model, setModel] = useState("");
   const [modelEdited, setModelEdited] = useState(false);
-  const [textQuery, setTextQuery] = useState("");
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  const [draftProvider, setDraftProvider] = useState<Provider>("openai_compatible");
+  const [draftModel, setDraftModel] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
   async function refresh() {
     const nextDocument = await getDocument(documentId);
     setDocument(nextDocument);
-    setManualType(nextDocument.manual_document_type ?? "");
     listAnalyses(documentId)
       .then((response) => setAnalyses(response.analyses))
       .catch(() => setAnalyses([]));
@@ -229,39 +193,70 @@ export default function DocumentDetailPage() {
     }
   }, [modelEdited, provider, providerKeys]);
 
+  const savedProviderKeys = useMemo(() => providerKeys.filter((item) => item.has_key), [providerKeys]);
+  const providerKeyOptions = savedProviderKeys.length > 0 ? savedProviderKeys : providerKeys;
   const selectedProviderKey = useMemo(
     () => providerKeys.find((item) => item.provider === provider) ?? null,
     [provider, providerKeys],
   );
-  const providerDefaultModel = useMemo(() => getProviderDefaultModel(providerKeys, provider), [provider, providerKeys]);
+  const selectedDraftProviderKey = useMemo(
+    () => providerKeys.find((item) => item.provider === draftProvider) ?? null,
+    [draftProvider, providerKeys],
+  );
   const workflowSteps = useMemo(() => (document ? buildWorkflowSteps(document, analyses) : []), [analyses, document]);
-  const parsedSections = useMemo(() => extractSections(parsedText), [parsedText]);
-  const searchMatchCount = useMemo(() => countMatches(parsedText, textQuery), [parsedText, textQuery]);
-  const previewText = useMemo(() => getPreviewText(parsedText, textQuery), [parsedText, textQuery]);
-  const latestAnalysis = analyses[0] ?? null;
 
-  function changeProvider(nextProvider: Provider) {
+  useEffect(() => {
+    if (!modelDialogOpen) {
+      return;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setModelDialogOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [modelDialogOpen]);
+
+  useEffect(() => {
+    if (savedProviderKeys.length === 0 || savedProviderKeys.some((item) => item.provider === provider)) {
+      return;
+    }
+
+    const nextProvider = savedProviderKeys[0].provider;
     setProvider(nextProvider);
     setModelEdited(false);
     setModel(getProviderDefaultModel(providerKeys, nextProvider));
+  }, [provider, providerKeys, savedProviderKeys]);
+
+  function openModelDialog() {
+    setDraftProvider(provider);
+    setDraftModel(model);
+    setModelDialogOpen(true);
   }
 
-  function changeModel(nextModel: string) {
-    setModel(nextModel);
-    setModelEdited(true);
+  function changeDraftProvider(nextProvider: Provider) {
+    setDraftProvider(nextProvider);
+    setDraftModel(getProviderDefaultModel(providerKeys, nextProvider));
   }
 
-  async function saveType() {
-    setPending(true);
-    setError("");
-    try {
-      const updated = await patchDocumentType(documentId, manualType || null);
-      setDocument(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update document type");
-    } finally {
-      setPending(false);
+  function changeDraftModel(nextModel: string) {
+    setDraftModel(nextModel);
+  }
+
+  function saveModelSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextModel = draftModel.trim();
+    if (!nextModel || !selectedDraftProviderKey?.has_key) {
+      return;
     }
+
+    setProvider(draftProvider);
+    setModel(nextModel);
+    setModelEdited(nextModel !== getProviderDefaultModel(providerKeys, draftProvider));
+    setModelDialogOpen(false);
   }
 
   async function reparse() {
@@ -293,15 +288,14 @@ export default function DocumentDetailPage() {
     }
   }
 
-  async function launchAnalysis(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function launchAnalysis() {
     setPending(true);
     setError("");
     try {
       const analysis = await createAnalysis(documentId, {
         provider,
-        model,
-        document_type_override: manualType || document?.manual_document_type || document?.detected_document_type,
+        model: model.trim(),
+        document_type_override: document?.detected_document_type,
       });
       window.location.href = `/analyses/${analysis.id}`;
     } catch (err) {
@@ -325,17 +319,6 @@ export default function DocumentDetailPage() {
                   {document.original_filename} · {formatDate(document.created_at)}
                 </p>
               </div>
-              <div className="gc-hero-actions">
-                <a className="gc-ghost" href={`${resolveApiBaseUrl()}/documents/${document.id}/raw`}>
-                  Raw
-                </a>
-                <button className="gc-ghost" disabled={pending} type="button" onClick={reparse}>
-                  Reparse
-                </button>
-                <button className="gc-danger" disabled={pending} type="button" onClick={removeDocument}>
-                  Delete
-                </button>
-              </div>
             </section>
 
             <section className="gc-stepper" aria-label="Document workflow status">
@@ -354,51 +337,8 @@ export default function DocumentDetailPage() {
 
             <div className="gc-detail-grid">
               <div className="gc-left-column">
-                <section className="gc-panel">
-                  <div className="gc-panel-heading">
-                    <div>
-                      <h2>Document metadata</h2>
-                      <p>Parser state and document type controls.</p>
-                    </div>
-                    <StatusBadge status={document.parse_status} />
-                  </div>
-
-                  <div className="gc-meta-grid">
-                    <div>
-                      <span>Detected type</span>
-                      <strong>{formatLabel(document.detected_document_type)}</strong>
-                      {document.document_type_confidence ? <small>confidence {document.document_type_confidence}</small> : null}
-                    </div>
-                    <div>
-                      <span>Manual type</span>
-                      <select value={manualType} onChange={(event) => setManualType(event.target.value as DocumentType | "")}>
-                        {["", ...USER_SELECTABLE_DOCUMENT_TYPES].map((item) => (
-                          <option key={item || "auto"} value={item}>
-                            {item ? formatLabel(item) : "Auto"}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <span>File size</span>
-                      <strong>{formatBytes(document.file_size_bytes)}</strong>
-                      <small>{document.mime_type}</small>
-                    </div>
-                    <div>
-                      <span>Last updated</span>
-                      <strong>{formatDate(document.updated_at)}</strong>
-                    </div>
-                  </div>
-
-                  {document.document_type_explanation ? (
-                    <div className="gc-note">{document.document_type_explanation}</div>
-                  ) : null}
-                  {document.parse_error ? <div className="gc-alert compact">{document.parse_error}</div> : null}
-
-                  <div className="gc-action-row">
-                    <button className="gc-primary" disabled={pending} type="button" onClick={saveType}>
-                      Save type
-                    </button>
+                <section className="gc-panel gc-control-panel" aria-label="Document actions">
+                  <div className="gc-action-row gc-control-row">
                     <a className="gc-ghost" href={`${resolveApiBaseUrl()}/documents/${document.id}/raw`}>
                       Download raw
                     </a>
@@ -420,39 +360,7 @@ export default function DocumentDetailPage() {
                   </div>
 
                   {parsedText ? (
-                    <>
-                      <div className="gc-text-tools">
-                        <label>
-                          <span>Search parsed text</span>
-                          <input
-                            placeholder="Evidence, metric, risk, section"
-                            value={textQuery}
-                            onChange={(event) => setTextQuery(event.target.value)}
-                          />
-                        </label>
-                        <div className="gc-search-count">
-                          {textQuery.trim()
-                            ? `${searchMatchCount} match${searchMatchCount === 1 ? "" : "es"}`
-                            : "Full parsed text"}
-                        </div>
-                      </div>
-
-                      {parsedSections.length > 0 ? (
-                        <div className="gc-section-list" aria-label="Detected text sections">
-                          {parsedSections.map((section) => (
-                            <span key={section.id}>
-                              L{section.line} · {section.label}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {previewText ? (
-                        <pre className="gc-text-preview">{previewText}</pre>
-                      ) : (
-                        <div className="gc-empty compact">No parsed text match for the current search.</div>
-                      )}
-                    </>
+                    <MarkdownPreview markdown={parsedText} className="gc-markdown-preview--full" />
                   ) : (
                     <div className="gc-empty">Parsed text is not available yet.</div>
                   )}
@@ -460,63 +368,6 @@ export default function DocumentDetailPage() {
               </div>
 
               <aside className="gc-right-column">
-                <form className="gc-panel gc-launch-panel" onSubmit={launchAnalysis}>
-                  <div className="gc-panel-heading">
-                    <div>
-                      <h2>Launch analysis</h2>
-                      <p>Runs against the parsed text and selected type.</p>
-                    </div>
-                  </div>
-
-                  <div className="gc-field-stack">
-                    <label>
-                      <span>Provider</span>
-                      <select value={provider} onChange={(event) => changeProvider(event.target.value as Provider)}>
-                        <option value="openai_compatible">OpenAI compatible</option>
-                        <option value="anthropic_compatible">Anthropic compatible</option>
-                        <option value="hermes">Hermes</option>
-                      </select>
-                    </label>
-
-                    <label>
-                      <span>Model</span>
-                      <input value={model} onChange={(event) => changeModel(event.target.value)} />
-                    </label>
-                  </div>
-
-                  <div className="gc-provider-note">
-                    <strong>{providerLabels[provider]}</strong>
-                    {providerDefaultModel ? (
-                      <span>
-                        Saved default: {providerDefaultModel}
-                        {model === providerDefaultModel && !modelEdited ? " (applied)" : " (overridden)"}
-                      </span>
-                    ) : selectedProviderKey?.has_key ? (
-                      <span>No saved default model returned for this provider.</span>
-                    ) : (
-                      <span>No saved provider key loaded for this provider.</span>
-                    )}
-                  </div>
-
-                  <details className="gc-advanced">
-                    <summary>Advanced options</summary>
-                    <div className="gc-advanced-grid">
-                      <label>
-                        <span>Temperature</span>
-                        <input disabled value="Backend default" readOnly />
-                      </label>
-                      <label>
-                        <span>Output budget</span>
-                        <input disabled value="Backend default" readOnly />
-                      </label>
-                    </div>
-                  </details>
-
-                  <button className="gc-primary gc-submit" disabled={pending || document.parse_status !== "completed" || !model} type="submit">
-                    {pending ? "Starting..." : "Start analysis"}
-                  </button>
-                </form>
-
                 <section className="gc-panel gc-history-panel">
                   <div className="gc-panel-heading">
                     <div>
@@ -525,15 +376,19 @@ export default function DocumentDetailPage() {
                     </div>
                   </div>
 
-                  {latestAnalysis ? (
-                    <div className="gc-latest-run">
-                      <span>Latest</span>
-                      <strong>{formatLabel(latestAnalysis.verdict) || "No verdict"}</strong>
-                      <small>
-                        {formatLabel(latestAnalysis.status)} · {latestAnalysis.provider} · {latestAnalysis.model}
-                      </small>
-                    </div>
-                  ) : null}
+                  <div className="gc-history-actions" aria-label="Analysis actions">
+                    <button className="gc-ghost" disabled={pending} type="button" onClick={openModelDialog}>
+                      Model
+                    </button>
+                    <button
+                      className="gc-primary"
+                      disabled={pending || document.parse_status !== "completed" || !model.trim() || !selectedProviderKey?.has_key}
+                      type="button"
+                      onClick={launchAnalysis}
+                    >
+                      {pending ? "Starting..." : "Start new analysis"}
+                    </button>
+                  </div>
 
                   {analyses.length > 0 ? (
                     <div className="gc-table-scroll">
@@ -555,7 +410,11 @@ export default function DocumentDetailPage() {
                                 <span className={`gc-run-status is-${getAnalysisTone(analysis.status)}`}>
                                   {formatLabel(analysis.status)}
                                 </span>
-                                {analysis.error_message ? <div className="gc-error-text">{analysis.error_message}</div> : null}
+                                {analysis.error_message ? (
+                                  <div className="gc-error-text" title={analysis.error_message}>
+                                    {formatAnalysisError(analysis.error_message)}
+                                  </div>
+                                ) : null}
                               </td>
                               <td>
                                 <strong>{formatLabel(analysis.provider)}</strong>
@@ -582,6 +441,72 @@ export default function DocumentDetailPage() {
                 </section>
               </aside>
             </div>
+
+            {modelDialogOpen ? (
+              <div
+                className="gc-modal-backdrop"
+                onMouseDown={(event) => {
+                  if (event.currentTarget === event.target) {
+                    setModelDialogOpen(false);
+                  }
+                }}
+              >
+                <form
+                  aria-labelledby="gc-model-dialog-title"
+                  aria-modal="true"
+                  className="gc-model-modal"
+                  role="dialog"
+                  onSubmit={saveModelSettings}
+                >
+                  <div className="gc-model-modal-header">
+                    <h2 id="gc-model-dialog-title">Model</h2>
+                    <button className="gc-icon-button" type="button" aria-label="Close" onClick={() => setModelDialogOpen(false)}>
+                      x
+                    </button>
+                  </div>
+
+                  <div className="gc-field-stack">
+                    <label>
+                      <span>Saved key</span>
+                      <select
+                        disabled={providerKeyOptions.length === 0}
+                        value={draftProvider}
+                        onChange={(event) => changeDraftProvider(event.target.value as Provider)}
+                      >
+                        {providerKeyOptions.length > 0 ? (
+                          providerKeyOptions.map((item) => (
+                            <option key={item.provider} value={item.provider}>
+                              {providerLabels[item.provider]}
+                              {item.api_key_fingerprint ? ` · ${item.api_key_fingerprint}` : ""}
+                            </option>
+                          ))
+                        ) : (
+                          <option value={draftProvider}>No saved keys</option>
+                        )}
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Model</span>
+                      <input value={draftModel} onChange={(event) => changeDraftModel(event.target.value)} />
+                    </label>
+                  </div>
+
+                  {!selectedDraftProviderKey?.has_key ? (
+                    <div className="gc-provider-note is-warning">
+                      <strong>No saved key</strong>
+                      <span>Add a provider key in Settings before starting analysis.</span>
+                    </div>
+                  ) : null}
+
+                  <div className="gc-modal-actions">
+                    <button className="gc-primary" disabled={!draftModel.trim() || !selectedDraftProviderKey?.has_key} type="submit">
+                      Save
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : null}
           </>
         ) : (
           <section className="gc-panel gc-loading">Loading document...</section>
@@ -617,7 +542,7 @@ const detailStyles = `
 }
 
 .gc-dark-page {
-  width: min(1440px, 100%);
+  width: min(1680px, 100%);
   min-height: calc(100vh - 69px);
   margin: 0 auto;
   padding: 32px 24px 48px;
@@ -625,13 +550,9 @@ const detailStyles = `
 }
 
 .gc-hero,
-.gc-hero-actions,
 .gc-stepper,
 .gc-action-row,
-.gc-text-tools,
-.gc-detail-grid,
-.gc-meta-grid,
-.gc-advanced-grid {
+.gc-detail-grid {
   display: flex;
 }
 
@@ -662,14 +583,9 @@ const detailStyles = `
 
 .gc-muted,
 .gc-panel-heading p,
-.gc-meta-grid span,
-.gc-meta-grid small,
 .gc-provider-note span,
-.gc-latest-run small,
 .gc-table small,
-.gc-note,
-.gc-section-list span,
-.gc-search-count {
+.gc-note {
   color: #94a3b8;
 }
 
@@ -677,11 +593,22 @@ const detailStyles = `
   margin: 8px 0 0;
 }
 
-.gc-hero-actions,
 .gc-action-row {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.gc-control-panel {
+  padding: 12px;
+}
+
+.gc-control-row {
+  margin-top: 0;
+}
+
+.gc-control-row .gc-primary {
+  min-width: 166px;
 }
 
 .gc-primary,
@@ -696,6 +623,13 @@ const detailStyles = `
   font-weight: 800;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.gc-primary:disabled,
+.gc-ghost:disabled,
+.gc-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .gc-primary {
@@ -799,7 +733,7 @@ const detailStyles = `
 
 .gc-detail-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 470px);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 16px;
   align-items: start;
 }
@@ -863,34 +797,10 @@ const detailStyles = `
   color: #fca5a5;
 }
 
-.gc-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.gc-meta-grid div {
-  display: grid;
-  gap: 6px;
-  min-height: 92px;
-  align-content: start;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.58);
-  padding: 12px;
-}
-
-.gc-meta-grid span,
-.gc-field-stack span,
-.gc-advanced-grid span {
+.gc-field-stack span {
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
-}
-
-.gc-meta-grid strong {
-  color: #f8fafc;
-  line-height: 1.3;
 }
 
 .gc-dark-page input,
@@ -930,64 +840,15 @@ const detailStyles = `
   margin-top: 14px;
 }
 
-.gc-text-tools {
-  align-items: end;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+.gc-action-row.gc-control-row {
+  margin-top: 0;
 }
 
-.gc-text-tools label,
-.gc-field-stack label,
-.gc-advanced-grid label {
+.gc-field-stack label {
   color: #cbd5e1;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
-}
-
-.gc-text-tools label {
-  width: min(420px, 100%);
-}
-
-.gc-search-count {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.58);
-  padding: 0 12px;
-  font-size: 13px;
-}
-
-.gc-section-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.gc-section-list span {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.58);
-  padding: 6px 10px;
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.gc-text-preview {
-  max-height: 620px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: #070a12;
-  color: #dbeafe;
-  padding: 14px;
-  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .gc-field-stack {
@@ -1013,51 +874,31 @@ const detailStyles = `
   line-height: 1.4;
 }
 
-.gc-advanced {
-  margin-top: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.5);
-  padding: 12px;
+.gc-provider-note.is-warning {
+  border-color: rgba(250, 204, 21, 0.32);
+  background: rgba(113, 63, 18, 0.18);
 }
 
-.gc-advanced summary {
-  color: #dbeafe;
-  cursor: pointer;
-  font-weight: 800;
+.gc-provider-note.is-warning strong {
+  color: #fde68a;
 }
 
-.gc-advanced-grid {
+.gc-history-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.gc-submit {
-  width: 100%;
-  margin-top: 16px;
-}
-
-.gc-latest-run {
-  display: grid;
-  gap: 5px;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 10px;
   margin-bottom: 12px;
-  border: 1px solid rgba(34, 211, 238, 0.22);
+  border: 1px solid rgba(34, 211, 238, 0.18);
   border-radius: 8px;
-  background: rgba(8, 145, 178, 0.16);
+  background: rgba(8, 145, 178, 0.12);
   padding: 12px;
 }
 
-.gc-latest-run span {
-  color: #7dd3fc;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.gc-latest-run strong {
-  color: #f8fafc;
+.gc-history-actions .gc-ghost,
+.gc-history-actions .gc-primary {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 12px;
 }
 
 .gc-table-scroll {
@@ -1067,6 +908,69 @@ const detailStyles = `
 
 .gc-table {
   min-width: 820px;
+}
+
+.gc-history-panel .gc-table {
+  display: block;
+  min-width: 0;
+  width: 100%;
+}
+
+.gc-history-panel .gc-table thead {
+  display: none;
+}
+
+.gc-history-panel .gc-table tbody {
+  display: grid;
+  gap: 10px;
+}
+
+.gc-history-panel .gc-table tr {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.56);
+  padding: 12px;
+}
+
+.gc-history-panel .gc-table td {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border-bottom: 0;
+  padding: 0;
+}
+
+.gc-history-panel .gc-table td::before {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.gc-history-panel .gc-table td:nth-child(1)::before {
+  content: "Status";
+}
+
+.gc-history-panel .gc-table td:nth-child(2)::before {
+  content: "Provider";
+}
+
+.gc-history-panel .gc-table td:nth-child(3)::before {
+  content: "Verdict";
+}
+
+.gc-history-panel .gc-table td:nth-child(4)::before {
+  content: "Skill snapshot";
+}
+
+.gc-history-panel .gc-table td:nth-child(5)::before {
+  content: "Created";
+}
+
+.gc-history-panel .gc-table td:nth-child(6)::before {
+  content: "Open";
 }
 
 .gc-table th,
@@ -1117,7 +1021,7 @@ const detailStyles = `
 }
 
 .gc-source-trace {
-  max-width: 220px;
+  max-width: 100%;
   overflow: hidden;
   color: #bae6fd;
   text-overflow: ellipsis;
@@ -1125,11 +1029,15 @@ const detailStyles = `
 }
 
 .gc-error-text {
-  max-width: 240px;
+  display: -webkit-box;
+  max-width: 100%;
   margin-top: 8px;
+  overflow: hidden;
   color: #fca5a5;
   font-size: 12px;
   line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .gc-compact-link {
@@ -1154,9 +1062,75 @@ const detailStyles = `
   min-height: 88px;
 }
 
+.gc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  background: rgba(3, 7, 18, 0.62);
+  padding: 112px 16px 24px;
+}
+
+.gc-model-modal {
+  width: min(420px, 100%);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: #0d1424;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.46);
+  padding: 16px;
+}
+
+.gc-model-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.gc-model-modal-header h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.gc-icon-button {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.gc-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 @media (max-width: 1100px) {
   .gc-detail-grid,
   .gc-stepper {
+    grid-template-columns: 1fr;
+  }
+
+  .gc-right-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .gc-right-column {
     grid-template-columns: 1fr;
   }
 }
@@ -1173,16 +1147,6 @@ const detailStyles = `
 
   .gc-hero h1 {
     font-size: 30px;
-  }
-
-  .gc-meta-grid,
-  .gc-advanced-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .gc-text-tools {
-    align-items: stretch;
-    flex-direction: column;
   }
 }
 `;

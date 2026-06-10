@@ -80,6 +80,34 @@ Primary plan index:
 - [x] Fix document queue table compression at medium desktop widths: the side
   activity panels now stack below the table before the type/readiness columns
   become too narrow, and short type badges such as `GATE 2` stay on one line.
+- [x] Simplify the dark redesign navigation and documents workspace: remove
+  redundant environment/admin chips and duplicate document side panels, move
+  primary navigation from the left sidebar to a top header, fold user/logout
+  controls into that header, and widen the document detail workspace for dense
+  review screens.
+- [x] Consolidate document upload into the main Documents page and remove the
+  redundant `/documents/upload` route and navigation item.
+- [x] Fix document detail overflow by narrowing the launch-analysis column and
+  rendering analysis history as compact rows inside the panel instead of a wide
+  table that pushes the page past the viewport.
+- [x] Simplify document detail controls: remove duplicate header actions and
+  manual document type editing, keep document actions in one panel, and make
+  analysis launch use a saved provider key with an editable model.
+- [x] Remove low-value parsed-text helpers from document detail so the parsed
+  text panel shows the document content directly without search controls or
+  section chips.
+- [x] Merge document actions and analysis launch controls into one compact
+  document-detail button block, moving provider/model selection into a small
+  modal opened from the Model button.
+- [x] Render parsed document text and native analysis outputs as Markdown,
+  including headings, emphasis, lists, code blocks, and scroll-safe tables
+  without adding a frontend dependency.
+- [x] Remove the internal vertical scroll from the document Parsed text panel
+  so the full parsed markdown content expands on the page.
+- [x] Replace the low-value Latest callout in document Analysis history with
+  Model and Start new analysis actions, keeping file actions separate.
+- [x] Shorten failed analysis messages in document history cards by showing a
+  compact provider error summary while keeping the raw error in hover details.
 
 ## Phase 1: Skeleton And Data Foundation
 

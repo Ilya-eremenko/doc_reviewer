@@ -183,19 +183,6 @@ export default function DocumentsPage() {
     });
   }, [documents, parseFilter, query]);
 
-  const recentDocuments = useMemo(
-    () =>
-      [...documents]
-        .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
-        .slice(0, 5),
-    [documents],
-  );
-
-  const unresolvedDocuments = useMemo(
-    () => documents.filter((document) => document.parse_status !== "completed" || document.parse_error).slice(0, 5),
-    [documents],
-  );
-
   return (
     <AppShell>
       <main className="gc-dark-page documents-review">
@@ -205,14 +192,6 @@ export default function DocumentsPage() {
             <p className="gc-eyebrow">Review queue</p>
             <h1>Documents</h1>
             <p className="gc-muted">Uploaded defenses, parser state, and analysis readiness.</p>
-          </div>
-          <div className="gc-hero-actions">
-            <button className="gc-ghost" disabled={loading} type="button" onClick={() => void refresh()}>
-              Refresh
-            </button>
-            <button className="gc-primary" type="button" onClick={() => fileInputRef.current?.click()}>
-              Upload
-            </button>
           </div>
         </section>
 
@@ -352,136 +331,88 @@ export default function DocumentsPage() {
           </div>
         </section>
 
-        <div className="gc-review-grid">
-          <section className="gc-panel gc-table-panel">
-            <div className="gc-panel-heading">
-              <div>
-                <h2>Queue</h2>
-                <p>{loading ? "Loading documents" : `${filteredDocuments.length} shown from ${documents.length}`}</p>
-              </div>
+        <section className="gc-panel gc-table-panel">
+          <div className="gc-panel-heading">
+            <div>
+              <h2>Queue</h2>
+              <p>{loading ? "Loading documents" : `${filteredDocuments.length} shown from ${documents.length}`}</p>
             </div>
+          </div>
 
-            {loading ? <div className="gc-empty">Loading documents...</div> : null}
-            {!loading && documents.length === 0 ? (
-              <div className="gc-empty">
-                <strong>No documents yet.</strong>
-                <span>Use the upload panel above to add the first document.</span>
-              </div>
-            ) : null}
-            {!loading && documents.length > 0 && filteredDocuments.length === 0 ? (
-              <div className="gc-empty">No documents match the current filters.</div>
-            ) : null}
+          {loading ? <div className="gc-empty">Loading documents...</div> : null}
+          {!loading && documents.length === 0 ? (
+            <div className="gc-empty">
+              <strong>No documents yet.</strong>
+              <span>Use the upload panel above to add the first document.</span>
+            </div>
+          ) : null}
+          {!loading && documents.length > 0 && filteredDocuments.length === 0 ? (
+            <div className="gc-empty">No documents match the current filters.</div>
+          ) : null}
 
-            {filteredDocuments.length > 0 ? (
-              <div className="gc-table-scroll">
-                <table className="gc-table">
-                  <thead>
-                    <tr>
-                      <th>Document</th>
-                      <th>Type</th>
-                      <th>Parse</th>
-                      <th>Readiness</th>
-                      <th>Uploaded</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredDocuments.map((document) => {
-                      const signal = getDocumentSignal(document);
+          {filteredDocuments.length > 0 ? (
+            <div className="gc-table-scroll">
+              <table className="gc-table">
+                <thead>
+                  <tr>
+                    <th>Document</th>
+                    <th>Type</th>
+                    <th>Parse</th>
+                    <th>Readiness</th>
+                    <th>Uploaded</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDocuments.map((document) => {
+                    const signal = getDocumentSignal(document);
 
-                      return (
-                        <tr key={document.id}>
-                          <td>
-                            <div className="gc-title-cell">
-                              <strong>{document.title}</strong>
-                              <span>{document.original_filename}</span>
-                              <small>{formatBytes(document.file_size_bytes)}</small>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="gc-type-badge">{getEffectiveType(document)}</span>
-                            {document.manual_document_type ? <div className="gc-subtle">manual override</div> : null}
-                          </td>
-                          <td>
-                            <StatusBadge status={document.parse_status} />
-                            {document.parse_error ? <div className="gc-error-text">{document.parse_error}</div> : null}
-                          </td>
-                          <td>
-                            <span className={`gc-signal is-${signal.tone}`}>{signal.label}</span>
-                          </td>
-                          <td>
-                            <span className="gc-date">{formatDate(document.created_at)}</span>
-                          </td>
-                          <td>
-                            <div className="gc-action-row">
-                              <Link className="gc-compact-link" href={`/documents/${document.id}`}>
-                                Open
-                              </Link>
-                              <button
-                                className="gc-compact-danger"
-                                disabled={deletingId === document.id}
-                                type="button"
-                                onClick={() => handleDelete(document)}
-                              >
-                                {deletingId === document.id ? "Deleting" : "Delete"}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </section>
-
-          <aside className="gc-side-panel" aria-label="Recent activity and unresolved parser work">
-            <section className="gc-panel">
-              <div className="gc-panel-heading">
-                <div>
-                  <h2>Recent activity</h2>
-                  <p>Derived from document updates.</p>
-                </div>
-              </div>
-              <div className="gc-activity-list">
-                {recentDocuments.length === 0 ? <div className="gc-empty compact">No activity yet.</div> : null}
-                {recentDocuments.map((document) => (
-                  <Link className="gc-activity-item" href={`/documents/${document.id}`} key={document.id}>
-                    <span>
-                      <strong>{document.title}</strong>
-                      <small>{formatDate(document.updated_at)}</small>
-                    </span>
-                    <StatusBadge status={document.parse_status} />
-                  </Link>
-                ))}
-              </div>
-            </section>
-
-            <section className="gc-panel">
-              <div className="gc-panel-heading">
-                <div>
-                  <h2>Unresolved</h2>
-                  <p>Parser work still blocking analysis.</p>
-                </div>
-              </div>
-              <div className="gc-activity-list">
-                {unresolvedDocuments.length === 0 ? (
-                  <div className="gc-empty compact">No parser blockers in the current queue.</div>
-                ) : null}
-                {unresolvedDocuments.map((document) => (
-                  <Link className="gc-activity-item" href={`/documents/${document.id}`} key={document.id}>
-                    <span>
-                      <strong>{document.title}</strong>
-                      <small>{document.parse_error ?? formatLabel(document.parse_status)}</small>
-                    </span>
-                    <StatusBadge status={document.parse_status} />
-                  </Link>
-                ))}
-              </div>
-            </section>
-          </aside>
-        </div>
+                    return (
+                      <tr key={document.id}>
+                        <td>
+                          <div className="gc-title-cell">
+                            <strong>{document.title}</strong>
+                            <span>{document.original_filename}</span>
+                            <small>{formatBytes(document.file_size_bytes)}</small>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="gc-type-badge">{getEffectiveType(document)}</span>
+                          {document.manual_document_type ? <div className="gc-subtle">manual override</div> : null}
+                        </td>
+                        <td>
+                          <StatusBadge status={document.parse_status} />
+                          {document.parse_error ? <div className="gc-error-text">{document.parse_error}</div> : null}
+                        </td>
+                        <td>
+                          <span className={`gc-signal is-${signal.tone}`}>{signal.label}</span>
+                        </td>
+                        <td>
+                          <span className="gc-date">{formatDate(document.created_at)}</span>
+                        </td>
+                        <td>
+                          <div className="gc-action-row">
+                            <Link className="gc-compact-link" href={`/documents/${document.id}`}>
+                              Open
+                            </Link>
+                            <button
+                              className="gc-compact-danger"
+                              disabled={deletingId === document.id}
+                              type="button"
+                              onClick={() => handleDelete(document)}
+                            >
+                              {deletingId === document.id ? "Deleting" : "Delete"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
       </main>
     </AppShell>
   );
@@ -522,18 +453,14 @@ const documentsStyles = `
 
 .gc-hero,
 .gc-controls,
-.gc-review-grid,
 .gc-upload-form,
-.gc-hero-actions,
 .gc-action-row,
 .gc-filter-tabs {
   display: flex;
 }
 
 .gc-hero {
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
+  align-items: flex-start;
   margin-bottom: 22px;
 }
 
@@ -558,8 +485,7 @@ const documentsStyles = `
 .gc-subtle,
 .gc-date,
 .gc-title-cell span,
-.gc-title-cell small,
-.gc-activity-item small {
+.gc-title-cell small {
   color: #94a3b8;
 }
 
@@ -567,7 +493,6 @@ const documentsStyles = `
   margin: 8px 0 0;
 }
 
-.gc-hero-actions,
 .gc-action-row {
   align-items: center;
   gap: 10px;
@@ -605,8 +530,7 @@ const documentsStyles = `
 
 .gc-ghost:hover,
 .gc-compact-link:hover,
-.gc-filter-tabs button:hover,
-.gc-activity-item:hover {
+.gc-filter-tabs button:hover {
   border-color: rgba(125, 211, 252, 0.54);
 }
 
@@ -885,13 +809,6 @@ const documentsStyles = `
   color: #a5f3fc;
 }
 
-.gc-review-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  gap: 16px;
-  align-items: start;
-}
-
 .gc-panel {
   border-radius: 8px;
   padding: 16px;
@@ -964,8 +881,7 @@ const documentsStyles = `
   min-width: 240px;
 }
 
-.gc-title-cell strong,
-.gc-activity-item strong {
+.gc-title-cell strong {
   color: #f8fafc;
 }
 
@@ -1063,45 +979,6 @@ const documentsStyles = `
   color: #fecaca;
 }
 
-.gc-side-panel {
-  display: grid;
-  gap: 16px;
-}
-
-.gc-side-panel .gc-panel {
-  padding: 0;
-}
-
-.gc-activity-list {
-  display: grid;
-  gap: 8px;
-  padding: 0 12px 12px;
-}
-
-.gc-activity-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.58);
-  padding: 12px;
-}
-
-.gc-activity-item span {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.gc-activity-item strong,
-.gc-activity-item small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .gc-empty {
   display: grid;
   gap: 14px;
@@ -1146,23 +1023,8 @@ const documentsStyles = `
   }
 }
 
-@media (max-width: 1620px) {
-  .gc-review-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .gc-side-panel {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 980px) {
-  .gc-review-grid,
   .gc-upload-form {
-    grid-template-columns: 1fr;
-  }
-
-  .gc-side-panel {
     grid-template-columns: 1fr;
   }
 
@@ -1172,9 +1034,6 @@ const documentsStyles = `
     flex-direction: column;
   }
 
-  .gc-hero-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 640px) {
@@ -1186,7 +1045,6 @@ const documentsStyles = `
     font-size: 32px;
   }
 
-  .gc-hero-actions,
   .gc-action-row {
     flex-wrap: wrap;
   }
