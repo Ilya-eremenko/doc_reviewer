@@ -112,6 +112,7 @@ def test_create_etalon_draft_maps_gate_challenger_layers(client, db_session):
             {
                 "id": "L2-001",
                 "parent_layer_1_id": "L1-001",
+                "status": "fail",
                 "severity": "high",
                 "title": "Incrementality evidence is missing",
                 "atomic_issue": "The claimed metric lift is not tied to a holdout.",

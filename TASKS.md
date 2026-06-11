@@ -21,6 +21,28 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Add structured Layer 1 / Layer 2 rendering on the analysis result page:
+  Layer 2 questions now group under their parent Layer 1 item and show the
+  contract `status` as `PASS` / `PARTIAL` / `FAIL`, with the Gate Challenger
+  output schema and prompt updated so future runs return `layer_2.status`.
+- [x] Diagnose analysis `23998695-0529-44b0-9b04-f1a50e898e2d` failure:
+  both Devil's Advocate prepass and Gate Challenger main run used
+  `openai_compatible` / `anthropic/claude-opus-4.6` and timed out upstream
+  after roughly three minutes per provider request; the page can appear
+  `running` until refreshed because the analysis detail UI fetches once and
+  does not poll running runs.
+- [x] Fix Devil's Advocate prepass failures when OpenAI-compatible Gemini
+  returns only `run_mode` plus rich `native_markdown`: worker validation now
+  normalizes that markdown into the required structured contract while
+  preserving raw provider output; verified with worker/API tests.
+- [x] Diagnose degraded Gate Challenger output for analysis
+  `f0d07e82-8bfd-49fe-98b2-f6a185146978`: the run used
+  `openai_compatible` / `gemini-3.5-flash`, the Devil's Advocate prepass failed
+  schema validation after returning only `run_mode` and `native_markdown`, Gate
+  Challenger therefore ran without `gate_challenger_layer_4_context`, and the
+  document has `detected_document_type=gate_3` but
+  `manual_document_type=gate_2`, causing run metadata and rendered prompts to
+  disagree about the stage.
 - [x] Diagnose Devil's Advocate table rendering discrepancy: the older
   `anthropic/claude-opus-4.6` run returned pipe-table Markdown plus
   `anchored_comments`, while the newer `gemini-3.5-flash` RU prepass returned

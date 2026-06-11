@@ -531,6 +531,7 @@ def _main_analysis_json(summary: str = "Needs evidence.") -> str:
                 {
                     "id": "L2-001",
                     "parent_layer_1_id": "L1-001",
+                    "status": "fail",
                     "severity": "high",
                     "title": "Atomic weak-link finding",
                     "atomic_issue": "A key target is not evidenced.",

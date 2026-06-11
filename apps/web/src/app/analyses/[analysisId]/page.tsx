@@ -20,7 +20,10 @@ import { submitFeedback } from "@/lib/api/feedback";
 import { formatDate, formatLabel } from "@/lib/format";
 import {
   analysisShortSummary,
+  buildLayeredGateChecks,
   devilsAdvocateRoleComments,
+  type LayeredGateCheck,
+  type LayeredGateLayer2Check,
   type DevilsAdvocateRoleComment,
   splitDevilsAdvocateMarkdown,
   stripAssessmentHeading,
@@ -295,7 +298,9 @@ function RunDetailsDialog({ analysis, onClose }: { analysis: AnalysisRecord; onC
 
 function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
   const sections = mainSkillMarkdownSections(analysis);
-  const hasDetailedChecks = Boolean(sections.layer1 || sections.layer2);
+  const layeredChecks = buildLayeredGateChecks(analysis.structured_output);
+  const hasStructuredDetailedChecks = layeredChecks.length > 0;
+  const hasDetailedChecks = hasStructuredDetailedChecks || Boolean(sections.layer1 || sections.layer2);
   const shortSummary = analysisShortSummary(analysis);
 
   return (
@@ -326,11 +331,95 @@ function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
       {hasDetailedChecks ? (
         <section className="analysis-detail-checks" aria-label="Detailed checks">
           <h3>Detailed checks</h3>
-          {sections.layer1 ? <CollapsibleMarkdown title="Layer 1" markdown={sections.layer1} /> : null}
-          {sections.layer2 ? <CollapsibleMarkdown title="Layer 2" markdown={sections.layer2} /> : null}
+          {hasStructuredDetailedChecks ? (
+            <LayeredGateChecks groups={layeredChecks} />
+          ) : (
+            <>
+              {sections.layer1 ? <CollapsibleMarkdown title="Layer 1" markdown={sections.layer1} /> : null}
+              {sections.layer2 ? <CollapsibleMarkdown title="Layer 2" markdown={sections.layer2} /> : null}
+            </>
+          )}
         </section>
       ) : null}
     </section>
+  );
+}
+
+function LayeredGateChecks({ groups }: { groups: LayeredGateCheck[] }) {
+  return (
+    <div className="analysis-layered-checks">
+      {groups.map((group, index) => (
+        <details className="analysis-layer-group" key={group.id} open={index === 0}>
+          <summary>
+            <span className="analysis-layer-group__summary">
+              <span>Layer 1 · {group.id}</span>
+              <strong>{group.issue}</strong>
+            </span>
+            <span className={`analysis-severity analysis-severity--${toneForValue(group.severity)}`}>
+              {formatLabel(group.severity)}
+            </span>
+          </summary>
+          <div className="analysis-layer-group__body">
+            <div className="analysis-layer-fields" aria-label={`Layer 1 ${group.id} details`}>
+              <LabeledText label="Issue" value={group.issue} />
+              <LabeledText label="Evidence" value={group.evidence} />
+              <LabeledText label="Severity" value={formatLabel(group.severity)} />
+            </div>
+            <div className="analysis-layer2-list">
+              <div className="analysis-layer2-list__heading">Layer 2 questions</div>
+              {group.layer2.length ? (
+                group.layer2.map((item) => <Layer2Question key={item.id} item={item} />)
+              ) : (
+                <p className="analysis-muted">No linked Layer 2 checks.</p>
+              )}
+            </div>
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+function Layer2Question({ item }: { item: LayeredGateLayer2Check }) {
+  return (
+    <article className="analysis-layer2-question">
+      <div className="analysis-layer2-question__top">
+        <span>{item.id}</span>
+        <Layer2AnswerBadge item={item} />
+      </div>
+      <h4>{item.title}</h4>
+      <div className="analysis-layer-fields analysis-layer-fields--compact">
+        <LabeledText label="Issue" value={item.issue} />
+        <LabeledText label="Evidence" value={item.evidence} />
+        {item.risk ? <LabeledText label="Risk" value={item.risk} /> : null}
+        {item.recommendation ? <LabeledText label="Recommendation" value={item.recommendation} /> : null}
+      </div>
+    </article>
+  );
+}
+
+function Layer2AnswerBadge({ item }: { item: LayeredGateLayer2Check }) {
+  if (item.status) {
+    return (
+      <span className={`analysis-answer analysis-answer--${toneForValue(item.status)}`}>
+        {item.status.toUpperCase()}
+      </span>
+    );
+  }
+
+  return (
+    <span className={`analysis-answer analysis-answer--${toneForValue(item.severity)}`}>
+      {item.severity ? `SEVERITY ${item.severity.toUpperCase()}` : "NO STATUS"}
+    </span>
+  );
+}
+
+function LabeledText({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="analysis-layer-field">
+      <span>{label}</span>
+      <p>{value}</p>
+    </div>
   );
 }
 
@@ -1348,6 +1437,159 @@ const analysisStyles = `
 
 .analysis-detail-checks h3 {
   color: #f8fafc;
+}
+
+.analysis-layered-checks {
+  display: grid;
+  gap: 10px;
+}
+
+.analysis-layer-group {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.42);
+  overflow: hidden;
+}
+
+.analysis-layer-group summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 58px;
+  cursor: pointer;
+  padding: 14px;
+}
+
+.analysis-layer-group__summary {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.analysis-layer-group__summary span {
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.analysis-layer-group__summary strong {
+  color: #f8fafc;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.analysis-layer-group__body {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 14px;
+}
+
+.analysis-layer-fields {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.44);
+  padding: 12px;
+}
+
+.analysis-layer-fields--compact {
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.analysis-layer-field {
+  display: grid;
+  gap: 4px;
+}
+
+.analysis-layer-field span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.analysis-layer-field p {
+  color: #dbeafe;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.analysis-layer2-list {
+  display: grid;
+  gap: 10px;
+}
+
+.analysis-layer2-list__heading {
+  color: #bfdbfe;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.analysis-layer2-question {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.34);
+  padding: 12px;
+}
+
+.analysis-layer2-question__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.analysis-layer2-question__top > span:first-child {
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.analysis-layer2-question h4 {
+  color: #f8fafc;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.analysis-answer {
+  flex-shrink: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.analysis-answer--good {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(22, 163, 74, 0.14);
+  color: #86efac;
+}
+
+.analysis-answer--warn {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(180, 83, 9, 0.16);
+  color: #fde68a;
+}
+
+.analysis-answer--bad {
+  border-color: rgba(239, 68, 68, 0.36);
+  background: rgba(185, 28, 28, 0.16);
+  color: #fecaca;
 }
 
 .analysis-da-sections {

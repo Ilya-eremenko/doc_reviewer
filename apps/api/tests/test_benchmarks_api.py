@@ -119,6 +119,7 @@ def _main_analysis_json() -> str:
                 {
                     "id": "L2-001",
                     "parent_layer_1_id": "L1-001",
+                    "status": "fail",
                     "severity": "high",
                     "title": "No incrementality evidence",
                     "atomic_issue": "The metric uplift is not separated from baseline effects.",

@@ -40,6 +40,7 @@ def test_main_analysis_schema_accepts_valid_result():
             {
                 "id": "L2-001",
                 "parent_layer_1_id": "L1-001",
+                "status": "fail",
                 "severity": "high",
                 "title": "Atomic weak-link finding",
                 "atomic_issue": "CR creation to payment missed target.",
@@ -92,6 +93,7 @@ def test_main_analysis_schema_accepts_gate_challenger_parity_fields():
             {
                 "id": "L2-001",
                 "parent_layer_1_id": "L1-001",
+                "status": "fail",
                 "severity": "high",
                 "title": "Atomic weak-link finding",
                 "atomic_issue": "CR creation to payment missed target.",
@@ -146,6 +148,7 @@ def test_main_analysis_schema_rejects_expanded_layer_1_fields():
             {
                 "id": "L2-001",
                 "parent_layer_1_id": "L1-001",
+                "status": "fail",
                 "severity": "high",
                 "title": "Atomic weak-link finding",
                 "atomic_issue": "CR creation to payment missed target.",

@@ -44,6 +44,7 @@ def test_gate2_challenger_renderer_frames_external_skill_with_schema_and_documen
     assert "layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence." in prompt
     assert "title, issue, evidence, impact, recommendation" not in prompt
     assert "layer_2_markdown" in prompt
+    assert "layer_2: structured copy of every Layer 2 atomic weak-link item with parent_layer_1_id and status" in prompt
     assert "The initiative claims strong MVP traction" in prompt
 
 

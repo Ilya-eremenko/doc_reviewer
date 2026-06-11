@@ -19,6 +19,26 @@ export type DevilsAdvocateRoleComment = {
   severity: string | null;
 };
 
+export type LayeredGateCheck = {
+  id: string;
+  severity: string | null;
+  issue: string;
+  evidence: string;
+  layer2: LayeredGateLayer2Check[];
+};
+
+export type LayeredGateLayer2Check = {
+  id: string;
+  parentLayer1Id: string;
+  status: string | null;
+  severity: string | null;
+  title: string;
+  issue: string;
+  evidence: string;
+  risk: string | null;
+  recommendation: string | null;
+};
+
 export function analysisShortSummary(analysis: SummarySource): string | null {
   return analysis.summary || summaryFromOutput(analysis.structured_output);
 }
@@ -98,6 +118,69 @@ export function devilsAdvocateRoleComments(
   });
 }
 
+export function buildLayeredGateChecks(output: Record<string, unknown> | null | undefined): LayeredGateCheck[] {
+  const markdownStatuses = parseLayer2MarkdownStatuses(asString(output?.layer_2_markdown));
+  const layer1 = asRecordArray(output?.layer_1)
+    .map((record, index) => {
+      const id = asString(record.id) || `L1-${index + 1}`;
+      const issue = asString(record.issue);
+      const evidence = asString(record.evidence);
+      if (!issue || !evidence) {
+        return null;
+      }
+
+      return {
+        id,
+        severity: asString(record.severity),
+        issue,
+        evidence,
+        layer2: [] as LayeredGateLayer2Check[],
+      };
+    })
+    .filter((record): record is LayeredGateCheck => Boolean(record));
+
+  if (!layer1.length) {
+    return [];
+  }
+
+  const groupsById = new Map(layer1.map((group) => [group.id, group]));
+  const groupIndexById = new Map(layer1.map((group, index) => [group.id, index]));
+  for (const [index, record] of asRecordArray(output?.layer_2).entries()) {
+    const parentLayer1Id = asString(record.parent_layer_1_id);
+    if (!parentLayer1Id) {
+      continue;
+    }
+    const group = groupsById.get(parentLayer1Id);
+    if (!group) {
+      continue;
+    }
+
+    const title = asString(record.title) || asString(record.check) || `Layer 2 check ${index + 1}`;
+    const issue = asString(record.atomic_issue) || asString(record.finding) || asString(record.risk) || title;
+    const evidence = asString(record.evidence) || asString(record.explanation) || "";
+    const groupIndex = groupIndexById.get(parentLayer1Id) ?? -1;
+    const childIndex = group.layer2.length;
+    const status =
+      normalizeCheckStatus(record.status) ||
+      markdownStatuses.byQuestion.get(normalizeQuestionKey(title)) ||
+      markdownStatuses.byGroup[groupIndex]?.[childIndex] ||
+      null;
+    group.layer2.push({
+      id: asString(record.id) || `L2-${index + 1}`,
+      parentLayer1Id,
+      status,
+      severity: asString(record.severity),
+      title,
+      issue,
+      evidence,
+      risk: asString(record.risk),
+      recommendation: asString(record.recommendation) || asString(record.expected_fix),
+    });
+  }
+
+  return layer1;
+}
+
 function summaryFromOutput(output: Record<string, unknown> | null | undefined): string | null {
   const narrative = asRecord(output?.narrative_summary);
   return (
@@ -165,4 +248,65 @@ function asRecordArray(value: unknown): Record<string, unknown>[] {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function normalizeCheckStatus(value: unknown): string | null {
+  const normalized = asString(value)?.toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized === "yes") {
+    return "pass";
+  }
+  if (normalized === "no") {
+    return "fail";
+  }
+  return ["pass", "partial", "fail", "not_applicable"].includes(normalized) ? normalized : null;
+}
+
+function parseLayer2MarkdownStatuses(markdown: string | null): { byGroup: string[][]; byQuestion: Map<string, string> } {
+  const byQuestion = new Map<string, string>();
+  const byGroup: string[][] = [];
+  if (!markdown) {
+    return { byGroup, byQuestion };
+  }
+
+  let currentQuestion: string | null = null;
+  let currentGroupIndex = -1;
+  for (const line of markdown.split(/\r?\n/)) {
+    if (/^\s*#{1,6}\s+Atomic checks\b/i.test(line)) {
+      currentGroupIndex += 1;
+      byGroup[currentGroupIndex] = [];
+      currentQuestion = null;
+      continue;
+    }
+
+    const questionMatch = line.match(/^\s*-\s*question:\s*(.+?)\s*$/i);
+    if (questionMatch) {
+      currentQuestion = questionMatch[1];
+      continue;
+    }
+
+    if (!currentQuestion) {
+      continue;
+    }
+    const answerMatch = line.match(/^\s*answer:\s*([A-Z_]+)\s*$/i);
+    if (!answerMatch) {
+      continue;
+    }
+    const status = normalizeCheckStatus(answerMatch[1]);
+    if (status) {
+      byQuestion.set(normalizeQuestionKey(currentQuestion), status);
+      if (currentGroupIndex >= 0) {
+        byGroup[currentGroupIndex].push(status);
+      }
+    }
+    currentQuestion = null;
+  }
+
+  return { byGroup, byQuestion };
+}
+
+function normalizeQuestionKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }

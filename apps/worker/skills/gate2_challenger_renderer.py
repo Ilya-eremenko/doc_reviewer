@@ -56,7 +56,8 @@ def render_gate2_challenger_prompt(
                     "Each Layer 1 item must expose only issue, evidence, and severity; do not add Title, Impact, or Recommendation subblocks.",
                     "3. layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence.",
                     "4. layer_2_markdown: reader-facing Layer 2 block after Layer 1, in strict Gate Challenger format.",
-                    "5. layer_2: structured copy of every Layer 2 atomic weak-link item with parent_layer_1_id.",
+                    "5. layer_2: structured copy of every Layer 2 atomic weak-link item with parent_layer_1_id "
+                    "and status using pass, partial, fail, or not_applicable.",
                     "Use Layer 4 expert analysis to strengthen or supplement Gate Challenger findings when it adds "
                     "document-grounded issues or reinforces problems you independently find.",
                     "Do not collapse Layer 1/Layer 2 into generic findings. The display order is always: "

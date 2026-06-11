@@ -101,6 +101,7 @@ def _main_analysis_json_with_benchmark_ids() -> str:
                 {
                     "id": "A2",
                     "parent_layer_1_id": "A1",
+                    "status": "fail",
                     "severity": "high",
                     "title": "No incrementality evidence",
                     "atomic_issue": "The metric uplift is not separated from baseline effects.",
@@ -185,7 +186,7 @@ def _create_etalon(db: Session, document: Document, user: User) -> Etalon:
         document_type=DocumentType.GATE_2.value,
         expected_verdict="need_evidence",
         layer_1=[{"id": "L1-001", "title": "Weak traction"}],
-        layer_2=[{"id": "L2-001", "parent_layer_1_id": "L1-001", "finding": "No incrementality"}],
+        layer_2=[{"id": "L2-001", "parent_layer_1_id": "L1-001", "status": "fail", "finding": "No incrementality"}],
         key_findings=["Weak traction"],
         forbidden_false_findings=[],
         status=EtalonStatus.ACTIVE.value,

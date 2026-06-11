@@ -103,6 +103,7 @@
       "required": [
         "id",
         "parent_layer_1_id",
+        "status",
         "severity",
         "title",
         "atomic_issue",
@@ -114,6 +115,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "parent_layer_1_id": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["pass", "partial", "fail", "not_applicable"] },
         "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
         "title": { "type": "string", "minLength": 1 },
         "atomic_issue": { "type": "string", "minLength": 1 },
