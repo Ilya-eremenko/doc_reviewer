@@ -18,7 +18,13 @@ import {
 import { createEtalonDraft } from "@/lib/api/etalons";
 import { submitFeedback } from "@/lib/api/feedback";
 import { formatDate, formatLabel } from "@/lib/format";
-import { analysisShortSummary, stripAssessmentHeading } from "./analysisDisplay";
+import {
+  analysisShortSummary,
+  devilsAdvocateRoleComments,
+  type DevilsAdvocateRoleComment,
+  splitDevilsAdvocateMarkdown,
+  stripAssessmentHeading,
+} from "./analysisDisplay";
 
 type AnalysisTab = "mainOutput" | "devilsAdvocate" | "fullOutput";
 
@@ -339,6 +345,8 @@ function PredictedSkillMarkdownPanel({ run }: { run: PredictedCommentRunRecord |
   }
 
   const markdown = predictedSkillMarkdown(run);
+  const sections = splitDevilsAdvocateMarkdown(markdown);
+  const roleComments = devilsAdvocateRoleComments(run.structured_output);
 
   return (
     <section className="analysis-card stack">
@@ -352,12 +360,61 @@ function PredictedSkillMarkdownPanel({ run }: { run: PredictedCommentRunRecord |
         <StatusBadge status={run.status} />
       </div>
       {run.error_message ? <div className="analysis-alert">{run.error_message}</div> : null}
-      {markdown ? (
-        <MarkdownPreview markdown={markdown} className="gc-markdown-preview--narrative" />
+      {sections.length ? (
+        <div className="analysis-da-sections">
+          {sections.map((section) => (
+            <section aria-label={section.title} className="analysis-da-section" key={section.title}>
+              <h3>{section.title}</h3>
+              {section.title === "Role comments / voter synthesis" && roleComments.length ? (
+                <DevilsAdvocateRoleCommentsTable comments={roleComments} />
+              ) : (
+                <MarkdownPreview markdown={section.markdown} className="gc-markdown-preview--narrative" />
+              )}
+            </section>
+          ))}
+        </div>
+      ) : roleComments.length ? (
+        <div className="analysis-da-sections">
+          <section aria-label="Role comments / voter synthesis" className="analysis-da-section">
+            <h3>Role comments / voter synthesis</h3>
+            <DevilsAdvocateRoleCommentsTable comments={roleComments} />
+          </section>
+        </div>
       ) : (
         <p className="analysis-muted">No markdown output is available for this run yet.</p>
       )}
     </section>
+  );
+}
+
+function DevilsAdvocateRoleCommentsTable({ comments }: { comments: DevilsAdvocateRoleComment[] }) {
+  return (
+    <div className="analysis-role-comments-scroll">
+      <table className="analysis-role-comments-table">
+        <thead>
+          <tr>
+            <th>Voter</th>
+            <th>Vote</th>
+            <th>Anchor</th>
+            <th>Comment</th>
+            <th>Type</th>
+            <th>Severity</th>
+          </tr>
+        </thead>
+        <tbody>
+          {comments.map((comment) => (
+            <tr key={comment.id}>
+              <td>{comment.voter}</td>
+              <td>{comment.vote ? formatLabel(comment.vote) : "-"}</td>
+              <td>{comment.anchorText}</td>
+              <td>{comment.body}</td>
+              <td>{comment.commentType ? formatLabel(comment.commentType) : "-"}</td>
+              <td>{comment.severity ? formatLabel(comment.severity) : "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1291,6 +1348,92 @@ const analysisStyles = `
 
 .analysis-detail-checks h3 {
   color: #f8fafc;
+}
+
+.analysis-da-sections {
+  display: grid;
+  gap: 16px;
+}
+
+.analysis-da-section {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 16px;
+}
+
+.analysis-da-section:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.analysis-da-section h3 {
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.analysis-role-comments-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: #070a12;
+  -webkit-overflow-scrolling: touch;
+}
+
+.analysis-role-comments-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  color: #dbeafe;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.analysis-role-comments-table th,
+.analysis-role-comments-table td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.analysis-role-comments-table th {
+  background: rgba(15, 23, 42, 0.9);
+  color: #bfdbfe;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.analysis-role-comments-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.analysis-role-comments-table th:nth-child(1),
+.analysis-role-comments-table td:nth-child(1),
+.analysis-role-comments-table th:nth-child(2),
+.analysis-role-comments-table td:nth-child(2),
+.analysis-role-comments-table th:nth-child(5),
+.analysis-role-comments-table td:nth-child(5),
+.analysis-role-comments-table th:nth-child(6),
+.analysis-role-comments-table td:nth-child(6) {
+  min-width: 96px;
+  max-width: 140px;
+}
+
+.analysis-role-comments-table th:nth-child(3),
+.analysis-role-comments-table td:nth-child(3) {
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.analysis-role-comments-table th:nth-child(4),
+.analysis-role-comments-table td:nth-child(4) {
+  min-width: 420px;
+  max-width: 680px;
 }
 
 .analysis-markdown-details {

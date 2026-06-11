@@ -234,3 +234,57 @@ def test_devils_advocate_schema_accepts_retrieval_context():
     }
 
     validate(instance=payload, schema=schema)
+
+
+def test_devils_advocate_schema_requires_original_skill_role_comment_shape():
+    schema = load_schema("devils-advocate-result.schema.json")
+    payload = {
+        "run_mode": "full_ic_voting",
+        "native_markdown": "The Brutal Truth\n\nFatal flaw.\n\n=== IC Decision ===\nVerdict: Rework",
+        "preflight_summary": ["Stage: Gate-3"],
+        "brutal_truth": "Fatal flaw.",
+        "detected_contradictions": [],
+        "role_comments": [
+            {
+                "voter": "MP",
+                "vote": "reject",
+                "rationale": "No incrementality proof.",
+                "comments": [
+                    {
+                        "anchor_text": "CR contact to payment",
+                        "body": "What is the baseline and control group?",
+                        "comment_type": "missing_data",
+                        "severity": "critical",
+                    }
+                ],
+            },
+            {"voter": "CPO", "vote": "reject", "rationale": "Funnel target missed.", "comments": []},
+            {"voter": "TechDir", "vote": "reject", "rationale": "No A/B delta.", "comments": []},
+            {"voter": "VertDir", "vote": "approve", "rationale": "Direction is useful.", "comments": []},
+        ],
+        "tough_questions": [
+            {"question": "What is incremental impact?", "persona": "[[persona-managing-partner]]"},
+            {"question": "Why is Stage 2 treated as proven?", "persona": "[[persona-product-director]]"},
+            {"question": "Where is the A/B delta?", "persona": "[[persona-technical-director]]"},
+        ],
+        "actionable_jtbds": [
+            "Set a hard closure-test KPI gate.",
+            "Show gross profit and cumulative uplift.",
+            "Separate Stage 1 from Stage 2 HC ask.",
+        ],
+        "ic_decision": {
+            "verdict": "rework",
+            "vote_tally": {"MP": "reject", "CPO": "reject", "TechDir": "reject", "VertDir": "approve"},
+            "rationale": "Missing proof.",
+            "conditions": ["Set a hard closure-test KPI gate."],
+            "heuristics_fired": ["[[financial-hockey-stick]]"],
+            "patterns_fired": ["[[experimental-traction-gap]]"],
+            "precedents_anchored": ["[[ic-2025-292]]"],
+            "next_ic": "Q1 2027 after closure-test results",
+        },
+        "consulted_wiki_pages": ["wiki-ic/cases/incrementality.md"],
+        "source_citations": ["wiki-ic/cases/incrementality.md"],
+        "retrieval": {"retrieval_mode": "deterministic_topk"},
+    }
+
+    validate(instance=payload, schema=schema)

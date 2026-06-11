@@ -258,6 +258,39 @@ def test_devils_advocate_renderer_includes_main_result_and_selected_knowledge_ba
     assert "role_comments" in prompt
 
 
+def test_devils_advocate_renderer_requires_original_skill_comment_contract(tmp_path):
+    (tmp_path / "ic-voting-prompt.md").write_text("IC voting orchestrator", encoding="utf-8")
+    document = SimpleNamespace(
+        title="Gate 2 defense",
+        parsed_text="The document asks for investment approval without incrementality proof.",
+        manual_document_type=None,
+        detected_document_type="gate_2",
+    )
+    skill = SimpleNamespace(
+        name="devils_advocate_predefense",
+        version="baseline",
+        prompt_text="Fallback DA prompt",
+        source_uri=str(tmp_path / "ic-voting-prompt.md"),
+        source_entrypoint="ic-voting-prompt.md",
+        source_revision="def456",
+        source_fingerprint="da-fingerprint",
+        source_metadata={},
+    )
+    analysis = SimpleNamespace(verdict=None, summary=None, structured_output={})
+
+    prompt = render_devils_advocate_prompt(
+        document=document,
+        analysis=analysis,
+        skill=skill,
+        response_schema={"title": "DevilsAdvocateResult", "type": "object"},
+    )
+
+    assert "role_comments[].comments[]" in prompt
+    assert "anchor_text" in prompt
+    assert "body" in prompt
+    assert "Do not use anchor/comment aliases" in prompt
+
+
 def test_devils_advocate_renderer_can_require_english_output(tmp_path):
     (tmp_path / "ic-voting-prompt.md").write_text("IC voting orchestrator", encoding="utf-8")
     document = SimpleNamespace(

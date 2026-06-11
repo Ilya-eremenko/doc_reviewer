@@ -77,6 +77,12 @@ def render_devils_advocate_prompt(
                     "6. The \"Tough Co-CEO\" Questions",
                     "7. Actionable JTBDs",
                     "8. === IC Decision === block with vote tally, rationale, conditions, heuristics, patterns, precedents, next IC.",
+                    "role_comments must preserve the original ic-voting-prompt.md subagent contract:",
+                    "role_comments[].comments[] must contain exactly anchor_text, body, comment_type, severity.",
+                    "anchor_text must be an exact verbatim substring from the input document when possible.",
+                    "body must be clean IC-comment prose, no wiki links, no anonym slugs, no persona labels.",
+                    "severity for role comments must be one of critical, important, minor.",
+                    "Do not use anchor/comment aliases for role_comments[].comments[]; use anchor_text/body.",
                     "The required JSON fields must mirror native_markdown: preflight_summary, brutal_truth, "
                     "detected_contradictions, role_comments, tough_questions, actionable_jtbds, ic_decision, retrieval.",
                     "Do not return the old compact anchored_comments/trailer-only shape as the primary answer.",

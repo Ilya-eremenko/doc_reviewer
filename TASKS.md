@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Diagnose Devil's Advocate table rendering discrepancy: the older
+  `anthropic/claude-opus-4.6` run returned pipe-table Markdown plus
+  `anchored_comments`, while the newer `gemini-3.5-flash` RU prepass returned
+  prose sections without pipe tables or anchored comments, so the UI had no
+  table-shaped Markdown to render.
+- [x] Lock Devil's Advocate role-comment output to the original skill contract:
+  `role_comments[].comments[]` now uses `anchor_text`, `body`,
+  `comment_type`, and `severity`, with schema, worker prompt, UI extraction,
+  and tests aligned to that shape.
 - [x] Create root `AGENTS.md` with project, workflow, security, and
   repository-local context instructions.
 - [x] Create root `TASKS.md` aligned with the MVP phase plan.
@@ -143,6 +152,9 @@ Primary plan index:
 - [x] Tighten Gate Challenger Layer 1 output contract so Layer 1 items expose
   only `issue`, `evidence`, and `severity` instead of the older expanded
   `title` / `impact` / `recommendation` shape.
+- [x] Split Devil's Advocate result markdown into three reader-facing sections:
+  pre-role critique, Role comments / voter synthesis, and Actionable JTBDs;
+  verified with frontend tests, production build, and web container rebuild.
 
 ## Phase 1: Skeleton And Data Foundation
 
