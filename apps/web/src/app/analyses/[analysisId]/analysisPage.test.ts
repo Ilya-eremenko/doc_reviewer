@@ -1,0 +1,103 @@
+import { readFileSync } from "node:fs";
+
+import { describe, expect, it } from "vitest";
+
+describe("analysis result page", () => {
+  it("does not render run metadata under the Gate Challenger heading", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const mainPanelSource = pageSource.slice(
+      pageSource.indexOf("function MainSkillMarkdownPanel"),
+      pageSource.indexOf("function LayeredGateChecks"),
+    );
+
+    expect(mainPanelSource).not.toContain("analysis.skill_name");
+    expect(mainPanelSource).not.toContain("analysis.provider");
+    expect(mainPanelSource).not.toContain("analysis.model");
+  });
+
+  it("does not render a normal Layer 1 finding card for no-material PASS blocks", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(pageSource).toContain("hasMaterialLayer1Finding");
+    expect(pageSource).toContain("analysis-layer-clear-state");
+    expect(pageSource).toContain(
+      'group.issue !== "No material issue" ? <LabeledText label="Issue" value={group.issue} /> : null',
+    );
+  });
+
+  it("renders Layer 2 in the original skill format without risk, recommendation, or reference fields", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const layer2Source = pageSource.slice(
+      pageSource.indexOf("function Layer2Question"),
+      pageSource.indexOf("function LayerStatusBadge"),
+    );
+
+    expect(layer2Source).toContain('label="Evidence"');
+    expect(layer2Source).toContain('label="Issue"');
+    expect(layer2Source).not.toContain('label="Risk"');
+    expect(layer2Source).not.toContain('label="Recommendation"');
+    expect(layer2Source).not.toContain("evidenceDisplayLabel");
+  });
+
+  it("adds document comments as a focused tab before Full Output", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const tabsSource = pageSource.slice(
+      pageSource.indexOf("const analysisTabs"),
+      pageSource.indexOf("const feedbackRatings"),
+    );
+
+    expect(tabsSource).toContain('{ id: "documentComments", label: "Document comments" }');
+    expect(tabsSource.indexOf("Gate Challenger")).toBeLessThan(tabsSource.indexOf("Document comments"));
+    expect(tabsSource.indexOf("Document comments")).toBeLessThan(tabsSource.indexOf("Full Output"));
+    expect(tabsSource).not.toContain('id: "devilsAdvocate"');
+    expect(pageSource).toContain("function DocumentCommentsPanel");
+    expect(pageSource).not.toContain("Show in document");
+    expect(pageSource).not.toContain("Copy anchor");
+    expect(pageSource).not.toContain("All severity");
+  });
+
+  it("moves detailed checks and the full Devil's Advocate display into Full Output", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const mainPanelSource = pageSource.slice(
+      pageSource.indexOf("function MainSkillMarkdownPanel"),
+      pageSource.indexOf("function DetailedGateChecksOutput"),
+    );
+    const fullOutputSource = pageSource.slice(
+      pageSource.indexOf("function FullOutputPanel"),
+      pageSource.indexOf("function TracePanel"),
+    );
+
+    expect(mainPanelSource).not.toContain('aria-label="Detailed checks"');
+    expect(fullOutputSource).toContain("<DetailedGateChecksOutput analysis={analysis} />");
+    expect(fullOutputSource).toContain("<PredictedSkillOutputSection run={analysis.predicted_comment_run} />");
+  });
+
+  it("does not render the etalon draft action on the analysis page", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(pageSource).not.toContain("Etalon draft");
+    expect(pageSource).not.toContain("Create etalon draft");
+    expect(pageSource).not.toContain("createEtalonDraft");
+  });
+
+  it("collects feedback through a floating button and modal instead of a side card", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(pageSource).toContain("analysis-feedback-fab");
+    expect(pageSource).toContain("analysis-feedback-sheet");
+    expect(pageSource).not.toContain('className="analysis-card analysis-feedback-card stack"');
+    expect(pageSource).not.toContain('<aside className="analysis-inspector">');
+  });
+
+  it("renders the short summary text across the full summary card width", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const shortSummaryParagraphStyles = pageSource.slice(
+      pageSource.indexOf(".analysis-short-summary p"),
+      pageSource.indexOf(".analysis-detail-checks h3"),
+    );
+
+    expect(pageSource).toContain("<h3>Short summary</h3>");
+    expect(shortSummaryParagraphStyles).toContain("width: 100%");
+    expect(shortSummaryParagraphStyles).not.toContain("max-width");
+  });
+});

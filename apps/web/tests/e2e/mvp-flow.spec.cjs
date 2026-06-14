@@ -36,11 +36,10 @@ const mainAnalysisResult = {
       parent_layer_1_id: "L1-001",
       status: "fail",
       severity: "high",
-      title: "Incrementality evidence is missing",
-      atomic_issue: "The claimed metric lift is not tied to an experiment or comparable holdout.",
+      question: "Is incrementality evidence tied to an experiment or comparable holdout?",
+      answer: "NO",
+      issue: "The claimed metric lift is not tied to an experiment or comparable holdout.",
       evidence: "No cohort, control group, or before-after guardrail is provided.",
-      risk: "The investment case may overstate incremental impact.",
-      recommendation: "Provide an experiment readout with denominator, baseline, and confidence.",
     },
   ],
 };
@@ -148,6 +147,8 @@ test("admin creates user and user completes the MVP document analysis flow", asy
   await fillAndSubmitSignIn(page, adminLogin, adminPassword);
   await expect(page).toHaveURL(/\/documents/);
 
+  await saveDummyProviderKey(page, apiBaseUrl);
+
   await page.goto(`${baseUrl}/admin/users`);
   await page.getByLabel("Login").fill(userLogin);
   await page.getByLabel("Display name").fill("E2E User");
@@ -162,8 +163,6 @@ test("admin creates user and user completes the MVP document analysis flow", asy
 
   await page.goto(`${baseUrl}/documents`);
   await expect(page.getByRole("region", { name: "Upload document" })).toBeVisible();
-
-  await saveDummyProviderKey(page, apiBaseUrl);
 
   await page.getByLabel("Title").fill("E2E Gate 2 document");
   await page.getByLabel("Manual type").selectOption("gate_2");
@@ -192,7 +191,7 @@ test("admin creates user and user completes the MVP document analysis flow", asy
     method: "POST",
     body: {
       provider: "openai_compatible",
-      model: "gpt-test",
+      model: "openai/gpt-5.5",
       document_type_override: "gate_2",
       run_parameters: {
         snapshot_mode: "development_current",
@@ -219,7 +218,7 @@ test("admin creates user and user completes the MVP document analysis flow", asy
   await expect(page.getByRole("heading", { name: "Analysis" })).toBeVisible();
   await expect(page.getByText("Needs stronger metric evidence.", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("The document claims traction without a cohort or control-group readout.").first()).toBeVisible();
-  await page.getByRole("button", { name: "Devil's Advocate" }).click();
+  await page.getByRole("button", { name: "Full Output" }).click();
   await expect(page.getByRole("heading", { name: "Devil's Advocate" })).toBeVisible();
   await expect(page.getByText("What is incremental impact?", { exact: true }).first()).toBeVisible();
 
@@ -276,7 +275,8 @@ async function saveDummyProviderKey(page, apiBaseUrl) {
     body: {
       api_key: "sk-e2e-local-test",
       base_url: null,
-      default_model: "gpt-test",
+      default_model: "openai/gpt-5.5",
+      available_models: ["openai/gpt-5.5"],
     },
   });
 }

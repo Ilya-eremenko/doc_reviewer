@@ -21,6 +21,63 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Move analysis-page `Detailed checks` and the full Devil's Advocate
+  display into `Full Output`, leaving the main Gate Challenger tab focused on
+  summary/narrative output and removing the standalone Devil's Advocate tab;
+  verified with analysis page tests, full frontend tests, production build,
+  web container rebuild, and localhost browser smoke.
+- [x] Fix `short summary` display on the analysis page so summary text uses
+  the full card width instead of the old 92-character measure; verified with
+  the analysis page frontend test, production build, and web container
+  rebuild.
+- [x] Move analysis-page feedback collection to variant 2: a floating
+  bottom-right action opens a compact feedback sheet instead of reserving a
+  right-side card beside the analysis content. Verified with the analysis page
+  frontend test, production build, and web container rebuild.
+- [x] Remove the `Etalon draft` card and create-draft action from the
+  analysis result page for now; verified with the analysis page frontend test
+  production build, and web container rebuild.
+- [x] Add the analysis result `Document comments` tab between Gate Challenger
+  and Devil's Advocate: Devil's Advocate `role_comments` now map onto parsed
+  document anchors, render Google Docs-style role comment cards with vote-based
+  avatar rings, and support bidirectional anchor/card highlighting. Verified
+  with focused frontend tests, production build, and web container rebuild;
+  localhost analysis browser check reached the login screen without local
+  credentials.
+- [x] Restrict model selection to admin-managed shared provider settings:
+  admin provider keys now carry a model allowlist seeded with
+  `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`,
+  `deepseek/deepseek-v4-pro`, `google/gemini-3.5-flash`, `openai/gpt-5.5`,
+  and `qwen/qwen3.5-397b-a17b`; non-admin analysis and benchmark launches use
+  the shared admin key and select from the allowlist instead of free model
+  input. Verified with API/worker/frontend tests, production build, Alembic
+  upgrade on local Postgres, and rebuilt local API/web/worker containers.
+- [x] Realign Gate Challenger Layer 1 / Layer 2 display with the original
+  skill output contract for analysis `8a4f393b-e2b3-4947-9fca-b247ed2dfbb1`:
+  Layer 1 renders `issue` / `evidence` / `severity`, Layer 2 renders
+  `question` / `answer` / `evidence` / `issue`, and non-skill Layer 2 fields
+  such as `Risk`, `Recommendation`, and `Reference` are not shown; verified
+  with full API, worker, and web tests, production build, web container
+  rebuild, and localhost browser checks.
+- [x] Redesign the analysis result Layer 1 / Layer 2 display: the Gate
+  Challenger tab now shows a full collapsed Layer 1 checklist by canonical
+  block name and verdict, includes PASS/no-material markdown-only sections,
+  nests linked Layer 2 checks, and exposes Layer 2 question answers/evidence;
+  verified with frontend tests, production build, web container rebuild, and a
+  localhost browser check on analysis `8a4f393b-e2b3-4947-9fca-b247ed2dfbb1`.
+- [x] Add a structured Devil's Advocate to Gate Challenger Layer 4 synthesis:
+  completed DA prepass results now produce ranked must-review signals,
+  role consensus, decision metadata, and open IC questions, and the Gate prompt
+  tells the model not to silently drop critical/high/important DA signals.
+- [x] Remove the Gate Challenger section subtitle from the analysis result page
+  so `skill · provider · model` stays only in Run details; verified with the
+  analysis frontend test slice, production build, and web container rebuild.
+- [x] Diagnose current Layer 1 / Layer 2 glue for analysis
+  `8a4f393b-e2b3-4947-9fca-b247ed2dfbb1`: the main Gate Challenger view
+  renders 6 structured Layer 1 groups and 5 structured Layer 2 checks, while
+  the saved markdown also contains a `Problem framing and segments: PASS`
+  / `No material issue` Layer 1 section plus its Layer 2 `answer: YES`
+  question; those PASS-only markdown sections are visible only in Full Output.
 - [x] Finish the Paper Document detail page cleanup: replace the remaining
   dark-detail shell with the `Editable / Document detail` light layout,
   top-level document actions, compact model popover, workflow cards, parsed

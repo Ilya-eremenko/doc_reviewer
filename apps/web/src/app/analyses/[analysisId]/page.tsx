@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
@@ -9,19 +9,21 @@ import { StatusBadge } from "@/components/StatusBadge";
 import {
   getAnalysis,
   getDocument,
+  getParsedText,
   type AnalysisRecord,
   type DocumentRecord,
   type PredictedCommentRunRecord,
   type RetrievalTrace,
   type SourceTrace,
 } from "@/lib/api/documents";
-import { createEtalonDraft } from "@/lib/api/etalons";
 import { submitFeedback } from "@/lib/api/feedback";
 import { formatDate, formatLabel } from "@/lib/format";
 import {
   analysisShortSummary,
+  buildDocumentCommentAnchors,
   buildLayeredGateChecks,
   devilsAdvocateRoleComments,
+  type DocumentCommentAnchor,
   type LayeredGateCheck,
   type LayeredGateLayer2Check,
   type DevilsAdvocateRoleComment,
@@ -30,7 +32,7 @@ import {
 } from "./analysisDisplay";
 import { usefulnessForFeedbackRating, type FeedbackUsefulness } from "./feedbackDisplay";
 
-type AnalysisTab = "mainOutput" | "devilsAdvocate" | "fullOutput";
+type AnalysisTab = "mainOutput" | "documentComments" | "fullOutput";
 
 type EvidenceItem = {
   id: string;
@@ -43,7 +45,7 @@ type EvidenceItem = {
 
 const analysisTabs: Array<{ id: AnalysisTab; label: string }> = [
   { id: "mainOutput", label: "Gate Challenger" },
-  { id: "devilsAdvocate", label: "Devil's Advocate" },
+  { id: "documentComments", label: "Document comments" },
   { id: "fullOutput", label: "Full Output" },
 ];
 
@@ -61,12 +63,14 @@ export default function AnalysisDetailPage() {
   const params = useParams<{ analysisId: string }>();
   const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null);
   const [analysisDocument, setAnalysisDocument] = useState<DocumentRecord | null>(null);
+  const [parsedDocumentText, setParsedDocumentText] = useState<string | null>(null);
+  const [parsedDocumentError, setParsedDocumentError] = useState("");
   const [error, setError] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState("");
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackRating, setFeedbackRating] = useState<FeedbackRating>(4);
   const [usefulness, setUsefulness] = useState<FeedbackUsefulness>("useful");
-  const [etalonPending, setEtalonPending] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>("mainOutput");
   const [runDetailsOpen, setRunDetailsOpen] = useState(false);
 
@@ -79,11 +83,15 @@ export default function AnalysisDetailPage() {
   useEffect(() => {
     if (!analysis?.document_id) {
       setAnalysisDocument(null);
+      setParsedDocumentText(null);
+      setParsedDocumentError("");
       return;
     }
 
     let ignore = false;
     setAnalysisDocument(null);
+    setParsedDocumentText(null);
+    setParsedDocumentError("");
     getDocument(analysis.document_id)
       .then((document) => {
         if (!ignore) {
@@ -93,6 +101,17 @@ export default function AnalysisDetailPage() {
       .catch(() => {
         if (!ignore) {
           setAnalysisDocument(null);
+        }
+      });
+    getParsedText(analysis.document_id)
+      .then((text) => {
+        if (!ignore) {
+          setParsedDocumentText(text);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setParsedDocumentError(err instanceof Error ? err.message : "Failed to load parsed document text");
         }
       });
 
@@ -118,6 +137,7 @@ export default function AnalysisDetailPage() {
       });
       setFeedbackStatus("Feedback saved");
       setFeedbackComment("");
+      setFeedbackOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit feedback");
     }
@@ -126,22 +146,6 @@ export default function AnalysisDetailPage() {
   function chooseFeedbackRating(rating: FeedbackRating) {
     setFeedbackRating(rating);
     setUsefulness(usefulnessForFeedbackRating(rating));
-  }
-
-  async function createDraft() {
-    if (!analysis) {
-      return;
-    }
-    setEtalonPending(true);
-    setError("");
-    try {
-      const etalon = await createEtalonDraft(analysis.id);
-      window.location.href = `/annotation/${etalon.id}`;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create etalon draft");
-    } finally {
-      setEtalonPending(false);
-    }
   }
 
   useEffect(() => {
@@ -158,6 +162,21 @@ export default function AnalysisDetailPage() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [runDetailsOpen]);
+
+  useEffect(() => {
+    if (!feedbackOpen) {
+      return;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setFeedbackOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [feedbackOpen]);
 
   return (
     <AppShell>
@@ -207,73 +226,128 @@ export default function AnalysisDetailPage() {
                 </nav>
 
                 {activeTab === "mainOutput" ? <MainSkillMarkdownPanel analysis={analysis} /> : null}
-                {activeTab === "devilsAdvocate" ? (
-                  <PredictedSkillMarkdownPanel run={analysis.predicted_comment_run} />
+                {activeTab === "documentComments" ? (
+                  <DocumentCommentsPanel
+                    documentTitle={analysisDocument?.title || "Source document"}
+                    parsedText={parsedDocumentText}
+                    parsedTextError={parsedDocumentError}
+                    run={analysis.predicted_comment_run}
+                  />
                 ) : null}
                 {activeTab === "fullOutput" ? <FullOutputPanel analysis={analysis} /> : null}
               </section>
-
-              <aside className="analysis-inspector">
-                <section className="analysis-card stack">
-                  <h2>Etalon draft</h2>
-                  <button disabled={etalonPending || analysis.status !== "completed"} type="button" onClick={createDraft}>
-                    Create etalon draft
-                  </button>
-                </section>
-
-                <section className="analysis-card analysis-feedback-card stack" id="feedback">
-                  <h2>Feedback</h2>
-                  <div className="analysis-feedback-field">
-                    <span className="analysis-feedback-label">How useful was this analysis?</span>
-                    <div className="analysis-feedback-rating" role="radiogroup" aria-label="How useful was this analysis?">
-                      {feedbackRatings.map((rating) => (
-                        <button
-                          aria-checked={feedbackRating === rating.value}
-                          aria-label={rating.label}
-                          className={
-                            feedbackRating === rating.value
-                              ? "analysis-feedback-rating__button analysis-feedback-rating__button--selected"
-                              : "analysis-feedback-rating__button"
-                          }
-                          key={rating.value}
-                          role="radio"
-                          title={rating.label}
-                          type="button"
-                          onClick={() => chooseFeedbackRating(rating.value)}
-                        >
-                          <FeedbackFaceIcon rating={rating.value} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <label className="analysis-feedback-field">
-                    <span className="analysis-feedback-label">Your comments (optional)</span>
-                    <textarea
-                      className="analysis-feedback-textarea"
-                      maxLength={1000}
-                      placeholder="Good coverage of key risks. Need more evidence on long-term deterrence and adversarial testing results."
-                      value={feedbackComment}
-                      onChange={(event) => setFeedbackComment(event.target.value)}
-                    />
-                  </label>
-                  <div className="analysis-feedback-footer">
-                    <span>{feedbackComment.length} / 1000</span>
-                  </div>
-                  <div className="analysis-feedback-actions">
-                    <button className="analysis-feedback-submit" type="button" onClick={sendFeedback}>
-                      Submit feedback
-                    </button>
-                    {feedbackStatus ? <span className="analysis-success">{feedbackStatus}</span> : null}
-                  </div>
-                </section>
-              </aside>
             </div>
+
+            <button
+              aria-expanded={feedbackOpen}
+              aria-haspopup="dialog"
+              className={
+                feedbackStatus
+                  ? "analysis-feedback-fab analysis-feedback-fab--saved"
+                  : "analysis-feedback-fab"
+              }
+              type="button"
+              onClick={() => setFeedbackOpen(true)}
+            >
+              {feedbackStatus || "Leave feedback"}
+            </button>
+
+            {feedbackOpen ? (
+              <FeedbackSheet
+                feedbackComment={feedbackComment}
+                feedbackRating={feedbackRating}
+                feedbackStatus={feedbackStatus}
+                onChangeComment={setFeedbackComment}
+                onChooseRating={chooseFeedbackRating}
+                onClose={() => setFeedbackOpen(false)}
+                onSubmit={sendFeedback}
+              />
+            ) : null}
           </>
         ) : (
           <section className="analysis-loading">Loading...</section>
         )}
       </main>
     </AppShell>
+  );
+}
+
+function FeedbackSheet({
+  feedbackComment,
+  feedbackRating,
+  feedbackStatus,
+  onChangeComment,
+  onChooseRating,
+  onClose,
+  onSubmit,
+}: {
+  feedbackComment: string;
+  feedbackRating: FeedbackRating;
+  feedbackStatus: string;
+  onChangeComment: (value: string) => void;
+  onChooseRating: (rating: FeedbackRating) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="analysis-feedback-sheet-backdrop" role="presentation" onClick={onClose}>
+      <section
+        aria-labelledby="analysis-feedback-title"
+        aria-modal="true"
+        className="analysis-feedback-sheet stack"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="analysis-feedback-sheet__header">
+          <h2 id="analysis-feedback-title">Feedback</h2>
+          <button className="analysis-secondary-action" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="analysis-feedback-field">
+          <span className="analysis-feedback-label">How useful was this analysis?</span>
+          <div className="analysis-feedback-rating" role="radiogroup" aria-label="How useful was this analysis?">
+            {feedbackRatings.map((rating) => (
+              <button
+                aria-checked={feedbackRating === rating.value}
+                aria-label={rating.label}
+                className={
+                  feedbackRating === rating.value
+                    ? "analysis-feedback-rating__button analysis-feedback-rating__button--selected"
+                    : "analysis-feedback-rating__button"
+                }
+                key={rating.value}
+                role="radio"
+                title={rating.label}
+                type="button"
+                onClick={() => onChooseRating(rating.value)}
+              >
+                <FeedbackFaceIcon rating={rating.value} />
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="analysis-feedback-field">
+          <span className="analysis-feedback-label">Your comments (optional)</span>
+          <textarea
+            className="analysis-feedback-textarea"
+            maxLength={1000}
+            placeholder="Good coverage of key risks. Need more evidence on long-term deterrence and adversarial testing results."
+            value={feedbackComment}
+            onChange={(event) => onChangeComment(event.target.value)}
+          />
+        </label>
+        <div className="analysis-feedback-footer">
+          <span>{feedbackComment.length} / 1000</span>
+        </div>
+        <div className="analysis-feedback-actions">
+          <button className="analysis-feedback-submit" type="button" onClick={onSubmit}>
+            Submit feedback
+          </button>
+          {feedbackStatus ? <span className="analysis-success">{feedbackStatus}</span> : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -353,8 +427,7 @@ function RunDetailsDialog({ analysis, onClose }: { analysis: AnalysisRecord; onC
 function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
   const sections = mainSkillMarkdownSections(analysis);
   const layeredChecks = buildLayeredGateChecks(analysis.structured_output);
-  const hasStructuredDetailedChecks = layeredChecks.length > 0;
-  const hasDetailedChecks = hasStructuredDetailedChecks || Boolean(sections.layer1 || sections.layer2);
+  const hasDetailedChecks = layeredChecks.length > 0 || Boolean(sections.layer1 || sections.layer2);
   const shortSummary = analysisShortSummary(analysis);
 
   return (
@@ -362,39 +435,48 @@ function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
       <div className="analysis-section-heading">
         <div>
           <h2>Gate Challenger</h2>
-          <p>
-            {analysis.skill_name} · {formatLabel(analysis.provider)} · {analysis.model}
-          </p>
         </div>
         <StatusBadge status={analysis.status} />
       </div>
       {analysis.error_message ? <div className="analysis-alert">{analysis.error_message}</div> : null}
       {shortSummary ? (
         <section className="analysis-short-summary" aria-label="short summary">
-          <h3>short summary</h3>
+          <h3>Short summary</h3>
           <p>{shortSummary}</p>
         </section>
       ) : null}
       {sections.main ? (
         <MarkdownPreview markdown={sections.main} className="gc-markdown-preview--narrative" />
       ) : hasDetailedChecks ? (
-        <p className="analysis-muted">Main analysis text is unavailable. Detailed checks are available below.</p>
+        <p className="analysis-muted">Main analysis text is unavailable. Detailed checks are available in Full Output.</p>
       ) : (
         <p className="analysis-muted">No markdown output is available for this run yet.</p>
       )}
-      {hasDetailedChecks ? (
-        <section className="analysis-detail-checks" aria-label="Detailed checks">
-          <h3>Detailed checks</h3>
-          {hasStructuredDetailedChecks ? (
-            <LayeredGateChecks groups={layeredChecks} />
-          ) : (
-            <>
-              {sections.layer1 ? <CollapsibleMarkdown title="Layer 1" markdown={sections.layer1} /> : null}
-              {sections.layer2 ? <CollapsibleMarkdown title="Layer 2" markdown={sections.layer2} /> : null}
-            </>
-          )}
-        </section>
-      ) : null}
+    </section>
+  );
+}
+
+function DetailedGateChecksOutput({ analysis }: { analysis: AnalysisRecord }) {
+  const sections = mainSkillMarkdownSections(analysis);
+  const layeredChecks = buildLayeredGateChecks(analysis.structured_output);
+  const hasStructuredDetailedChecks = layeredChecks.length > 0;
+  const hasDetailedChecks = hasStructuredDetailedChecks || Boolean(sections.layer1 || sections.layer2);
+
+  if (!hasDetailedChecks) {
+    return null;
+  }
+
+  return (
+    <section className="analysis-detail-checks analysis-full-output-section" aria-label="Detailed checks">
+      <h3>Detailed checks</h3>
+      {hasStructuredDetailedChecks ? (
+        <LayeredGateChecks groups={layeredChecks} />
+      ) : (
+        <>
+          {sections.layer1 ? <CollapsibleMarkdown title="Layer 1" markdown={sections.layer1} /> : null}
+          {sections.layer2 ? <CollapsibleMarkdown title="Layer 2" markdown={sections.layer2} /> : null}
+        </>
+      )}
     </section>
   );
 }
@@ -402,73 +484,298 @@ function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
 function LayeredGateChecks({ groups }: { groups: LayeredGateCheck[] }) {
   return (
     <div className="analysis-layered-checks">
-      {groups.map((group, index) => (
-        <details className="analysis-layer-group" key={group.id} open={index === 0}>
-          <summary>
-            <span className="analysis-layer-group__summary">
-              <span>Layer 1 · {group.id}</span>
-              <strong>{group.issue}</strong>
-            </span>
-            <span className={`analysis-severity analysis-severity--${toneForValue(group.severity)}`}>
-              {formatLabel(group.severity)}
-            </span>
-          </summary>
-          <div className="analysis-layer-group__body">
-            <div className="analysis-layer-fields" aria-label={`Layer 1 ${group.id} details`}>
-              <LabeledText label="Issue" value={group.issue} />
-              <LabeledText label="Evidence" value={group.evidence} />
-              <LabeledText label="Severity" value={formatLabel(group.severity)} />
-            </div>
-            <div className="analysis-layer2-list">
-              <div className="analysis-layer2-list__heading">Layer 2 questions</div>
-              {group.layer2.length ? (
-                group.layer2.map((item) => <Layer2Question key={item.id} item={item} />)
+      {groups.map((group, index) => {
+        const hasMaterialLayer1Finding = group.issue !== "No material issue" || Boolean(group.evidence || group.severity);
+        return (
+          <details className="analysis-layer-group" key={group.id} open={index === 0}>
+            <summary>
+              <span className="analysis-layer-group__summary">
+                <span>{displayLayer1Id(group.id)}</span>
+                <strong>{group.title}</strong>
+                {group.description ? <small>{group.description}</small> : null}
+              </span>
+              <LayerStatusBadge value={group.status} fallbackValue={group.severity} />
+            </summary>
+            <div className="analysis-layer-group__body">
+              {hasMaterialLayer1Finding ? (
+                <div className="analysis-layer-finding-card" aria-label={`Layer 1 ${group.id} details`}>
+                  <div className="analysis-layer-card-heading">
+                    <span>Layer 1 finding</span>
+                    {group.severity ? <LayerStatusBadge value={group.severity} label={`Severity ${group.severity}`} /> : null}
+                  </div>
+                  <div className="analysis-layer-fields">
+                    {group.issue !== "No material issue" ? <LabeledText label="Issue" value={group.issue} /> : null}
+                    {group.evidence ? <LabeledText label="Evidence" value={group.evidence} /> : null}
+                  </div>
+                </div>
               ) : (
-                <p className="analysis-muted">No linked Layer 2 checks.</p>
+                <div className="analysis-layer-clear-state">
+                  <strong>No Layer 1 issue</strong>
+                  <span>This block is PASS, so there is no problem card to show.</span>
+                </div>
               )}
+              <div className="analysis-layer2-list">
+                <div className="analysis-layer-card-heading">
+                  <span>Layer 2 checks</span>
+                  <small>{group.layer2.length} linked check{group.layer2.length === 1 ? "" : "s"}</small>
+                </div>
+                {group.layer2.length ? (
+                  group.layer2.map((item) => <Layer2Question key={item.id} item={item} />)
+                ) : (
+                  <p className="analysis-muted">No linked Layer 2 checks.</p>
+                )}
+              </div>
             </div>
-          </div>
-        </details>
-      ))}
+          </details>
+        );
+      })}
     </div>
   );
 }
 
 function Layer2Question({ item }: { item: LayeredGateLayer2Check }) {
+  const showPrimaryDetails = Boolean(item.issue || item.evidence);
+  const displayId = displayLayer2Id(item.id);
+
   return (
     <article className="analysis-layer2-question">
       <div className="analysis-layer2-question__top">
-        <span>{item.id}</span>
-        <Layer2AnswerBadge item={item} />
+        <div>
+          {displayId ? <span>{displayId}</span> : null}
+          <h4>{item.question}</h4>
+        </div>
+        <LayerStatusBadge value={item.status} fallbackValue={item.severity} label={item.answer ?? undefined} />
       </div>
-      <h4>{item.title}</h4>
-      <div className="analysis-layer-fields analysis-layer-fields--compact">
-        <LabeledText label="Issue" value={item.issue} />
-        <LabeledText label="Evidence" value={item.evidence} />
-        {item.risk ? <LabeledText label="Risk" value={item.risk} /> : null}
-        {item.recommendation ? <LabeledText label="Recommendation" value={item.recommendation} /> : null}
-      </div>
+      {showPrimaryDetails ? (
+        <div className="analysis-layer-fields analysis-layer-fields--compact">
+          {item.issue && item.issue !== "No material issue" ? <LabeledText label="Issue" value={item.issue} /> : null}
+          {item.evidence ? <LabeledText label="Evidence" value={item.evidence} /> : null}
+        </div>
+      ) : null}
     </article>
   );
 }
 
-function Layer2AnswerBadge({ item }: { item: LayeredGateLayer2Check }) {
-  if (item.status) {
-    return (
-      <span className={`analysis-answer analysis-answer--${toneForValue(item.status)}`}>
-        {item.status.toUpperCase()}
-      </span>
-    );
-  }
-
+function LayerStatusBadge({
+  value,
+  fallbackValue,
+  label,
+}: {
+  value: string | null | undefined;
+  fallbackValue?: string | null | undefined;
+  label?: string;
+}) {
+  const displayValue = value || fallbackValue;
   return (
-    <span className={`analysis-answer analysis-answer--${toneForValue(item.severity)}`}>
-      {item.severity ? `SEVERITY ${item.severity.toUpperCase()}` : "NO STATUS"}
+    <span className={`analysis-answer analysis-answer--${toneForValue(displayValue)}`}>
+      {(label || (value ? value.toUpperCase() : fallbackValue ? `SEVERITY ${fallbackValue.toUpperCase()}` : "NO STATUS")).toUpperCase()}
     </span>
   );
 }
 
-function LabeledText({ label, value }: { label: string; value: string }) {
+function DocumentCommentsPanel({
+  documentTitle,
+  parsedText,
+  parsedTextError,
+  run,
+}: {
+  documentTitle: string;
+  parsedText: string | null;
+  parsedTextError: string;
+  run: PredictedCommentRunRecord | null;
+}) {
+  const anchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const cardRefs = useRef<Record<string, HTMLElement | null>>({});
+  const roleComments = useMemo(() => devilsAdvocateRoleComments(run?.structured_output), [run?.structured_output]);
+  const documentComments = useMemo(
+    () => buildDocumentCommentAnchors(parsedText, roleComments),
+    [parsedText, roleComments],
+  );
+  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(documentComments.anchors[0]?.id ?? null);
+  const commentById = useMemo(
+    () => new Map(roleComments.map((comment) => [comment.id, comment])),
+    [roleComments],
+  );
+  const anchorByCommentId = useMemo(() => {
+    const map = new Map<string, DocumentCommentAnchor>();
+    for (const anchor of documentComments.anchors) {
+      for (const commentId of anchor.commentIds) {
+        map.set(commentId, anchor);
+      }
+    }
+    return map;
+  }, [documentComments.anchors]);
+  const orderedComments = useMemo(() => {
+    const matchedComments = documentComments.anchors.flatMap((anchor) =>
+      anchor.commentIds.map((commentId) => commentById.get(commentId)).filter((comment): comment is DevilsAdvocateRoleComment => Boolean(comment)),
+    );
+    return [...matchedComments, ...documentComments.unmatchedComments];
+  }, [commentById, documentComments.anchors, documentComments.unmatchedComments]);
+
+  useEffect(() => {
+    if (!documentComments.anchors.length) {
+      setActiveAnchorId(null);
+      return;
+    }
+    if (!activeAnchorId || !documentComments.anchors.some((anchor) => anchor.id === activeAnchorId)) {
+      setActiveAnchorId(documentComments.anchors[0].id);
+    }
+  }, [activeAnchorId, documentComments.anchors]);
+
+  function selectAnchor(anchorId: string | null, source: "card" | "document") {
+    if (!anchorId) {
+      return;
+    }
+    setActiveAnchorId(anchorId);
+    window.requestAnimationFrame(() => {
+      const target = source === "card" ? anchorRefs.current[anchorId] : cardRefs.current[anchorId];
+      target?.scrollIntoView({ behavior: "smooth", block: source === "card" ? "center" : "nearest" });
+    });
+  }
+
+  if (!run) {
+    return (
+      <section className="analysis-card stack">
+        <h2>Document comments</h2>
+        <p className="analysis-muted">No Devil&apos;s Advocate role comments are attached yet.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="analysis-document-comments">
+      <article className="analysis-document-panel" aria-label="Source document">
+        <header className="analysis-document-panel__header">
+          <h2>{documentTitle}</h2>
+          <p>Source document with Devil&apos;s Advocate comments anchored to exact parsed text fragments.</p>
+        </header>
+        {parsedTextError ? <div className="analysis-alert">{parsedTextError}</div> : null}
+        {!parsedText && !parsedTextError ? <p className="analysis-muted">Loading parsed document text...</p> : null}
+        {parsedText ? (
+          <div className="analysis-document-text">
+            {documentComments.segments.map((segment) =>
+              segment.anchorId ? (
+                <span
+                  aria-pressed={activeAnchorId === segment.anchorId}
+                  className={
+                    activeAnchorId === segment.anchorId
+                      ? `analysis-document-anchor analysis-document-anchor--${segment.tone} analysis-document-anchor--active`
+                      : `analysis-document-anchor analysis-document-anchor--${segment.tone}`
+                  }
+                  data-count={segment.commentCount}
+                  key={segment.id}
+                  ref={(element) => {
+                    anchorRefs.current[segment.anchorId || ""] = element;
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => selectAnchor(segment.anchorId, "document")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectAnchor(segment.anchorId, "document");
+                    }
+                  }}
+                >
+                  {segment.text}
+                </span>
+              ) : (
+                <span key={segment.id}>{segment.text}</span>
+              ),
+            )}
+          </div>
+        ) : null}
+      </article>
+
+      <aside className="analysis-comments-panel" aria-label="Expert comments">
+        <header className="analysis-comments-panel__header">
+          <h2>Expert comments</h2>
+          <p>
+            {roleComments.length} comment{roleComments.length === 1 ? "" : "s"} · sorted by document order
+          </p>
+        </header>
+        {orderedComments.length ? (
+          <div className="analysis-comment-list">
+            {orderedComments.map((comment) => {
+              const anchor = anchorByCommentId.get(comment.id) || null;
+              const anchorId = anchor?.id || null;
+              const voteTone = commentVoteTone(comment.vote);
+              const isActive = Boolean(anchorId && activeAnchorId === anchorId);
+              const isFirstCardForAnchor = Boolean(anchor && anchor.commentIds[0] === comment.id);
+              return (
+                <article
+                  aria-pressed={anchorId ? isActive : undefined}
+                  className={isActive ? "analysis-comment-card analysis-comment-card--active" : "analysis-comment-card"}
+                  key={comment.id}
+                  ref={(element) => {
+                    if (anchorId && isFirstCardForAnchor) {
+                      cardRefs.current[anchorId] = element;
+                    }
+                  }}
+                  role={anchorId ? "button" : undefined}
+                  tabIndex={anchorId ? 0 : undefined}
+                  onClick={() => selectAnchor(anchorId, "card")}
+                  onKeyDown={(event) => {
+                    if ((event.key === "Enter" || event.key === " ") && anchorId) {
+                      event.preventDefault();
+                      selectAnchor(anchorId, "card");
+                    }
+                  }}
+                >
+                  <div className="analysis-comment-card__top">
+                    <span className={`analysis-comment-avatar analysis-comment-avatar--${voteTone}`} aria-hidden="true">
+                      <RoleAvatarIcon />
+                    </span>
+                    <div className="analysis-comment-card__identity">
+                      <div className="analysis-comment-card__role-row">
+                        <strong>{comment.voter}</strong>
+                        <span className={`analysis-comment-vote analysis-comment-vote--${voteTone}`}>
+                          {comment.vote ? formatLabel(comment.vote) : "No vote"}
+                        </span>
+                      </div>
+                      <span className="analysis-comment-severity">
+                        Comment severity · {comment.severity ? formatLabel(comment.severity) : "Not set"}
+                      </span>
+                    </div>
+                  </div>
+                  <p>{comment.body}</p>
+                  <blockquote>
+                    <strong>Anchor</strong>
+                    <span>{comment.anchorText}</span>
+                  </blockquote>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="analysis-muted">No role comments were returned by Devil&apos;s Advocate.</p>
+        )}
+      </aside>
+    </section>
+  );
+}
+
+function RoleAvatarIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5.8 19c1.1-3.7 3.2-5.6 6.2-5.6s5.1 1.9 6.2 5.6" />
+    </svg>
+  );
+}
+
+function displayLayer1Id(id: string): string {
+  return id.startsWith("layer-1-") ? "Layer 1" : `Layer 1 · ${id}`;
+}
+
+function displayLayer2Id(id: string): string | null {
+  return id.startsWith("layer-2-") ? null : id;
+}
+
+function LabeledText({ label, value }: { label: string; value: string | null }) {
+  if (!value) {
+    return null;
+  }
   return (
     <div className="analysis-layer-field">
       <span>{label}</span>
@@ -477,11 +784,11 @@ function LabeledText({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PredictedSkillMarkdownPanel({ run }: { run: PredictedCommentRunRecord | null }) {
+function PredictedSkillOutputSection({ run }: { run: PredictedCommentRunRecord | null }) {
   if (!run) {
     return (
-      <section className="analysis-card stack">
-        <h2>Devil&apos;s Advocate</h2>
+      <section className="analysis-full-output-section stack">
+        <h3>Devil&apos;s Advocate</h3>
         <p className="analysis-muted">No Devil&apos;s Advocate run is attached yet.</p>
       </section>
     );
@@ -492,10 +799,10 @@ function PredictedSkillMarkdownPanel({ run }: { run: PredictedCommentRunRecord |
   const roleComments = devilsAdvocateRoleComments(run.structured_output);
 
   return (
-    <section className="analysis-card stack">
+    <section className="analysis-full-output-section stack">
       <div className="analysis-section-heading">
         <div>
-          <h2>Devil&apos;s Advocate</h2>
+          <h3>Devil&apos;s Advocate</h3>
           <p>
             {run.skill_name} · {run.provider} · {run.model}
           </p>
@@ -596,9 +903,11 @@ function FullOutputPanel({ analysis }: { analysis: AnalysisRecord }) {
       <div className="analysis-section-heading">
         <div>
           <h2>Full Output</h2>
-          <p>Structured result, raw model text when authorized, and run parameters.</p>
+          <p>Detailed checks, Devil&apos;s Advocate output, structured result, raw model text when authorized, and run parameters.</p>
         </div>
       </div>
+      <DetailedGateChecksOutput analysis={analysis} />
+      <PredictedSkillOutputSection run={analysis.predicted_comment_run} />
       <details className="analysis-details" open>
         <summary>Gate Challenger structured JSON</summary>
         <JsonBlock value={analysis.structured_output ?? {}} />
@@ -871,16 +1180,27 @@ function toneForValue(value: string | null | undefined): string {
   if (!value) {
     return "neutral";
   }
-  if (["approve", "pass", "completed", "low"].includes(value)) {
+  if (["approve", "pass", "completed", "low", "yes"].includes(value)) {
     return "good";
   }
   if (["approve_with_conditions", "conditional_approve", "partial", "need_evidence", "medium", "important"].includes(value)) {
     return "warn";
   }
-  if (["reject", "rework", "fail", "failed", "critical", "high"].includes(value)) {
+  if (["reject", "rework", "fail", "failed", "critical", "high", "no"].includes(value)) {
     return "bad";
   }
   return "neutral";
+}
+
+function commentVoteTone(value: string | null | undefined): "good" | "warn" | "bad" {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "reject") {
+    return "bad";
+  }
+  if (["approve", "approved", "pass", "yes", "for", "за"].includes(normalized || "")) {
+    return "good";
+  }
+  return "warn";
 }
 
 function shortHash(value: string | null | undefined) {
@@ -1459,6 +1779,17 @@ const analysisStyles = `
   gap: 10px;
 }
 
+.analysis-full-output-section {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 16px;
+}
+
+.analysis-full-output-section h3 {
+  color: #f8fafc;
+}
+
 .analysis-detail-checks {
   display: grid;
   gap: 10px;
@@ -1483,7 +1814,7 @@ const analysisStyles = `
 }
 
 .analysis-short-summary p {
-  max-width: 92ch;
+  width: 100%;
   color: #dbeafe;
   font-size: 14px;
   line-height: 1.65;
@@ -1495,28 +1826,57 @@ const analysisStyles = `
 
 .analysis-layered-checks {
   display: grid;
-  gap: 10px;
+  gap: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .analysis-layer-group {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.42);
-  overflow: hidden;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.analysis-layer-group:last-child {
+  border-bottom: 0;
 }
 
 .analysis-layer-group summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 58px;
+  gap: 12px;
+  min-height: 64px;
   cursor: pointer;
   padding: 14px;
 }
 
+.analysis-layer-group summary::-webkit-details-marker,
+.analysis-layer2-probe summary::-webkit-details-marker {
+  display: none;
+}
+
+.analysis-layer-group summary::before,
+.analysis-layer2-probe summary::before {
+  content: "›";
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 6px;
+  color: #93c5fd;
+  font-size: 14px;
+}
+
+.analysis-layer-group[open] summary::before,
+.analysis-layer2-probe[open] summary::before {
+  content: "⌄";
+}
+
 .analysis-layer-group__summary {
   display: grid;
+  flex: 1 1 auto;
   min-width: 0;
   gap: 5px;
 }
@@ -1536,14 +1896,20 @@ const analysisStyles = `
   overflow-wrap: anywhere;
 }
 
+.analysis-layer-group__summary small {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .analysis-layer-group__body {
   display: grid;
   gap: 12px;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
-  padding: 14px;
+  padding: 0 14px 16px 50px;
 }
 
-.analysis-layer-fields {
+.analysis-layer-finding-card {
   display: grid;
   gap: 10px;
   border: 1px solid rgba(148, 163, 184, 0.14);
@@ -1552,8 +1918,56 @@ const analysisStyles = `
   padding: 12px;
 }
 
+.analysis-layer-clear-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  border-radius: 8px;
+  background: rgba(22, 163, 74, 0.1);
+  padding: 12px;
+}
+
+.analysis-layer-clear-state strong {
+  color: #bbf7d0;
+  font-size: 13px;
+}
+
+.analysis-layer-clear-state span {
+  color: #9fb0c4;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.analysis-layer-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #bfdbfe;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.analysis-layer-card-heading small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.analysis-layer-fields {
+  display: grid;
+  gap: 10px;
+}
+
 .analysis-layer-fields--compact {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
   background: rgba(2, 6, 23, 0.28);
+  padding-top: 10px;
 }
 
 .analysis-layer-field {
@@ -1581,27 +1995,22 @@ const analysisStyles = `
   gap: 10px;
 }
 
-.analysis-layer2-list__heading {
-  color: #bfdbfe;
-  font-size: 12px;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
 .analysis-layer2-question {
   display: grid;
-  gap: 10px;
+  gap: 0;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.34);
-  padding: 12px;
+  overflow: hidden;
 }
 
 .analysis-layer2-question__top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 12px;
 }
 
 .analysis-layer2-question__top > span:first-child {
@@ -1611,10 +2020,47 @@ const analysisStyles = `
 }
 
 .analysis-layer2-question h4 {
+  margin-top: 5px;
   color: #f8fafc;
   font-size: 14px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.analysis-layer2-probes {
+  display: grid;
+}
+
+.analysis-layer2-probe {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.analysis-layer2-probe summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  padding: 12px;
+}
+
+.analysis-layer2-probe summary strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #dbeafe;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.analysis-layer2-probe__body {
+  display: grid;
+  gap: 10px;
+  margin: 0 12px 12px 46px;
+  border-left: 3px solid rgba(59, 130, 246, 0.7);
+  border-radius: 0 6px 6px 0;
+  background: rgba(30, 64, 175, 0.16);
+  padding: 10px 12px;
 }
 
 .analysis-answer {
@@ -2025,6 +2471,7 @@ const paperAnalysisOverrides = `
 }
 
 .analysis-layout {
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -2069,8 +2516,21 @@ const paperAnalysisOverrides = `
 }
 
 .analysis-layer-group {
-  border-color: #109b72;
-  background: #f8fffc;
+  border-color: #e5eaf0;
+  background: #ffffff;
+}
+
+.analysis-layered-checks {
+  border-color: #d6dee8;
+  background: #ffffff;
+}
+
+.analysis-full-output-section {
+  border-top-color: #e5eaf0;
+}
+
+.analysis-full-output-section h3 {
+  color: #111827;
 }
 
 .analysis-detail-checks {
@@ -2084,19 +2544,55 @@ const paperAnalysisOverrides = `
 }
 
 .analysis-layer-group__summary span,
-.analysis-layer2-list__heading,
 .analysis-layer2-question__top > span:first-child {
   color: #1d70b8;
 }
 
-.analysis-layer-group__body {
-  border-top-color: #bfebdd;
+.analysis-layer-group__summary small {
+  color: #5b6472;
 }
 
-.analysis-layer-fields,
-.analysis-layer-fields--compact,
+.analysis-layer-group__body {
+  border-top-color: #eef2f6;
+}
+
+.analysis-layer-finding-card,
 .analysis-layer2-question {
   border-color: #e5eaf0;
+  background: #ffffff;
+}
+
+.analysis-layer-clear-state {
+  border-color: #ccebdd;
+  background: #f2fbf6;
+}
+
+.analysis-layer-clear-state strong {
+  color: #075e45;
+}
+
+.analysis-layer-clear-state span {
+  color: #5b6472;
+}
+
+.analysis-layer-fields--compact,
+.analysis-layer2-probe {
+  border-color: #eef2f6;
+  background: #f9fafb;
+}
+
+.analysis-layer-card-heading {
+  color: #5b6472;
+}
+
+.analysis-layer-card-heading small {
+  color: #5b6472;
+}
+
+.analysis-layer-group summary::before,
+.analysis-layer2-probe summary::before {
+  border-color: #d6dee8;
+  color: #5b6472;
   background: #ffffff;
 }
 
@@ -2130,6 +2626,20 @@ const paperAnalysisOverrides = `
   border-color: transparent;
   background: #fcecee;
   color: #a5122a;
+}
+
+.analysis-layer2-question__top,
+.analysis-layer2-probe {
+  border-color: #e5eaf0;
+}
+
+.analysis-layer2-probe summary strong {
+  color: #111827;
+}
+
+.analysis-layer2-probe__body {
+  border-left-color: #1d70b8;
+  background: #eaf3fb;
 }
 
 .analysis-layer-group h3 {
@@ -2229,6 +2739,74 @@ const paperAnalysisOverrides = `
   line-height: 24px;
 }
 
+.analysis-feedback-fab {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 45;
+  min-height: 46px;
+  border: 1px solid #0e9f6e !important;
+  border-radius: 8px;
+  background: #0e9f6e !important;
+  color: #ffffff !important;
+  box-shadow: 0 14px 28px rgba(16, 24, 40, 0.18);
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.analysis-feedback-fab:hover:not(:disabled) {
+  background: #0b7c59 !important;
+  color: #ffffff !important;
+}
+
+.analysis-feedback-fab--saved {
+  border-color: #73c8a6 !important;
+  background: #eaf8f2 !important;
+  color: #075e45 !important;
+}
+
+.analysis-feedback-fab--saved:hover:not(:disabled) {
+  background: #d9f1e8 !important;
+  color: #075e45 !important;
+}
+
+.analysis-feedback-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  background: rgba(17, 24, 39, 0.2);
+  padding: 24px;
+}
+
+.analysis-feedback-sheet {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid #d6dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 50px rgba(16, 24, 40, 0.22);
+  padding: 18px;
+}
+
+.analysis-feedback-sheet__header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.analysis-feedback-sheet__header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  line-height: 24px;
+}
+
 .analysis-feedback-field {
   display: grid;
   gap: 10px;
@@ -2318,15 +2896,334 @@ const paperAnalysisOverrides = `
   font-weight: 800;
 }
 
+.analysis-document-comments {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 16px;
+  align-items: start;
+}
+
+.analysis-document-panel,
+.analysis-comments-panel,
+.analysis-comment-card {
+  border: 1px solid #d6dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.analysis-document-panel {
+  min-width: 0;
+  padding: 28px 34px;
+}
+
+.analysis-document-panel__header {
+  margin-bottom: 24px;
+  border-bottom: 1px solid #e5eaf0;
+  padding-bottom: 18px;
+}
+
+.analysis-document-panel__header h2,
+.analysis-comments-panel__header h2 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 28px;
+}
+
+.analysis-document-panel__header p,
+.analysis-comments-panel__header p {
+  margin: 0;
+  color: #5b6472;
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.analysis-document-text {
+  color: #2f3a49;
+  font-size: 15px;
+  line-height: 1.72;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.analysis-document-anchor {
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 1px 3px;
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1.35;
+  scroll-margin-top: 92px;
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease,
+    outline-color 160ms ease;
+}
+
+.analysis-document-anchor::after {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  vertical-align: 1px;
+  content: attr(data-count);
+}
+
+.analysis-document-anchor--bad {
+  background: #fde8eb;
+  color: #8f1024;
+}
+
+.analysis-document-anchor--bad::after {
+  background: #c92036;
+}
+
+.analysis-document-anchor--warn {
+  background: #fff1c7;
+  color: #6b3b00;
+}
+
+.analysis-document-anchor--warn::after {
+  background: #f5b544;
+  color: #3a2600;
+}
+
+.analysis-document-anchor--good {
+  background: #def7ec;
+  color: #075e45;
+}
+
+.analysis-document-anchor--good::after {
+  background: #0e9f6e;
+}
+
+.analysis-document-anchor--neutral {
+  background: #f2f4f7;
+  color: #344054;
+}
+
+.analysis-document-anchor--neutral::after {
+  background: #6b7280;
+}
+
+.analysis-document-anchor--active {
+  outline: 2px solid #1d70b8;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px rgba(29, 112, 184, 0.12);
+}
+
+.analysis-comments-panel {
+  position: sticky;
+  top: 82px;
+  max-height: calc(100vh - 104px);
+  overflow: auto;
+  padding: 14px;
+}
+
+.analysis-comments-panel__header {
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e5eaf0;
+  padding: 4px 2px 16px;
+}
+
+.analysis-comment-list {
+  display: grid;
+  gap: 12px;
+}
+
+.analysis-comment-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  scroll-margin-top: 92px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.analysis-comment-card[role="button"] {
+  cursor: pointer;
+}
+
+.analysis-comment-card[role="button"]:hover {
+  border-color: #b8c5d6;
+}
+
+.analysis-comment-card--active {
+  border-color: #1d70b8;
+  box-shadow:
+    inset 3px 0 0 #1d70b8,
+    0 0 0 3px rgba(29, 112, 184, 0.12);
+  transform: translateY(-1px);
+}
+
+.analysis-comment-card__top {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+}
+
+.analysis-comment-avatar {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 3px solid #f5b544;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #344054;
+}
+
+.analysis-comment-avatar svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.analysis-comment-avatar--bad {
+  border-color: #c92036;
+}
+
+.analysis-comment-avatar--good {
+  border-color: #0e9f6e;
+}
+
+.analysis-comment-avatar--warn {
+  border-color: #f5b544;
+}
+
+.analysis-comment-card__identity {
+  min-width: 0;
+}
+
+.analysis-comment-card__role-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.analysis-comment-card__role-row strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.analysis-comment-vote {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.analysis-comment-vote--bad {
+  background: #fcecee;
+  color: #a5122a;
+}
+
+.analysis-comment-vote--good {
+  background: #eaf8f2;
+  color: #075e45;
+}
+
+.analysis-comment-vote--warn {
+  background: #fff7df;
+  color: #7a4300;
+}
+
+.analysis-comment-severity {
+  display: block;
+  margin-top: 5px;
+  color: #5b6472;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.analysis-comment-card p {
+  margin: 0;
+  color: #243041;
+  font-size: 14px;
+  line-height: 1.58;
+}
+
+.analysis-comment-card blockquote {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border-left: 3px solid #d6dee8;
+  background: #f7f9fb;
+  padding: 9px 10px;
+}
+
+.analysis-comment-card blockquote strong {
+  color: #5b6472;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.analysis-comment-card blockquote span {
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 @media (max-width: 1080px) {
   .analysis-inspector {
     width: 100%;
+  }
+
+  .analysis-document-comments {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-comments-panel {
+    position: static;
+    max-height: none;
   }
 }
 
 @media (max-width: 640px) {
   .analysis-workbench {
     padding: 18px 12px 32px;
+  }
+
+  .analysis-feedback-fab {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .analysis-feedback-sheet-backdrop {
+    align-items: flex-end;
+    padding: 12px;
+  }
+
+  .analysis-feedback-sheet {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+
+  .analysis-document-panel {
+    padding: 20px 18px;
   }
 }
 `;
