@@ -67,6 +67,7 @@ export type AnalysisRecord = {
   started_at: string | null;
   completed_at: string | null;
   predicted_comment_run: PredictedCommentRunRecord | null;
+  detail_run: AnalysisDetailRunRecord | null;
 };
 
 export type PredictedCommentRunRecord = {
@@ -114,6 +115,27 @@ export type RetrievalTrace = {
   rendered_prompt_artifact_path: string | null;
 };
 
+export type AnalysisDetailRunRecord = {
+  id: string;
+  analysis_id: string;
+  status: RunStatus;
+  provider: Provider;
+  model: string;
+  previous_response_id: string | null;
+  response_id: string | null;
+  structured_output: Record<string, unknown> | null;
+  raw_output: string | null;
+  error_message: string | null;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost: string | null;
+  run_parameters: Record<string, unknown>;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
 export type AnalysesListResponse = {
   analyses: AnalysisRecord[];
 };
@@ -153,6 +175,13 @@ export async function patchDocumentType(
   });
 }
 
+export async function patchDocumentTitle(documentId: string, title: string): Promise<DocumentRecord> {
+  return apiFetch<DocumentRecord>(`/documents/${documentId}/title`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
 export async function getParsedText(documentId: string): Promise<string> {
   return apiFetchText(`/documents/${documentId}/parsed-text`);
 }
@@ -177,6 +206,10 @@ export async function createAnalysis(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function createAnalysisDetails(analysisId: string): Promise<AnalysisDetailRunRecord> {
+  return apiFetch<AnalysisDetailRunRecord>(`/analyses/${analysisId}/details`, { method: "POST" });
 }
 
 export async function getAnalysis(analysisId: string): Promise<AnalysisRecord> {

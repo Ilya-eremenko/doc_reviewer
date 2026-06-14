@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
+  createAnalysisDetails,
   getAnalysis,
   getDocument,
   getParsedText,
@@ -19,6 +20,7 @@ import {
 import { submitFeedback } from "@/lib/api/feedback";
 import { formatDate, formatLabel } from "@/lib/format";
 import {
+  analysisGateDetailsOutput,
   analysisShortSummary,
   buildDocumentCommentAnchors,
   buildLayeredGateChecks,
@@ -76,6 +78,7 @@ export default function AnalysisDetailPage() {
   const [activeTab, setActiveTab] = useState<AnalysisTab>("mainOutput");
   const [runDetailsOpen, setRunDetailsOpen] = useState(false);
   const [isRefreshingAnalysis, setIsRefreshingAnalysis] = useState(false);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -129,7 +132,7 @@ export default function AnalysisDetailPage() {
       ignore = true;
       window.clearInterval(intervalId);
     };
-  }, [analysis?.status, analysis?.predicted_comment_run?.status, params.analysisId]);
+  }, [analysis?.status, analysis?.predicted_comment_run?.status, analysis?.detail_run?.status, params.analysisId]);
 
   useEffect(() => {
     if (!analysis?.document_id) {
@@ -191,6 +194,25 @@ export default function AnalysisDetailPage() {
       setFeedbackOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit feedback");
+    }
+  }
+
+  async function loadAnalysisDetails() {
+    if (!analysis) {
+      return;
+    }
+    setIsLoadingDetails(true);
+    setError("");
+    try {
+      const detailRun = await createAnalysisDetails(analysis.id);
+      setAnalysis((current) => (current?.id === analysis.id ? { ...current, detail_run: detailRun } : current));
+      if (isActiveRunStatus(detailRun.status)) {
+        setActiveTab("fullOutput");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load analysis details");
+    } finally {
+      setIsLoadingDetails(false);
     }
   }
 
@@ -289,7 +311,13 @@ export default function AnalysisDetailPage() {
                     run={analysis.predicted_comment_run}
                   />
                 ) : null}
-                {activeTab === "fullOutput" ? <FullOutputPanel analysis={analysis} /> : null}
+                {activeTab === "fullOutput" ? (
+                  <FullOutputPanel
+                    analysis={analysis}
+                    isLoadingDetails={isLoadingDetails}
+                    onLoadDetails={loadAnalysisDetails}
+                  />
+                ) : null}
               </section>
             </div>
 
@@ -547,8 +575,8 @@ function MainSkillMarkdownPanel({ analysis }: { analysis: AnalysisRecord }) {
 }
 
 function DetailedGateChecksOutput({ analysis }: { analysis: AnalysisRecord }) {
-  const sections = mainSkillMarkdownSections(analysis);
-  const layeredChecks = buildLayeredGateChecks(analysis.structured_output);
+  const sections = gateDetailsMarkdownSections(analysis);
+  const layeredChecks = buildLayeredGateChecks(analysisGateDetailsOutput(analysis));
   const hasStructuredDetailedChecks = layeredChecks.length > 0;
   const hasDetailedChecks = hasStructuredDetailedChecks || Boolean(sections.layer1 || sections.layer2);
 
@@ -974,6 +1002,44 @@ function mainSkillMarkdownSections(analysis: AnalysisRecord): { main: string | n
   return { main, layer1, layer2 };
 }
 
+function gateDetailsMarkdownSections(analysis: AnalysisRecord): { layer1: string | null; layer2: string | null } {
+  const output = analysisGateDetailsOutput(analysis);
+  return {
+    layer1: asString(output?.layer_1_markdown),
+    layer2: asString(output?.layer_2_markdown),
+  };
+}
+
+function canRequestAnalysisDetails(analysis: AnalysisRecord): boolean {
+  if (analysis.status !== "completed") {
+    return false;
+  }
+  if (!isStagedSummaryAnalysis(analysis)) {
+    return false;
+  }
+  if (analysis.detail_run?.status === "completed" || isActiveRunStatus(analysis.detail_run?.status)) {
+    return false;
+  }
+  return true;
+}
+
+function isStagedSummaryAnalysis(analysis: AnalysisRecord): boolean {
+  const output = analysis.structured_output;
+  if (!output) {
+    return false;
+  }
+  const hasLegacyDetails = Boolean(output.layer_1_markdown || output.layer_2_markdown);
+  if (hasLegacyDetails) {
+    return false;
+  }
+  return Boolean(
+    analysis.run_parameters?.gate_challenger_response_id ||
+      output.details_status ||
+      Array.isArray(output.layer_1_index) ||
+      Array.isArray(output.layer_2_index),
+  );
+}
+
 function predictedSkillMarkdown(run: PredictedCommentRunRecord): string | null {
   return bestMarkdownOutput(run.structured_output) || extractProviderMessageContent(run.raw_output);
 }
@@ -987,7 +1053,19 @@ function CollapsibleMarkdown({ markdown, title }: { markdown: string; title: str
   );
 }
 
-function FullOutputPanel({ analysis }: { analysis: AnalysisRecord }) {
+function FullOutputPanel({
+  analysis,
+  isLoadingDetails,
+  onLoadDetails,
+}: {
+  analysis: AnalysisRecord;
+  isLoadingDetails: boolean;
+  onLoadDetails: () => void;
+}) {
+  const detailRun = analysis.detail_run;
+  const isDetailActive = isActiveRunStatus(analysis.detail_run?.status);
+  const canRequestDetails = canRequestAnalysisDetails(analysis);
+  const showDetailsButton = canRequestDetails || isDetailActive || isLoadingDetails;
   return (
     <section className="analysis-card stack">
       <div className="analysis-section-heading">
@@ -996,16 +1074,51 @@ function FullOutputPanel({ analysis }: { analysis: AnalysisRecord }) {
           <p>Detailed checks, Devil&apos;s Advocate output, structured result, raw model text when authorized, and run parameters.</p>
         </div>
       </div>
+      {showDetailsButton ? (
+        <div className="analysis-detail-loader">
+          <button
+            className="analysis-secondary-action"
+            disabled={!canRequestDetails || isDetailActive || isLoadingDetails}
+            type="button"
+            onClick={onLoadDetails}
+          >
+            Load detailed Layer 1 / Layer 2
+          </button>
+          {isDetailActive || isLoadingDetails ? (
+            <span>Loading detailed checks. This panel will refresh automatically.</span>
+          ) : (
+            <span>Gate Challenger summary is available. Detailed Layer 1 / Layer 2 will be requested on demand.</span>
+          )}
+        </div>
+      ) : null}
+      {detailRun?.status === "failed" ? (
+        <div className="analysis-alert">
+          <strong>Detail run failed</strong>
+          {detailRun.error_message ? <span>{detailRun.error_message}</span> : null}
+        </div>
+      ) : null}
       <DetailedGateChecksOutput analysis={analysis} />
       <PredictedSkillOutputSection run={analysis.predicted_comment_run} />
       <details className="analysis-details" open>
         <summary>Gate Challenger structured JSON</summary>
         <JsonBlock value={analysis.structured_output ?? {}} />
       </details>
+      {detailRun?.structured_output ? (
+        <details className="analysis-details" open={detailRun.status === "completed"}>
+          <summary>Gate Challenger detail structured JSON</summary>
+          <JsonBlock value={detailRun.structured_output} />
+        </details>
+      ) : null}
       {analysis.raw_output ? (
         <details className="analysis-details">
           <summary>Raw Gate Challenger Output</summary>
           <pre className="analysis-pre">{analysis.raw_output}</pre>
+        </details>
+      ) : null}
+      {detailRun?.raw_output ? (
+        <details className="analysis-details">
+          <summary>Raw Gate Challenger Detail Output</summary>
+          <pre className="analysis-pre">{detailRun.raw_output}</pre>
         </details>
       ) : null}
       {analysis.predicted_comment_run?.structured_output ? (
@@ -1170,9 +1283,10 @@ function JsonBlock({ value }: { value: unknown }) {
 }
 
 function buildInspector(analysis: AnalysisRecord) {
+  const gateDetailsOutput = analysisGateDetailsOutput(analysis);
   const mainRisks = [
-    ...extractEvidenceItems(analysis.structured_output, "layer_2"),
-    ...extractEvidenceItems(analysis.structured_output, "layer_1"),
+    ...extractEvidenceItems(gateDetailsOutput, "layer_2"),
+    ...extractEvidenceItems(gateDetailsOutput, "layer_1"),
     ...extractEvidenceItems(analysis.structured_output, "findings"),
   ];
   const trailer = asRecord(analysis.predicted_comment_run?.structured_output?.trailer);
@@ -1307,7 +1421,9 @@ function formatNumber(value: number | null): string {
 function isAnalysisRefreshPending(analysis: AnalysisRecord | null): boolean {
   return Boolean(
     analysis &&
-      (isActiveRunStatus(analysis.status) || isActiveRunStatus(analysis.predicted_comment_run?.status)),
+      (isActiveRunStatus(analysis.status) ||
+        isActiveRunStatus(analysis.predicted_comment_run?.status) ||
+        isActiveRunStatus(analysis.detail_run?.status)),
   );
 }
 
@@ -1937,6 +2053,24 @@ const analysisStyles = `
   color: #f8fafc;
 }
 
+.analysis-detail-loader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 118, 110, 0.08);
+  padding: 12px;
+}
+
+.analysis-detail-loader span {
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 18px;
+}
+
 .analysis-detail-checks {
   display: grid;
   gap: 10px;
@@ -2052,6 +2186,7 @@ const analysisStyles = `
 .analysis-layer-group__body {
   display: grid;
   gap: 12px;
+  min-width: 0;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
   padding: 0 14px 16px 50px;
 }
@@ -2059,6 +2194,7 @@ const analysisStyles = `
 .analysis-layer-finding-card {
   display: grid;
   gap: 10px;
+  min-width: 0;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.44);
@@ -2109,17 +2245,19 @@ const analysisStyles = `
 .analysis-layer-fields {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .analysis-layer-fields--compact {
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   background: rgba(2, 6, 23, 0.28);
-  padding-top: 10px;
+  padding: 10px 12px 12px;
 }
 
 .analysis-layer-field {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .analysis-layer-field span {
@@ -2140,11 +2278,13 @@ const analysisStyles = `
 .analysis-layer2-list {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .analysis-layer2-question {
   display: grid;
   gap: 0;
+  min-width: 0;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.34);
@@ -2158,6 +2298,12 @@ const analysisStyles = `
   gap: 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   padding: 12px;
+}
+
+.analysis-layer2-question__top > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
 }
 
 .analysis-layer2-question__top > span:first-child {
@@ -2705,6 +2851,15 @@ const paperAnalysisOverrides = `
 
 .analysis-full-output-section h3 {
   color: #111827;
+}
+
+.analysis-detail-loader {
+  border-color: #ccebdd;
+  background: #f2fbf6;
+}
+
+.analysis-detail-loader span {
+  color: #344054;
 }
 
 .analysis-detail-checks {

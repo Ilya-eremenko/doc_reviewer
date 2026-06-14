@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  analysisGateDetailsOutput,
   analysisShortSummary,
   buildDocumentCommentAnchors,
   buildLayeredGateChecks,
@@ -231,6 +232,37 @@ describe("analysis display helpers", () => {
     ]);
   });
 
+  it("uses completed lazy detail output for Layer 1 and Layer 2 while keeping legacy fallback", () => {
+    const legacyOutput = {
+      layer_1: [{ id: "legacy-l1", severity: "high", issue: "Legacy issue", evidence: "Legacy evidence" }],
+      layer_2: [],
+    };
+    const detailOutput = {
+      layer_1: [{ id: "detail-l1", severity: "high", issue: "Detail issue", evidence: "Detail evidence" }],
+      layer_2: [],
+    };
+
+    expect(
+      analysisGateDetailsOutput({
+        structured_output: legacyOutput,
+        detail_run: {
+          status: "completed",
+          structured_output: detailOutput,
+        },
+      }),
+    ).toBe(detailOutput);
+
+    expect(
+      analysisGateDetailsOutput({
+        structured_output: legacyOutput,
+        detail_run: {
+          status: "failed",
+          structured_output: detailOutput,
+        },
+      }),
+    ).toBe(legacyOutput);
+  });
+
   it("keeps markdown-only PASS Layer 1 sections and their Layer 2 clarifying answers visible", () => {
     expect(
       buildLayeredGateChecks({
@@ -300,6 +332,87 @@ describe("analysis display helpers", () => {
           answer: "YES",
           issue: "No material issue",
           evidence: "FAQ 1",
+        },
+      ],
+    });
+  });
+
+  it("merges lazy detail shorthand markdown bullets with structured Layer 1 and Layer 2 records", () => {
+    const groups = buildLayeredGateChecks({
+      layer_1_markdown:
+        "### Gate 2 Continuity And Gate 3 Decision Boundary: FAIL\n" +
+        "- L1-1: The Gate 3 approval boundary is materially broader than Gate 2.\n\n" +
+        "### Mlp Launch Fact Base And Progress Against Gate 2 Commitments: FAIL\n" +
+        "- L1-2: The launch fact base is incomplete.",
+      layer_1: [
+        {
+          id: "L1-1",
+          severity: "high",
+          issue: "The Gate 3 approval boundary is materially broader than Gate 2.",
+          evidence: "The document expands approval scope without matching Gate 2 closure evidence.",
+        },
+        {
+          id: "L1-2",
+          severity: "medium",
+          issue: "The launch fact base is incomplete.",
+          evidence: "The launch section does not close the prior commitment list.",
+        },
+      ],
+      layer_2_markdown:
+        "### Atomic checks - Gate 2 Continuity And Gate 3 Decision Boundary: FAIL\n" +
+        "- L2-1: The decision boundary expanded.\n\n" +
+        "### Atomic checks - Mlp Launch Fact Base And Progress Against Gate 2 Commitments: FAIL\n" +
+        "- L2-2: Commitment closure is only partial.",
+      layer_2: [
+        {
+          id: "L2-1",
+          parent_layer_1_id: "L1-1",
+          status: "fail",
+          severity: "high",
+          question: "Does the Gate 3 boundary preserve the Gate 2 decision logic?",
+          answer: "NO",
+          issue: "The decision boundary expanded.",
+          evidence: "The Gate 3 scope adds approval cases beyond the Gate 2 commitment.",
+        },
+        {
+          id: "L2-2",
+          parent_layer_1_id: "L1-2",
+          status: "partial",
+          severity: "medium",
+          question: "Are Gate 2 launch commitments explicitly closed?",
+          answer: "PARTIAL",
+          issue: "Commitment closure is only partial.",
+          evidence: "Only part of the prior commitment list has measured evidence.",
+        },
+      ],
+    });
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({
+      id: "L1-1",
+      status: "fail",
+      severity: "high",
+      issue: "The Gate 3 approval boundary is materially broader than Gate 2.",
+      evidence: "The document expands approval scope without matching Gate 2 closure evidence.",
+      layer2: [
+        {
+          id: "L2-1",
+          parentLayer1Id: "L1-1",
+          status: "fail",
+          question: "Does the Gate 3 boundary preserve the Gate 2 decision logic?",
+          issue: "The decision boundary expanded.",
+        },
+      ],
+    });
+    expect(groups[1]).toMatchObject({
+      id: "L1-2",
+      layer2: [
+        {
+          id: "L2-2",
+          parentLayer1Id: "L1-2",
+          status: "partial",
+          question: "Are Gate 2 launch commitments explicitly closed?",
+          issue: "Commitment closure is only partial.",
         },
       ],
     });

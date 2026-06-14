@@ -15,6 +15,18 @@ class ProviderRunRequest(BaseModel):
     run_parameters: dict = Field(default_factory=dict)
 
 
+class ProviderResponseRequest(BaseModel):
+    provider: Provider
+    model: str
+    api_key: str | None = None
+    base_url: str | None = None
+    input: str
+    response_schema: dict
+    run_parameters: dict = Field(default_factory=dict)
+    previous_response_id: str | None = None
+    background: bool = False
+
+
 class AnalysisProviderResult(BaseModel):
     structured_text: str
     raw_output: str
@@ -27,4 +39,7 @@ class AnalysisProviderResult(BaseModel):
 
 class ProviderAdapter:
     def run(self, request: ProviderRunRequest) -> AnalysisProviderResult:
+        raise NotImplementedError
+
+    def run_response(self, request: ProviderResponseRequest) -> AnalysisProviderResult:
         raise NotImplementedError

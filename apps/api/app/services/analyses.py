@@ -5,12 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.authz.policies import can_read_analysis
 from app.core.config import get_settings
-from app.models.analysis import Analysis, PredictedCommentRun
+from app.models.analysis import Analysis, AnalysisDetailRun, PredictedCommentRun
 from app.models.document import Document
 from app.models.skill import Skill
 from app.models.skill_source import SkillSource
 from app.models.user import User
-from app.schemas.analyses import AnalysisRead, PredictedCommentRunRead, RetrievalTrace, SourceTrace
+from app.schemas.analyses import AnalysisDetailRunRead, AnalysisRead, PredictedCommentRunRead, RetrievalTrace, SourceTrace
 from app.schemas.enums import (
     GATE_CHALLENGER_DOCUMENT_TYPES,
     DocumentParseStatus,
@@ -178,6 +178,7 @@ def list_document_analyses_for_actor(*, db: Session, actor: User, document_id: U
 def read_analysis(*, db: Session, actor: User, analysis: Analysis) -> AnalysisRead:
     skill = db.get(Skill, analysis.skill_id)
     predicted_run = _latest_predicted_comment_run(db=db, analysis_id=analysis.id)
+    detail_run = latest_analysis_detail_run(db=db, analysis_id=analysis.id)
     return AnalysisRead(
         id=analysis.id,
         document_id=analysis.document_id,
@@ -205,7 +206,81 @@ def read_analysis(*, db: Session, actor: User, analysis: Analysis) -> AnalysisRe
         predicted_comment_run=(
             _read_predicted_comment_run(db=db, actor=actor, predicted_run=predicted_run) if predicted_run else None
         ),
+        detail_run=_read_analysis_detail_run(actor=actor, detail_run=detail_run) if detail_run else None,
     )
+
+
+def request_analysis_detail_run(*, db: Session, actor: User, analysis_id: UUID) -> AnalysisDetailRun:
+    analysis = get_analysis_for_actor(db=db, actor=actor, analysis_id=analysis_id)
+    if analysis.status != RunStatus.COMPLETED.value:
+        raise AnalysisPreconditionError("Analysis is not completed")
+    previous_response_id = (analysis.run_parameters or {}).get("gate_challenger_response_id")
+    if not previous_response_id:
+        raise AnalysisPreconditionError("Gate Challenger response id is missing")
+
+    reusable_run = reusable_analysis_detail_run(db=db, analysis_id=analysis.id)
+    if reusable_run is not None:
+        reusable_run.created_for_request = False
+        return reusable_run
+
+    run_parameters = {
+        "provider_api": "responses",
+        "previous_response_id": previous_response_id,
+        "output_language": (analysis.run_parameters or {}).get("output_language", "ru"),
+        "source_snapshot_id": (analysis.run_parameters or {}).get("source_snapshot_id"),
+        "source_fingerprint": (analysis.run_parameters or {}).get("source_fingerprint"),
+        "source_revision": (analysis.run_parameters or {}).get("source_revision"),
+        "skill_source_snapshot": (analysis.run_parameters or {}).get("skill_source_snapshot"),
+    }
+    detail_run = AnalysisDetailRun(
+        analysis_id=analysis.id,
+        status=RunStatus.QUEUED.value,
+        provider=analysis.provider,
+        model=analysis.model,
+        previous_response_id=str(previous_response_id),
+        run_parameters=run_parameters,
+    )
+    db.add(detail_run)
+    db.commit()
+    db.refresh(detail_run)
+    detail_run.created_for_request = True
+    return detail_run
+
+
+def get_latest_analysis_detail_run_for_actor(
+    *,
+    db: Session,
+    actor: User,
+    analysis_id: UUID,
+) -> AnalysisDetailRun:
+    analysis = get_analysis_for_actor(db=db, actor=actor, analysis_id=analysis_id)
+    detail_run = latest_analysis_detail_run(db=db, analysis_id=analysis.id)
+    if detail_run is None:
+        raise AnalysisNotFoundError("Analysis detail run not found")
+    return detail_run
+
+
+def latest_analysis_detail_run(*, db: Session, analysis_id: UUID) -> AnalysisDetailRun | None:
+    statement = (
+        select(AnalysisDetailRun)
+        .where(AnalysisDetailRun.analysis_id == analysis_id)
+        .order_by(AnalysisDetailRun.created_at.desc())
+    )
+    return db.execute(statement).scalars().first()
+
+
+def reusable_analysis_detail_run(*, db: Session, analysis_id: UUID) -> AnalysisDetailRun | None:
+    statement = (
+        select(AnalysisDetailRun)
+        .where(
+            AnalysisDetailRun.analysis_id == analysis_id,
+            AnalysisDetailRun.status.in_(
+                [RunStatus.QUEUED.value, RunStatus.RUNNING.value, RunStatus.COMPLETED.value]
+            ),
+        )
+        .order_by(AnalysisDetailRun.created_at.desc())
+    )
+    return db.execute(statement).scalars().first()
 
 
 def _resolve_skill(*, db: Session, skill_id: UUID | None, document_type: str) -> Skill:
@@ -266,6 +341,33 @@ def _read_predicted_comment_run(
         created_at=predicted_run.created_at,
         started_at=predicted_run.started_at,
         completed_at=predicted_run.completed_at,
+    )
+
+
+def read_analysis_detail_run(*, actor: User, detail_run: AnalysisDetailRun) -> AnalysisDetailRunRead:
+    return _read_analysis_detail_run(actor=actor, detail_run=detail_run)
+
+
+def _read_analysis_detail_run(*, actor: User, detail_run: AnalysisDetailRun) -> AnalysisDetailRunRead:
+    return AnalysisDetailRunRead(
+        id=detail_run.id,
+        analysis_id=detail_run.analysis_id,
+        status=detail_run.status,
+        provider=detail_run.provider,
+        model=detail_run.model,
+        previous_response_id=detail_run.previous_response_id,
+        response_id=detail_run.response_id,
+        structured_output=detail_run.structured_output,
+        raw_output=detail_run.raw_output if actor.role == "admin" else None,
+        error_message=detail_run.error_message,
+        latency_ms=detail_run.latency_ms,
+        input_tokens=detail_run.input_tokens,
+        output_tokens=detail_run.output_tokens,
+        estimated_cost=detail_run.estimated_cost,
+        run_parameters=detail_run.run_parameters,
+        created_at=detail_run.created_at,
+        started_at=detail_run.started_at,
+        completed_at=detail_run.completed_at,
     )
 
 

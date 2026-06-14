@@ -5,7 +5,7 @@ import pytest
 from app.core.config import get_settings
 from app.schemas.enums import Provider
 from providers.anthropic_compatible import AnthropicCompatibleAdapter
-from providers.base import ProviderRunRequest
+from providers.base import ProviderResponseRequest, ProviderRunRequest
 from providers.hermes import HermesAdapter
 from providers.openai_compatible import OpenAICompatibleAdapter
 
@@ -114,6 +114,49 @@ def test_openai_compatible_adapter_removes_provider_unsupported_array_min_items(
     assert provider_schema["properties"]["required_one"]["minItems"] == 1
     assert schema_with_strict_arrays["properties"]["required_many"]["minItems"] == 3
     assert schema_with_strict_arrays["properties"]["required_many"]["maxItems"] == 5
+
+
+def test_openai_compatible_adapter_normalizes_responses_api_result():
+    captured = {}
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                id="resp-details",
+                output_text='{"summary":"ok"}',
+                usage=SimpleNamespace(input_tokens=11, output_tokens=22),
+                model_dump_json=lambda: '{"id":"resp-details","raw":true}',
+            )
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    adapter = OpenAICompatibleAdapter(client_factory=lambda **_: FakeClient())
+
+    result = adapter.run_response(
+        ProviderResponseRequest(
+            provider=Provider.OPENAI_COMPATIBLE,
+            model="model-test",
+            api_key="sk-test",
+            base_url="https://admllm.test/v1",
+            input="Expand details",
+            response_schema={"type": "object"},
+            previous_response_id="resp-summary",
+            run_parameters={"max_output_tokens": 3000},
+        )
+    )
+
+    assert captured["model"] == "model-test"
+    assert captured["input"] == "Expand details"
+    assert captured["previous_response_id"] == "resp-summary"
+    assert captured["text"]["format"]["type"] == "json_schema"
+    assert captured["max_output_tokens"] == 3000
+    assert result.structured_text == '{"summary":"ok"}'
+    assert result.raw_output == '{"id":"resp-details","raw":true}'
+    assert result.input_tokens == 11
+    assert result.output_tokens == 22
+    assert result.provider_metadata["response_id"] == "resp-details"
 
 
 def test_openai_compatible_adapter_builds_proxy_http_client(monkeypatch):

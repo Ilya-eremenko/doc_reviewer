@@ -251,6 +251,36 @@ def test_manual_document_type_override_is_saved_separately(api_client, db_sessio
     assert document.manual_document_type == DocumentType.STREAM_REVIEW_1.value
 
 
+def test_owner_can_update_document_title(api_client, db_session):
+    create_user(db_session, "author", "secret")
+    login(api_client, "author", "secret")
+    upload = upload_document(api_client, "gate.txt", b"Gate 2 MVP metrics")
+    document_id = UUID(upload.json()["id"])
+
+    response = api_client.patch(f"/documents/{document_id}/title", json={"title": "  TRX_SE revised  "})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "TRX_SE revised"
+    document = db_session.get(Document, document_id)
+    assert document.title == "TRX_SE revised"
+    audit = db_session.query(AuditLog).filter_by(action="document.title_updated", entity_id=document_id).one()
+    assert audit.metadata_["from"] == "Investment Defense"
+    assert audit.metadata_["to"] == "TRX_SE revised"
+
+
+def test_rejects_empty_document_title_update(api_client, db_session):
+    create_user(db_session, "author", "secret")
+    login(api_client, "author", "secret")
+    upload = upload_document(api_client, "gate.txt", b"Gate 2 MVP metrics")
+    document_id = UUID(upload.json()["id"])
+
+    response = api_client.patch(f"/documents/{document_id}/title", json={"title": "   "})
+
+    assert response.status_code == 422
+    assert db_session.get(Document, document_id).title == "Investment Defense"
+
+
 def test_rejects_gate_1_manual_document_type(api_client, db_session):
     create_user(db_session, "author", "secret")
     login(api_client, "author", "secret")

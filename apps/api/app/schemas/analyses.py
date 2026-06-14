@@ -61,6 +61,7 @@ class AnalysisRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     predicted_comment_run: "PredictedCommentRunRead | None" = None
+    detail_run: "AnalysisDetailRunRead | None" = None
 
 
 class AnalysesListResponse(BaseModel):
@@ -86,6 +87,27 @@ class PredictedCommentRunRead(BaseModel):
     run_parameters: dict
     source_trace: SourceTrace | None = None
     retrieval_trace: RetrievalTrace | None = None
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
+class AnalysisDetailRunRead(BaseModel):
+    id: UUID
+    analysis_id: UUID
+    status: RunStatus
+    provider: Provider
+    model: str
+    previous_response_id: str | None
+    response_id: str | None
+    structured_output: dict | None
+    raw_output: str | None
+    error_message: str | None
+    latency_ms: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost: Decimal | None
+    run_parameters: dict
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None

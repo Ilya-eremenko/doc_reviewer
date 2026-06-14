@@ -84,6 +84,66 @@ def test_run_analysis_persists_structured_and_raw_output(tmp_path):
         _close_session(db)
 
 
+def test_run_analysis_uses_responses_api_for_gate_challenger_summary(tmp_path):
+    db = _create_session()
+    try:
+        user = _create_user(db)
+        document = _create_document(db, tmp_path, user)
+        skill = _create_skill(db)
+        db.add(
+            ProviderKey(
+                owner_id=_create_user(db, role=Role.ADMIN).id,
+                provider=Provider.OPENAI_COMPATIBLE.value,
+                base_url="https://admllm.test/v1",
+                default_model="openai/gpt-5.5",
+                encrypted_api_key=encrypt_secret("sk-test"),
+                api_key_fingerprint="openai_compatible:...test",
+            )
+        )
+        analysis = Analysis(
+            document_id=document.id,
+            user_id=user.id,
+            skill_id=skill.id,
+            skill_version=skill.version,
+            provider=Provider.OPENAI_COMPATIBLE.value,
+            model="openai/gpt-5.5",
+            status=RunStatus.QUEUED.value,
+            run_parameters={
+                "mock_provider_response_result": {
+                    "structured_text": _main_analysis_summary_json("Needs stronger metric evidence."),
+                    "raw_output": "raw responses summary",
+                    "input_tokens": 100,
+                    "output_tokens": 40,
+                    "latency_ms": 300,
+                    "provider_metadata": {"response_id": "resp-summary-1"},
+                }
+            },
+        )
+        db.add(analysis)
+        db.commit()
+
+        run_analysis(str(analysis.id), db=db)
+
+        db.refresh(analysis)
+        assert analysis.status == RunStatus.COMPLETED.value
+        assert analysis.verdict == Verdict.NEED_EVIDENCE.value
+        assert analysis.summary == "Needs stronger metric evidence."
+        assert analysis.structured_output["details_status"] == "not_requested"
+        assert "layer_1_markdown" not in analysis.structured_output
+        assert "layer_2_markdown" not in analysis.structured_output
+        assert analysis.raw_output == "raw responses summary"
+        assert analysis.run_parameters["provider_api"] == "responses"
+        assert analysis.run_parameters["gate_challenger_response_id"] == "resp-summary-1"
+        assert analysis.input_tokens == 100
+        assert analysis.output_tokens == 40
+        rendered_prompt = Path(analysis.run_parameters["rendered_prompt_artifact_path"]).read_text(encoding="utf-8")
+        assert "details_status" in rendered_prompt
+        assert "layer_1_index" in rendered_prompt
+        assert "layer_1_markdown" not in rendered_prompt
+    finally:
+        _close_session(db)
+
+
 def test_run_analysis_marks_missing_provider_key_failed(tmp_path):
     db = _create_session()
     try:
@@ -550,6 +610,39 @@ def _main_analysis_json(summary: str = "Needs evidence.") -> str:
                     "evidence": "The mock document omits the proof.",
                 }
             ],
+        }
+    )
+
+
+def _main_analysis_summary_json(summary: str = "Needs evidence.") -> str:
+    return json.dumps(
+        {
+            "verdict": "need_evidence",
+            "summary": summary,
+            "assessment_markdown": f"Оценка документа\nРекомендация: {summary}",
+            "layer_1_index": [
+                {
+                    "id": "L1-001",
+                    "severity": "high",
+                    "issue": "Mandatory readiness is not proven.",
+                    "evidence_anchor": "The document does not close the required proof.",
+                }
+            ],
+            "layer_2_index": [
+                {
+                    "id": "L2-001",
+                    "parent_layer_1_id": "L1-001",
+                    "status": "fail",
+                    "severity": "high",
+                    "question": "Is the key target evidenced?",
+                    "answer": "NO",
+                    "short_evidence": "The mock document omits the proof.",
+                }
+            ],
+            "details_status": "not_requested",
+            "details_run_id": None,
+            "revision_required": False,
+            "revision_reason": None,
         }
     )
 

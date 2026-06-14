@@ -7,16 +7,24 @@ from app.db.session import get_db
 from app.dependencies.auth import require_current_user
 from app.models.analysis import Analysis
 from app.models.user import User
-from app.schemas.analyses import AnalysesListResponse, AnalysisCreate, AnalysisRead
+from app.schemas.analyses import AnalysesListResponse, AnalysisCreate, AnalysisDetailRunRead, AnalysisRead
 from app.services.analyses import (
     AnalysisNotFoundError,
     AnalysisPreconditionError,
     create_analysis_for_document,
+    get_latest_analysis_detail_run_for_actor,
     get_analysis_for_actor,
     list_document_analyses_for_actor,
     read_analysis,
+    read_analysis_detail_run,
+    request_analysis_detail_run,
 )
-from app.services.analysis_jobs import RunAnalysisEnqueue, enqueue_run_analysis
+from app.services.analysis_jobs import (
+    RunAnalysisDetailsEnqueue,
+    RunAnalysisEnqueue,
+    enqueue_run_analysis,
+    enqueue_run_analysis_details,
+)
 from app.services.documents import DocumentNotFoundError
 
 router = APIRouter(tags=["analyses"])
@@ -24,6 +32,10 @@ router = APIRouter(tags=["analyses"])
 
 def get_run_analysis_enqueue() -> RunAnalysisEnqueue:
     return enqueue_run_analysis
+
+
+def get_run_analysis_details_enqueue() -> RunAnalysisDetailsEnqueue:
+    return enqueue_run_analysis_details
 
 
 @router.post("/documents/{document_id}/analyses", response_model=AnalysisRead, status_code=status.HTTP_201_CREATED)
@@ -78,3 +90,35 @@ def get_analysis(
     except AnalysisNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found") from exc
     return read_analysis(db=db, actor=current_user, analysis=analysis)
+
+
+@router.post("/analyses/{analysis_id}/details", response_model=AnalysisDetailRunRead)
+def create_analysis_details(
+    analysis_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+    enqueue: RunAnalysisDetailsEnqueue = Depends(get_run_analysis_details_enqueue),
+) -> AnalysisDetailRunRead:
+    try:
+        detail_run = request_analysis_detail_run(db=db, actor=current_user, analysis_id=analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found") from exc
+    except AnalysisPreconditionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if getattr(detail_run, "created_for_request", False):
+        enqueue(detail_run.id)
+    return read_analysis_detail_run(actor=current_user, detail_run=detail_run)
+
+
+@router.get("/analyses/{analysis_id}/details", response_model=AnalysisDetailRunRead)
+def get_analysis_details(
+    analysis_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+) -> AnalysisDetailRunRead:
+    try:
+        detail_run = get_latest_analysis_detail_run_for_actor(db=db, actor=current_user, analysis_id=analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis detail run not found") from exc
+    return read_analysis_detail_run(actor=current_user, detail_run=detail_run)

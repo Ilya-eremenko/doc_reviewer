@@ -101,12 +101,34 @@ describe("analysis result page", () => {
     expect(shortSummaryParagraphStyles).not.toContain("max-width");
   });
 
+  it("allows long Layer 2 question text to wrap inside its card", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const layer2TopTextStyles = pageSource.slice(
+      pageSource.indexOf(".analysis-layer2-question__top > div"),
+      pageSource.indexOf(".analysis-layer2-question__top > span:first-child"),
+    );
+
+    expect(layer2TopTextStyles).toContain("min-width: 0");
+  });
+
+  it("keeps compact Layer 2 detail fields inset from the card edge", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const compactFieldRuleStart = pageSource.indexOf(".analysis-layer-fields--compact {");
+    const compactFieldStyles = pageSource.slice(
+      compactFieldRuleStart,
+      pageSource.indexOf(".analysis-layer-field {", compactFieldRuleStart),
+    );
+
+    expect(compactFieldStyles).toContain("padding: 10px 12px 12px");
+  });
+
   it("polls analysis detail while the main or predicted-comment run is still active", () => {
     const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
     expect(pageSource).toContain("const ANALYSIS_POLL_INTERVAL_MS");
     expect(pageSource).toContain("function isAnalysisRefreshPending");
     expect(pageSource).toContain("analysis.predicted_comment_run?.status");
+    expect(pageSource).toContain("analysis.detail_run?.status");
     expect(pageSource).toContain("window.setInterval(refreshAnalysis, ANALYSIS_POLL_INTERVAL_MS)");
     expect(pageSource).toContain("window.clearInterval(intervalId)");
   });
@@ -119,5 +141,20 @@ describe("analysis result page", () => {
     expect(pageSource).toContain('aria-live="polite"');
     expect(pageSource).toContain('analysis.status === "queued"');
     expect(pageSource).toContain('analysis.status === "running"');
+  });
+
+  it("loads lazy Gate Challenger details from Full Output", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const fullOutputSource = pageSource.slice(
+      pageSource.indexOf("function FullOutputPanel"),
+      pageSource.indexOf("function TracePanel"),
+    );
+
+    expect(pageSource).toContain("createAnalysisDetails");
+    expect(pageSource).toContain("async function loadAnalysisDetails");
+    expect(fullOutputSource).toContain("Load detailed Layer 1 / Layer 2");
+    expect(fullOutputSource).toContain("analysis.detail_run?.status");
+    expect(fullOutputSource).toContain("<DetailedGateChecksOutput analysis={analysis} />");
+    expect(fullOutputSource).toContain("Detail run failed");
   });
 });

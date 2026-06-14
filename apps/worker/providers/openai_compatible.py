@@ -3,7 +3,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
-from providers.base import AnalysisProviderResult, ProviderAdapter, ProviderRunRequest
+from providers.base import AnalysisProviderResult, ProviderAdapter, ProviderResponseRequest, ProviderRunRequest
 from providers.proxy import outbound_proxy_kwargs
 
 
@@ -50,6 +50,48 @@ class OpenAICompatibleAdapter(ProviderAdapter):
             provider_metadata={"provider": request.provider.value},
         )
 
+    def run_response(self, request: ProviderResponseRequest) -> AnalysisProviderResult:
+        if not request.api_key:
+            raise RuntimeError("provider_key_missing")
+
+        client = self._client_factory(api_key=request.api_key, base_url=request.base_url)
+        text_format = request.run_parameters.get("text_format") or {
+            "format": {
+                "type": "json_schema",
+                "name": "analysis_result",
+                "schema": _provider_compatible_schema(request.response_schema),
+                "strict": bool(request.run_parameters.get("json_schema_strict", False)),
+            }
+        }
+        kwargs = {
+            "model": request.model,
+            "input": request.input,
+            "text": text_format,
+        }
+        if request.previous_response_id:
+            kwargs["previous_response_id"] = request.previous_response_id
+        if request.background:
+            kwargs["background"] = True
+        if "temperature" in request.run_parameters:
+            kwargs["temperature"] = request.run_parameters["temperature"]
+        if "max_output_tokens" in request.run_parameters:
+            kwargs["max_output_tokens"] = request.run_parameters["max_output_tokens"]
+
+        started = time.monotonic()
+        response = client.responses.create(**kwargs)
+        latency_ms = int((time.monotonic() - started) * 1000)
+
+        usage = getattr(response, "usage", None)
+        response_id = getattr(response, "id", None)
+        return AnalysisProviderResult(
+            structured_text=_responses_text(response),
+            raw_output=_dump_response(response),
+            input_tokens=_usage_value(usage, "input_tokens", "prompt_tokens"),
+            output_tokens=_usage_value(usage, "output_tokens", "completion_tokens"),
+            latency_ms=latency_ms,
+            provider_metadata={"provider": request.provider.value, "response_id": response_id},
+        )
+
     @staticmethod
     def _default_client_factory(*, api_key: str, base_url: str | None) -> object:
         from openai import DefaultHttpxClient, OpenAI
@@ -67,6 +109,36 @@ def _dump_response(response: object) -> str:
     if hasattr(response, "model_dump_json"):
         return response.model_dump_json()
     return str(response)
+
+
+def _responses_text(response: object) -> str:
+    output_text = getattr(response, "output_text", None)
+    if output_text:
+        return str(output_text)
+
+    output = getattr(response, "output", None)
+    if not isinstance(output, list):
+        return ""
+    parts: list[str] = []
+    for item in output:
+        content = getattr(item, "content", None)
+        if not isinstance(content, list):
+            continue
+        for content_item in content:
+            text = getattr(content_item, "text", None)
+            if text:
+                parts.append(str(text))
+    return "\n".join(parts)
+
+
+def _usage_value(usage: object | None, *names: str) -> int | None:
+    if usage is None:
+        return None
+    for name in names:
+        value = getattr(usage, name, None)
+        if value is not None:
+            return int(value)
+    return None
 
 
 def _provider_compatible_schema(schema: dict[str, Any]) -> dict[str, Any]:

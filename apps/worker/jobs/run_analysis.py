@@ -26,7 +26,7 @@ from app.services.skill_sources import SkillSourceValidationError, refresh_skill
 from app.services.skills import skill_source_snapshot
 from app.storage.local import LocalDocumentStorage
 from jobs.run_predicted_comments import run_predicted_comments
-from providers.base import ProviderRunRequest
+from providers.base import ProviderResponseRequest, ProviderRunRequest
 from providers.registry import get_provider_adapter
 from results.schema_validation import parse_and_validate_json_output
 from skills.layer_4_synthesis import build_layer_4_synthesis, format_layer_4_synthesis_markdown
@@ -34,6 +34,7 @@ from skills.prompt_renderer import render_prompt
 
 
 DEFAULT_PREDICTED_COMMENTS_MAX_OUTPUT_TOKENS = 20000
+SUMMARY_SCHEMA_PATH = "contracts/schemas/main-analysis-summary-result.schema.json"
 
 
 def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predicted_comments=None) -> None:
@@ -69,23 +70,44 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
 
         _run_devils_advocate_prepass(session=session, analysis=analysis, document=document)
 
-        schema = json.loads(_resolve_schema_path(skill.result_schema_path).read_text(encoding="utf-8"))
+        use_responses_summary = _should_use_responses_summary(analysis=analysis, provider=provider, skill=skill)
+        schema_path = SUMMARY_SCHEMA_PATH if use_responses_summary else skill.result_schema_path
+        if use_responses_summary:
+            run_parameters = dict(analysis.run_parameters or {})
+            run_parameters["provider_api"] = "responses"
+            analysis.run_parameters = run_parameters
+            flag_modified(analysis, "run_parameters")
+            session.commit()
+
+        schema = json.loads(_resolve_schema_path(schema_path).read_text(encoding="utf-8"))
         prompt = _render_and_persist_prompt(session=session, analysis=analysis, document=document, skill=skill, schema=schema)
-        request = ProviderRunRequest(
-            provider=provider,
-            model=analysis.model,
-            api_key=api_key,
-            base_url=provider_key.base_url if provider_key else None,
-            prompt=prompt,
-            response_schema=schema,
-            run_parameters=analysis.run_parameters,
-        )
-        result = get_provider_adapter(provider, analysis.run_parameters).run(request)
+        if use_responses_summary:
+            request = ProviderResponseRequest(
+                provider=provider,
+                model=analysis.model,
+                api_key=api_key,
+                base_url=provider_key.base_url if provider_key else None,
+                input=prompt,
+                response_schema=schema,
+                run_parameters=analysis.run_parameters,
+            )
+            result = get_provider_adapter(provider, analysis.run_parameters).run_response(request)
+        else:
+            request = ProviderRunRequest(
+                provider=provider,
+                model=analysis.model,
+                api_key=api_key,
+                base_url=provider_key.base_url if provider_key else None,
+                prompt=prompt,
+                response_schema=schema,
+                run_parameters=analysis.run_parameters,
+            )
+            result = get_provider_adapter(provider, analysis.run_parameters).run(request)
         provider_raw_output = result.raw_output
         provider_structured_text = result.structured_text
         structured = parse_and_validate_json_output(
             structured_text=result.structured_text,
-            schema_path=skill.result_schema_path,
+            schema_path=schema_path,
         )
 
         analysis.structured_output = structured
@@ -96,6 +118,14 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
         analysis.output_tokens = result.output_tokens
         analysis.latency_ms = result.latency_ms
         analysis.estimated_cost = result.estimated_cost
+        if use_responses_summary:
+            run_parameters = dict(analysis.run_parameters or {})
+            response_id = result.provider_metadata.get("response_id")
+            if response_id:
+                run_parameters["gate_challenger_response_id"] = response_id
+            run_parameters["provider_api"] = "responses"
+            analysis.run_parameters = run_parameters
+            flag_modified(analysis, "run_parameters")
         analysis.status = RunStatus.COMPLETED.value
         analysis.completed_at = utc_now()
         record_audit(
@@ -157,6 +187,19 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
 
 def _get_provider_key(session: Session, analysis: Analysis, provider: Provider) -> ProviderKey | None:
     return get_shared_provider_key(db=session, provider=provider)
+
+
+def _should_use_responses_summary(*, analysis: Analysis, provider: Provider, skill: Skill) -> bool:
+    if skill.name != "gate2_challenger_main_analysis":
+        return False
+    if provider != Provider.OPENAI_COMPATIBLE:
+        return False
+    parameters = analysis.run_parameters or {}
+    if parameters.get("provider_api") == "responses":
+        return True
+    if "mock_provider_response_result" in parameters:
+        return True
+    return "mock_provider_result" not in parameters
 
 
 def _resolve_schema_path(schema_path: str) -> Path:

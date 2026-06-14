@@ -49,22 +49,7 @@ def render_gate2_challenger_prompt(
     parts.extend(
         [
             "Mandatory output format:",
-            "\n".join(
-                [
-                    "Return JSON only, but the visible reader-facing answer must be encoded in these required fields:",
-                    _assessment_markdown_requirement(normalized_output_language),
-                    "2. layer_1_markdown: reader-facing Layer 1 block after the summary, in strict Gate Challenger format. "
-                    "Each Layer 1 item must expose only issue, evidence, and severity; do not add Title, Impact, or Recommendation subblocks.",
-                    "3. layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence.",
-                    "4. layer_2_markdown: reader-facing Layer 2 block after Layer 1, in strict Gate Challenger format.",
-                    "5. layer_2: structured copy of every Layer 2 atomic check with id, parent_layer_1_id, status, "
-                    "severity, question, answer, evidence, issue. Layer 2 item must not include Risk or Recommendation fields.",
-                    "Use Layer 4 expert analysis to strengthen or supplement Gate Challenger findings when it adds "
-                    "document-grounded issues or reinforces problems you independently find.",
-                    "Do not collapse Layer 1/Layer 2 into generic findings. The display order is always: "
-                    "assessment_markdown, then layer_1_markdown, then layer_2_markdown.",
-                ]
-            ),
+            _output_requirements(response_schema=response_schema, output_language=normalized_output_language),
             f"Document title: {document.title}",
             f"Document type: {document_type}",
             "Return only JSON matching this schema:",
@@ -74,6 +59,43 @@ def render_gate2_challenger_prompt(
         ]
     )
     return "\n\n".join(parts)
+
+
+def _output_requirements(*, response_schema: dict, output_language: str) -> str:
+    title = response_schema.get("title")
+    if title == "MainAnalysisSummaryResult":
+        return "\n".join(
+            [
+                "Return JSON only, but the first visible reader-facing answer must be compact.",
+                _assessment_markdown_requirement(output_language),
+                "2. layer_1_index: compact evidence-backed index of decision-critical Layer 1 issues. "
+                "Each item must include id, severity, issue, and evidence_anchor only.",
+                "3. layer_2_index: compact index of atomic Layer 2 checks with id, parent_layer_1_id, "
+                "status, severity, question, answer, and short_evidence only.",
+                "4. details_status must be exactly not_requested, details_run_id must be null, "
+                "revision_required must be false, and revision_reason must be null.",
+                "Do the full Gate Challenger reasoning now, but do not output full detailed check blocks in this response.",
+                "Use Layer 4 expert analysis to strengthen or supplement Gate Challenger findings when it adds "
+                "document-grounded issues or reinforces problems you independently find.",
+            ]
+        )
+
+    return "\n".join(
+        [
+            "Return JSON only, but the visible reader-facing answer must be encoded in these required fields:",
+            _assessment_markdown_requirement(output_language),
+            "2. layer_1_markdown: reader-facing Layer 1 block after the summary, in strict Gate Challenger format. "
+            "Each Layer 1 item must expose only issue, evidence, and severity; do not add Title, Impact, or Recommendation subblocks.",
+            "3. layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence.",
+            "4. layer_2_markdown: reader-facing Layer 2 block after Layer 1, in strict Gate Challenger format.",
+            "5. layer_2: structured copy of every Layer 2 atomic check with id, parent_layer_1_id, status, "
+            "severity, question, answer, evidence, issue. Layer 2 item must not include Risk or Recommendation fields.",
+            "Use Layer 4 expert analysis to strengthen or supplement Gate Challenger findings when it adds "
+            "document-grounded issues or reinforces problems you independently find.",
+            "Do not collapse Layer 1/Layer 2 into generic findings. The display order is always: "
+            "assessment_markdown, then layer_1_markdown, then layer_2_markdown.",
+        ]
+    )
 
 
 def _assessment_markdown_requirement(output_language: str) -> str:

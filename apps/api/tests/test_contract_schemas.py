@@ -206,6 +206,75 @@ def test_main_analysis_schema_rejects_non_skill_layer_2_fields():
     raise AssertionError("schema accepted non-skill Layer 2 risk/recommendation fields")
 
 
+def test_main_analysis_summary_schema_accepts_staged_summary_result():
+    schema = load_schema("main-analysis-summary-result.schema.json")
+    payload = {
+        "verdict": "need_evidence",
+        "summary": "Evidence is incomplete.",
+        "assessment_markdown": "Оценка документа\nРекомендация: запросить доказательства.",
+        "layer_1_index": [
+            {
+                "id": "l1-traction",
+                "severity": "high",
+                "issue": "Traction evidence is not decision-grade.",
+                "evidence_anchor": "FAQ 4: CR target is planned, not proven.",
+            }
+        ],
+        "layer_2_index": [
+            {
+                "id": "l2-traction-1",
+                "parent_layer_1_id": "l1-traction",
+                "status": "fail",
+                "severity": "high",
+                "question": "Does the document prove traction with decision-grade evidence?",
+                "answer": "NO",
+                "short_evidence": "The document gives a plan but no measured result.",
+            }
+        ],
+        "details_status": "not_requested",
+        "details_run_id": None,
+        "revision_required": False,
+        "revision_reason": None,
+    }
+
+    validate(instance=payload, schema=schema)
+
+
+def test_main_analysis_details_schema_accepts_lazy_layer_details_result():
+    schema = load_schema("main-analysis-details-result.schema.json")
+    payload = {
+        "analysis_id": "00000000-0000-0000-0000-000000000123",
+        "verdict": "need_evidence",
+        "summary": "Evidence is incomplete.",
+        "layer_1_markdown": "Layer 1\nL1-001 — Decision-critical blocker.",
+        "layer_1": [
+            {
+                "id": "L1-001",
+                "severity": "high",
+                "issue": "Traction evidence is not decision-grade.",
+                "evidence": "FAQ 4 states the target but not the measured result.",
+            }
+        ],
+        "layer_2_markdown": "Layer 2\nL2-001 — Atomic weak-link finding.",
+        "layer_2": [
+            {
+                "id": "L2-001",
+                "parent_layer_1_id": "L1-001",
+                "status": "fail",
+                "severity": "high",
+                "question": "Does the document prove traction with decision-grade evidence?",
+                "answer": "NO",
+                "evidence": "The target is planned, not measured.",
+                "issue": "The evidence does not close the traction proof.",
+            }
+        ],
+        "revision_required": False,
+        "revision_reason": None,
+    }
+
+    validate(instance=payload, schema=schema)
+
+
 def test_devils_advocate_schema_accepts_retrieval_context():
     schema = load_schema("devils-advocate-result.schema.json")
     payload = {

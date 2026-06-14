@@ -21,6 +21,38 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Fix Layer 2 detailed-check card spacing/wrapping: long Layer 2 questions
+  now wrap inside the card instead of stretching the row, and compact
+  Issue/Evidence fields have horizontal inset padding so text no longer starts
+  flush against the card edge. Verified with frontend tests and production
+  build, web/API container rebuild, Docker status, and localhost browser smoke.
+- [x] Fix lazy detail Layer 1 / Layer 2 UI merging when detail markdown uses
+  shorthand bullets such as `- L1-1: ...` and `- L2-1: ...`: the parser now
+  extracts those IDs, merges markdown sections with structured JSON by ID,
+  keeps structured Layer 2 questions authoritative for shorthand detail
+  records, and avoids duplicate empty synthetic Layer 1 cards. Verified with
+  frontend tests, production build, web/API container rebuild, Docker status,
+  and localhost browser smoke.
+- [x] Implement staged Gate Challenger lazy details: new analyses can persist a
+  Responses API summary contract with `gate_challenger_response_id`, lazy
+  `analysis_detail_runs` load full Layer 1 / Layer 2 via
+  `previous_response_id`, API exposes `POST/GET /analyses/{id}/details`, and
+  Full Output can request/poll/render completed or failed detail runs while
+  legacy full analyses keep rendering. Verified with full API tests, full
+  worker tests, full frontend unit tests, production build, Compose config,
+  Docker rebuild/restart for API/worker/web, Alembic upgrade to
+  `202606140002`, and localhost browser smoke; e2e did not start because
+  `E2E_ADMIN_LOGIN` / `E2E_ADMIN_PASSWORD` were not set.
+- [x] Add document-title editing from the document detail pencil action:
+  `PATCH /documents/{id}/title` now trims and validates titles with ownership
+  checks and audit logging, the frontend API exposes `patchDocumentTitle`, and
+  the detail page switches the title row into an inline editor with Save,
+  Cancel, and Escape-to-cancel behavior. Verified with
+  `.venv/bin/python -m pytest apps/api/tests -q`, focused
+  document-detail/API frontend tests, `npm --prefix apps/web run build`, Compose
+  config, web container rebuild, and localhost browser smoke; full frontend
+  unit suite still fails on unrelated in-progress lazy-details tests in
+  `apps/web/src/app/analyses/[analysisId]/*`.
 - [x] Save staged Gate Challenger lazy-details technical specification in
   `docs/superpowers/specs/2026-06-14-staged-gate-challenger-lazy-details.md`.
 - [x] Add and run isolated `prototypes/admllm-session-probe` for admllm

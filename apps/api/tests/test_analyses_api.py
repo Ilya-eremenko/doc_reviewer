@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from app.models.analysis import Analysis, PredictedCommentRun
+from app.models.analysis import Analysis, AnalysisDetailRun, PredictedCommentRun
 from app.models.document import Document
 from app.models.provider_key import ProviderKey
 from app.models.skill_source import SkillSource, SkillSourceSnapshot
@@ -381,6 +381,185 @@ def test_analysis_detail_includes_predicted_comment_run_without_raw_for_non_admi
     assert payload["predicted_comment_run"]["retrieval_trace"]["retrieval_mode"] == "deterministic_topk"
     assert payload["predicted_comment_run"]["structured_output"]["predicted_questions"] == ["What is incrementality?"]
     assert payload["predicted_comment_run"]["raw_output"] is None
+
+
+def test_analysis_detail_includes_latest_detail_run_without_raw_for_non_admin(client, db_session):
+    user = create_user(db_session, "author", "secret")
+    skills = seed_baseline_skills(db_session)
+    analysis = Analysis(
+        document_id=_create_completed_document(client, db_session, user),
+        user_id=user.id,
+        skill_id=skills[0].id,
+        skill_version=skills[0].version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="need_evidence",
+        summary="Needs evidence",
+        structured_output={
+            "verdict": "need_evidence",
+            "summary": "Needs evidence",
+            "assessment_markdown": "Оценка документа\nНужны доказательства.",
+            "layer_1_index": [],
+            "layer_2_index": [],
+            "details_status": "not_requested",
+            "details_run_id": None,
+            "revision_required": False,
+            "revision_reason": None,
+        },
+        raw_output="raw summary secret",
+        run_parameters={"gate_challenger_response_id": "resp-summary"},
+    )
+    db_session.add(analysis)
+    db_session.flush()
+    older_detail = AnalysisDetailRun(
+        analysis_id=analysis.id,
+        status=RunStatus.FAILED.value,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        previous_response_id="resp-summary",
+        error_message="old failure",
+        run_parameters={},
+    )
+    latest_detail = AnalysisDetailRun(
+        analysis_id=analysis.id,
+        status=RunStatus.COMPLETED.value,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        previous_response_id="resp-summary",
+        response_id="resp-details",
+        structured_output={"layer_1": [{"id": "L1-001"}], "layer_2": []},
+        raw_output="raw detail secret",
+        run_parameters={"provider_api": "responses"},
+    )
+    db_session.add_all([older_detail, latest_detail])
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.get(f"/analyses/{analysis.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["detail_run"]["id"] == str(latest_detail.id)
+    assert payload["detail_run"]["status"] == "completed"
+    assert payload["detail_run"]["previous_response_id"] == "resp-summary"
+    assert payload["detail_run"]["response_id"] == "resp-details"
+    assert payload["detail_run"]["structured_output"]["layer_1"] == [{"id": "L1-001"}]
+    assert payload["detail_run"]["raw_output"] is None
+
+
+def test_create_analysis_detail_run_requires_summary_response_id(client, db_session):
+    user = create_user(db_session, "author", "secret")
+    skill = seed_baseline_skills(db_session)[0]
+    analysis = Analysis(
+        document_id=_create_completed_document(client, db_session, user),
+        user_id=user.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="need_evidence",
+        summary="Needs evidence",
+        structured_output={"verdict": "need_evidence", "summary": "Needs evidence"},
+        run_parameters={},
+    )
+    db_session.add(analysis)
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.post(f"/analyses/{analysis.id}/details")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Gate Challenger response id is missing"
+
+
+def test_create_analysis_detail_run_is_idempotent_for_active_run(client, db_session):
+    enqueued: list[str] = []
+
+    from app.main import app
+    from app.routers import analyses as analyses_router
+
+    app.dependency_overrides[analyses_router.get_run_analysis_details_enqueue] = lambda: enqueued.append
+    try:
+        user = create_user(db_session, "author", "secret")
+        skill = seed_baseline_skills(db_session)[0]
+        analysis = Analysis(
+            document_id=_create_completed_document(client, db_session, user),
+            user_id=user.id,
+            skill_id=skill.id,
+            skill_version=skill.version,
+            provider=Provider.OPENAI_COMPATIBLE.value,
+            model="gpt-test",
+            status=RunStatus.COMPLETED.value,
+            verdict="need_evidence",
+            summary="Needs evidence",
+            structured_output={"verdict": "need_evidence", "summary": "Needs evidence"},
+            run_parameters={"gate_challenger_response_id": "resp-summary", "output_language": "en"},
+        )
+        db_session.add(analysis)
+        db_session.flush()
+        existing = AnalysisDetailRun(
+            analysis_id=analysis.id,
+            status=RunStatus.RUNNING.value,
+            provider=Provider.OPENAI_COMPATIBLE.value,
+            model="gpt-test",
+            previous_response_id="resp-summary",
+            run_parameters={"provider_api": "responses"},
+        )
+        db_session.add(existing)
+        db_session.commit()
+        login(client, "author", "secret")
+
+        response = client.post(f"/analyses/{analysis.id}/details")
+
+        assert response.status_code == 200
+        assert response.json()["id"] == str(existing.id)
+        assert enqueued == []
+    finally:
+        app.dependency_overrides.pop(analyses_router.get_run_analysis_details_enqueue, None)
+
+
+def test_create_analysis_detail_run_enqueues_new_run(client, db_session):
+    enqueued: list[str] = []
+
+    from app.main import app
+    from app.routers import analyses as analyses_router
+
+    app.dependency_overrides[analyses_router.get_run_analysis_details_enqueue] = lambda: lambda detail_run_id: enqueued.append(
+        str(detail_run_id)
+    )
+    try:
+        user = create_user(db_session, "author", "secret")
+        skill = seed_baseline_skills(db_session)[0]
+        analysis = Analysis(
+            document_id=_create_completed_document(client, db_session, user),
+            user_id=user.id,
+            skill_id=skill.id,
+            skill_version=skill.version,
+            provider=Provider.OPENAI_COMPATIBLE.value,
+            model="gpt-test",
+            status=RunStatus.COMPLETED.value,
+            verdict="need_evidence",
+            summary="Needs evidence",
+            structured_output={"verdict": "need_evidence", "summary": "Needs evidence"},
+            run_parameters={"gate_challenger_response_id": "resp-summary", "output_language": "ru"},
+        )
+        db_session.add(analysis)
+        db_session.commit()
+        login(client, "author", "secret")
+
+        response = client.post(f"/analyses/{analysis.id}/details")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "queued"
+        assert payload["previous_response_id"] == "resp-summary"
+        assert payload["run_parameters"]["provider_api"] == "responses"
+        assert payload["run_parameters"]["output_language"] == "ru"
+        assert enqueued == [payload["id"]]
+    finally:
+        app.dependency_overrides.pop(analyses_router.get_run_analysis_details_enqueue, None)
 
 
 def _create_completed_document(client, db_session, user):

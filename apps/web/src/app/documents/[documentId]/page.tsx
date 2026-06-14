@@ -18,6 +18,7 @@ import {
   getDocument,
   getParsedText,
   listAnalyses,
+  patchDocumentTitle,
   reparseDocument,
   type AnalysisRecord,
   type DocumentRecord,
@@ -186,6 +187,9 @@ export default function DocumentDetailPage() {
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const [draftModel, setDraftModel] = useState("");
   const [copiedParsed, setCopiedParsed] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [titleSaving, setTitleSaving] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -290,6 +294,48 @@ export default function DocumentDetailPage() {
     setModelDialogOpen(false);
   }
 
+  function openTitleEditor() {
+    if (!document) {
+      return;
+    }
+    setDraftTitle(document.title);
+    setTitleEditing(true);
+  }
+
+  function cancelTitleEditor() {
+    setDraftTitle(document?.title ?? "");
+    setTitleEditing(false);
+  }
+
+  async function saveTitle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!document) {
+      return;
+    }
+
+    const nextTitle = draftTitle.trim();
+    if (!nextTitle) {
+      return;
+    }
+    if (nextTitle === document.title) {
+      setTitleEditing(false);
+      return;
+    }
+
+    setTitleSaving(true);
+    setError("");
+    try {
+      const updated = await patchDocumentTitle(document.id, nextTitle);
+      setDocument(updated);
+      setDraftTitle(updated.title);
+      setTitleEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update document title");
+    } finally {
+      setTitleSaving(false);
+    }
+  }
+
   async function copyParsedText() {
     if (!parsedText || !navigator.clipboard) {
       return;
@@ -362,10 +408,43 @@ export default function DocumentDetailPage() {
             <section className="gc-document-hero">
               <div className="gc-document-summary">
                 <div className="gc-title-line">
-                  <h1>{document.title}</h1>
-                  <span aria-hidden="true" className="gc-title-edit-mark">
-                    ✎
-                  </span>
+                  {titleEditing ? (
+                    <form aria-label="Edit document title" className="gc-title-edit-form" onSubmit={saveTitle}>
+                      <input
+                        aria-label="Document title"
+                        autoFocus
+                        disabled={titleSaving}
+                        maxLength={256}
+                        value={draftTitle}
+                        onChange={(event) => setDraftTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            cancelTitleEditor();
+                          }
+                        }}
+                      />
+                      <button className="gc-title-save-button" disabled={titleSaving || !draftTitle.trim()} type="submit">
+                        {titleSaving ? "Saving..." : "Save"}
+                      </button>
+                      <button className="gc-title-cancel-button" disabled={titleSaving} type="button" onClick={cancelTitleEditor}>
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <h1>{document.title}</h1>
+                      <button
+                        aria-label="Edit document title"
+                        className="gc-title-edit-button"
+                        disabled={titleSaving}
+                        title="Edit document title"
+                        type="button"
+                        onClick={openTitleEditor}
+                      >
+                        <span aria-hidden="true">✎</span>
+                      </button>
+                    </>
+                  )}
                 </div>
                 <p className="gc-muted">
                   {document.original_filename} · {formatDate(document.created_at)}
@@ -605,11 +684,82 @@ const documentDetailStyles = `
   letter-spacing: 0;
 }
 
-.document-detail .gc-title-edit-mark {
-  flex: 0 0 auto;
+.document-detail .gc-title-edit-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #5b6472;
   font-size: 18px;
   line-height: 22px;
+}
+
+.document-detail .gc-title-edit-button:hover:not(:disabled) {
+  background: #eef8f4;
+  color: #075e45;
+}
+
+.document-detail .gc-title-edit-form {
+  display: flex;
+  width: min(720px, 100%);
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.document-detail .gc-title-edit-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid #b8d8f1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  padding: 0 12px;
+  font-size: 24px;
+  font-weight: 760;
+  line-height: 31px;
+}
+
+.document-detail .gc-title-save-button,
+.document-detail .gc-title-cancel-button {
+  display: inline-flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.document-detail .gc-title-save-button {
+  border: 1px solid #0e9f6e;
+  background: #0e9f6e;
+  color: #ffffff;
+}
+
+.document-detail .gc-title-save-button:hover:not(:disabled) {
+  border-color: #087d5f;
+  background: #087d5f;
+}
+
+.document-detail .gc-title-cancel-button {
+  border: 1px solid #d9e0ea;
+  background: #ffffff;
+  color: #111827;
+}
+
+.document-detail .gc-title-cancel-button:hover:not(:disabled) {
+  border-color: #0e9f6e;
+  color: #075e45;
 }
 
 .document-detail .gc-muted {
@@ -713,6 +863,9 @@ const documentDetailStyles = `
 .document-detail .gc-primary:disabled,
 .document-detail .gc-ghost:disabled,
 .document-detail .gc-danger:disabled,
+.document-detail .gc-title-edit-button:disabled,
+.document-detail .gc-title-save-button:disabled,
+.document-detail .gc-title-cancel-button:disabled,
 .document-detail .gc-copy-action:disabled {
   cursor: not-allowed;
   opacity: 0.52;
@@ -1233,6 +1386,16 @@ const documentDetailStyles = `
   .document-detail h1 {
     font-size: 24px;
     line-height: 31px;
+  }
+
+  .document-detail .gc-title-edit-form {
+    flex-wrap: wrap;
+  }
+
+  .document-detail .gc-title-edit-form input {
+    flex: 1 0 100%;
+    font-size: 22px;
+    line-height: 29px;
   }
 
   .document-detail .gc-stepper {

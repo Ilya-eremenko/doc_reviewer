@@ -129,6 +129,23 @@ def update_manual_document_type(
     return document
 
 
+def update_document_title(*, db: Session, actor: User, document_id: UUID, title: str) -> Document:
+    document = get_document_for_actor(db=db, actor=actor, document_id=document_id)
+    previous = document.title
+    document.title = title
+    record_audit(
+        db=db,
+        actor_id=actor.id,
+        action="document.title_updated",
+        entity_type="document",
+        entity_id=document.id,
+        metadata={"from": previous, "to": document.title},
+    )
+    db.commit()
+    db.refresh(document)
+    return document
+
+
 def delete_document_for_actor(*, db: Session, actor: User, document_id: UUID) -> None:
     document = get_document_for_actor(db=db, actor=actor, document_id=document_id)
     previous_status = document.status

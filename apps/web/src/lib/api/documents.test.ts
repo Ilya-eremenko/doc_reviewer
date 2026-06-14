@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   USER_SELECTABLE_DOCUMENT_TYPES,
   createAnalysis,
+  createAnalysisDetails,
   deleteDocument,
   getParsedText,
+  patchDocumentTitle,
   patchDocumentType,
   uploadDocument,
 } from "./documents";
@@ -64,6 +66,24 @@ describe("documents api", () => {
     );
   });
 
+  it("patches document title", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "doc-id", title: "TRX_SE revised" }),
+    });
+    global.fetch = fetchMock;
+
+    await patchDocumentTitle("doc-id", "TRX_SE revised");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/documents/doc-id/title",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ title: "TRX_SE revised" }),
+      }),
+    );
+  });
+
   it("reads parsed text as plain text", async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -104,6 +124,21 @@ describe("documents api", () => {
           model: "gpt-test",
           run_parameters: { output_language: "en" },
         }),
+      }),
+    );
+  });
+
+  it("requests lazy Gate Challenger details for an analysis", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "detail-run-id" }) });
+    global.fetch = fetchMock;
+
+    await createAnalysisDetails("analysis-id");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/analyses/analysis-id/details",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
       }),
     );
   });

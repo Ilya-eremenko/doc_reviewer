@@ -1,6 +1,7 @@
 import type { AnalysisRecord } from "@/lib/api/documents";
 
 type SummarySource = Pick<AnalysisRecord, "summary" | "structured_output">;
+type GateDetailsSource = Pick<AnalysisRecord, "structured_output" | "detail_run">;
 
 const ASSESSMENT_HEADINGS = new Set(["Оценка документа", "Document assessment"]);
 const NO_MATERIAL_ISSUE = "No material issue";
@@ -116,6 +117,15 @@ export type LayeredGateLayer2Check = {
 
 export function analysisShortSummary(analysis: SummarySource): string | null {
   return analysis.summary || summaryFromOutput(analysis.structured_output);
+}
+
+export function analysisGateDetailsOutput(
+  analysis: GateDetailsSource,
+): Record<string, unknown> | null | undefined {
+  if (analysis.detail_run?.status === "completed" && analysis.detail_run.structured_output) {
+    return analysis.detail_run.structured_output;
+  }
+  return analysis.structured_output;
 }
 
 export function stripAssessmentHeading(markdown: string | null): string | null {
@@ -407,14 +417,13 @@ function layer2CheckFromSources(
   markdownQuestion: ParsedLayer2Question | null,
   section: ParsedLayer2Section | null | undefined,
 ): LayeredGateLayer2Check {
+  const structuredQuestion = asString(record.question) || asString(record.title) || asString(record.check);
+  const markdownQuestionText = markdownQuestion?.question || markdownQuestion?.title || null;
   const question =
-    markdownQuestion?.question ||
-    asString(record.question) ||
-    asString(record.title) ||
-    asString(record.check) ||
-    markdownQuestion?.title ||
-    GATE_LAYER_METADATA.get(normalizeLayerKey(group.title))?.layer2Title ||
-    `Layer 2 check ${index + 1}`;
+    markdownQuestion?.source === "field"
+      ? markdownQuestionText || structuredQuestion || GATE_LAYER_METADATA.get(normalizeLayerKey(group.title))?.layer2Title || `Layer 2 check ${index + 1}`
+      : structuredQuestion || markdownQuestionText || GATE_LAYER_METADATA.get(normalizeLayerKey(group.title))?.layer2Title || `Layer 2 check ${index + 1}`;
+  const shorthandIssue = markdownQuestion?.source === "shorthand" ? markdownQuestion.question : null;
   const status = normalizeCheckStatus(record.status) || markdownQuestion?.status || section?.status || null;
   const issue =
     markdownQuestion?.issue ||
@@ -422,6 +431,7 @@ function layer2CheckFromSources(
     asString(record.atomic_issue) ||
     asString(record.finding) ||
     markdownQuestion?.atomicIssue ||
+    shorthandIssue ||
     (status === "pass" ? NO_MATERIAL_ISSUE : question);
   const evidence = asString(record.evidence) || asString(record.explanation) || markdownQuestion?.evidence;
   return {
@@ -486,19 +496,21 @@ type ParsedLayer2Question = {
   answer: string | null;
   evidence: string | null;
   issue: string | null;
+  source: "field" | "shorthand";
 };
 
 function parseLayer1MarkdownSections(markdown: string | null): ParsedLayer1Section[] {
   return splitLayerMarkdownSections(markdown, false).map((section) => {
     const fields = parseMarkdownFields(section.lines);
+    const shorthand = parseLayerShorthandBullet(section.lines, "L1");
     const noMaterialIssue = findNoMaterialIssue(section.lines);
     return {
       key: section.key,
       title: section.title,
       status: section.status,
-      id: fields.id || null,
+      id: fields.id || shorthand?.id || null,
       severity: fields.severity || null,
-      issue: fields.issue || noMaterialIssue,
+      issue: fields.issue || shorthand?.text || noMaterialIssue,
       evidence: fields.evidence || null,
     };
   });
@@ -549,12 +561,19 @@ function splitLayerMarkdownSections(
 }
 
 function parseLayer2Questions(lines: string[]): ParsedLayer2Question[] {
-  const questions: Array<{ question: string; lines: string[] }> = [];
-  let current: { question: string; lines: string[] } | null = null;
+  const questions: Array<{ id: string | null; question: string; source: "field" | "shorthand"; lines: string[] }> = [];
+  let current: { id: string | null; question: string; source: "field" | "shorthand"; lines: string[] } | null = null;
   for (const line of lines) {
     const questionMatch = line.match(/^\s*-\s*question:\s*(.+?)\s*$/i);
     if (questionMatch) {
-      current = { question: questionMatch[1].trim(), lines: [] };
+      current = { id: null, question: questionMatch[1].trim(), source: "field", lines: [] };
+      questions.push(current);
+      continue;
+    }
+
+    const shorthand = parseLayerShorthandBullet([line], "L2");
+    if (shorthand) {
+      current = { id: shorthand.id, question: shorthand.text, source: "shorthand", lines: [] };
       questions.push(current);
       continue;
     }
@@ -566,7 +585,7 @@ function parseLayer2Questions(lines: string[]): ParsedLayer2Question[] {
   return questions.map((item) => {
     const fields = parseMarkdownFields(item.lines);
     return {
-      id: fields.id || null,
+      id: fields.id || item.id,
       parentLayer1Id: fields.parent_layer_1_id || null,
       status: normalizeCheckStatus(fields.status) || normalizeCheckStatus(fields.answer),
       severity: fields.severity || null,
@@ -576,8 +595,19 @@ function parseLayer2Questions(lines: string[]): ParsedLayer2Question[] {
       answer: fields.answer || null,
       evidence: fields.evidence || null,
       issue: fields.issue || null,
+      source: item.source,
     };
   });
+}
+
+function parseLayerShorthandBullet(lines: string[], layerPrefix: "L1" | "L2"): { id: string; text: string } | null {
+  for (const line of lines) {
+    const match = line.match(new RegExp(`^\\s*-\\s*(${layerPrefix}[-_][A-Za-z0-9._-]+)\\s*:\\s*(.+?)\\s*$`, "i"));
+    if (match) {
+      return { id: match[1], text: match[2].trim() };
+    }
+  }
+  return null;
 }
 
 function answerForStatus(value: string | null): string | null {

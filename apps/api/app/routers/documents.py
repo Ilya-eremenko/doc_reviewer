@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.dependencies.auth import require_current_user
 from app.models.document import Document
 from app.models.user import User
-from app.schemas.documents import DocumentRead, DocumentTypePatch, DocumentsListResponse
+from app.schemas.documents import DocumentRead, DocumentTitlePatch, DocumentTypePatch, DocumentsListResponse
 from app.schemas.enums import DocumentParseStatus, DocumentType
 from app.services.document_jobs import ParseDocumentEnqueue, enqueue_parse_document
 from app.services.documents import (
@@ -22,6 +22,7 @@ from app.services.documents import (
     get_document_for_actor,
     list_documents_for_actor,
     reset_document_for_reparse,
+    update_document_title,
     update_manual_document_type,
 )
 from app.storage.local import LocalDocumentStorage
@@ -104,6 +105,19 @@ def patch_document_type(
             document_id=document_id,
             manual_document_type=payload.manual_document_type,
         )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
+
+
+@router.patch("/{document_id}/title", response_model=DocumentRead)
+def patch_document_title(
+    document_id: UUID,
+    payload: DocumentTitlePatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+) -> Document:
+    try:
+        return update_document_title(db=db, actor=current_user, document_id=document_id, title=payload.title)
     except DocumentNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found") from exc
 

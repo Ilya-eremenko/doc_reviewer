@@ -2,13 +2,25 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus
 
 
 class DocumentTypePatch(BaseModel):
     manual_document_type: DocumentType | None
+
+
+class DocumentTitlePatch(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Document title cannot be empty")
+        return normalized
 
 
 class DocumentRead(BaseModel):
