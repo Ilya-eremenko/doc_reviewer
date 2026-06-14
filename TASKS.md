@@ -21,6 +21,34 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Restrict Etalons and Benchmarks top navigation to admins: shared app
+  navigation now hides `/etalons` and `/benchmarks` for `user` and
+  `annotator` roles while keeping them visible for `admin`. Verified with the
+  focused app navigation test, full frontend tests, production build, and local
+  web container rebuild.
+- [x] Tighten Devil's Advocate comment output after TRX_SE regression: service
+  prompt now treats real names as a pre-flight anomaly to anonymize with
+  fictional neutral placeholders instead of stopping, requires the visible
+  Role comments section to be a Markdown table with role/vote/decision/anchor
+  quote/comment/type/severity columns, and the DA JSON schema rejects
+  completed `role_comments` with empty `comments` arrays. Verified with full
+  API and worker test suites, rebuilt local API/worker containers, and checked
+  API `/health`.
+- [x] Diagnose latest Devil's Advocate comment-format regression on TRX_SE:
+  old good run `2f855fc5-e8cf-49e1-b8b2-d00789f91520` used
+  `anthropic/claude-opus-4.6`, produced pipe-table role comments plus 20
+  structured `role_comments[].comments[]`; latest `openai/gpt-5.5` runs
+  `4510f287-3163-4231-ada9-5bc47e04be54` /
+  `35a0f9e6-d2b3-4365-956c-33e6ada43137` used the same DA source and
+  retrieval fingerprints but stopped at pre-flight on non-anonymized names,
+  persisted 0 structured role comments, and therefore had no table-shaped data
+  for the UI to render.
+- [x] Compare latest staged TRX_SE run with older legacy TRX_SE runs:
+  latest `b6ce453c-bf8a-4aae-86a5-07d855eea0a4` completed with summary-only
+  Gate Challenger plus completed detail run
+  `030bcdd0-085f-4d8d-9af6-66ea14ef5aa9`; quality/coverage improved
+  materially with 8 Layer 1 and 12 structured Layer 2 checks, while total
+  on-demand detail cost/latency is higher than old Gemini legacy full runs.
 - [x] Fix Layer 2 detailed-check card spacing/wrapping: long Layer 2 questions
   now wrap inside the card instead of stretching the row, and compact
   Issue/Evidence fields have horizontal inset padding so text no longer starts

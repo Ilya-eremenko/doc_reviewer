@@ -6,20 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { logout, me } from "@/lib/api/auth";
 import type { User } from "@/lib/api/types";
-
-type NavItem = {
-  href: string;
-  label: string;
-  requiresAdmin?: boolean;
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { href: "/documents", label: "Documents" },
-  { href: "/etalons", label: "Etalons" },
-  { href: "/benchmarks", label: "Benchmarks" },
-  { href: "/settings", label: "Settings", requiresAdmin: true },
-  { href: "/admin/users", label: "Admin", requiresAdmin: true },
-];
+import { getVisibleNavItems } from "./appNavigation";
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
@@ -44,10 +31,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     }
   }
 
-  const visibleNav = useMemo(
-    () => NAV_ITEMS.filter((item) => !item.requiresAdmin || user?.role === "admin"),
-    [user?.role],
-  );
+  const visibleNav = useMemo(() => getVisibleNavItems(user?.role), [user?.role]);
 
   if (!user) {
     return (

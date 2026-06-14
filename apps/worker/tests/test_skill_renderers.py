@@ -320,6 +320,40 @@ def test_devils_advocate_renderer_requires_original_skill_comment_contract(tmp_p
     assert "Do not use anchor/comment aliases" in prompt
 
 
+def test_devils_advocate_renderer_requires_anonymized_table_comments_without_stopping(tmp_path):
+    (tmp_path / "ic-voting-prompt.md").write_text("IC voting orchestrator", encoding="utf-8")
+    document = SimpleNamespace(
+        title="Gate 3 defense",
+        parsed_text="Jane Doe asks for 39.5 add resources without incrementality proof.",
+        manual_document_type=None,
+        detected_document_type="gate_3",
+    )
+    skill = SimpleNamespace(
+        name="devils_advocate_predefense",
+        version="baseline",
+        prompt_text="Fallback DA prompt",
+        source_uri=str(tmp_path / "ic-voting-prompt.md"),
+        source_entrypoint="ic-voting-prompt.md",
+        source_revision="def456",
+        source_fingerprint="da-fingerprint",
+        source_metadata={},
+    )
+    analysis = SimpleNamespace(verdict=None, summary=None, structured_output={})
+
+    prompt = render_devils_advocate_prompt(
+        document=document,
+        analysis=analysis,
+        skill=skill,
+        response_schema={"title": "DevilsAdvocateResult", "type": "object"},
+    )
+
+    assert "replace real names with fictional neutral placeholders" in prompt
+    assert "continue the Devil's Advocate critique" in prompt
+    assert "Do not stop or return a pre-flight-only answer because of real names" in prompt
+    assert "| Role | Vote | Decision | Anchor quote | Comment | Type | Severity |" in prompt
+    assert "role_comments[].comments[] must contain at least one item for each voter" in prompt
+
+
 def test_devils_advocate_renderer_can_require_english_output(tmp_path):
     (tmp_path / "ic-voting-prompt.md").write_text("IC voting orchestrator", encoding="utf-8")
     document = SimpleNamespace(

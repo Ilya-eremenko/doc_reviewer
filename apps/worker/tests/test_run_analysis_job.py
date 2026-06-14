@@ -787,9 +787,45 @@ def _devils_advocate_json() -> str:
                         }
                     ],
                 },
-                {"voter": "CPO", "vote": "reject", "rationale": "Funnel target missed.", "comments": []},
-                {"voter": "TechDir", "vote": "reject", "rationale": "No A/B delta.", "comments": []},
-                {"voter": "VertDir", "vote": "approve", "rationale": "Direction is useful.", "comments": []},
+                {
+                    "voter": "CPO",
+                    "vote": "reject",
+                    "rationale": "Funnel target missed.",
+                    "comments": [
+                        {
+                            "anchor_text": "CR contact to payment",
+                            "body": "Which product change closes the funnel gap?",
+                            "comment_type": "missing_data",
+                            "severity": "important",
+                        }
+                    ],
+                },
+                {
+                    "voter": "TechDir",
+                    "vote": "reject",
+                    "rationale": "No A/B delta.",
+                    "comments": [
+                        {
+                            "anchor_text": "A/B delta",
+                            "body": "Where is the experiment readout?",
+                            "comment_type": "methodology_issue",
+                            "severity": "important",
+                        }
+                    ],
+                },
+                {
+                    "voter": "VertDir",
+                    "vote": "approve",
+                    "rationale": "Direction is useful.",
+                    "comments": [
+                        {
+                            "anchor_text": "Business Services",
+                            "body": "Keep the vertical rollout gated by evidence.",
+                            "comment_type": "risk_not_addressed",
+                            "severity": "minor",
+                        }
+                    ],
+                },
             ],
             "tough_questions": [
                 {"question": "What is gross profit?", "persona": "[[persona-cfo]]"},

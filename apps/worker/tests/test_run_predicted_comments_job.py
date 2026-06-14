@@ -472,10 +472,54 @@ def _devils_advocate_json() -> str:
                 }
             ],
             "role_comments": [
-                {"voter": "MP", "vote": "reject", "rationale": "No incrementality proof.", "comments": []},
-                {"voter": "CPO", "vote": "reject", "rationale": "Funnel target missed.", "comments": []},
-                {"voter": "TechDir", "vote": "reject", "rationale": "No A/B delta.", "comments": []},
-                {"voter": "VertDir", "vote": "approve", "rationale": "Direction is useful.", "comments": []},
+                {
+                    "voter": "MP",
+                    "vote": "reject",
+                    "rationale": "No incrementality proof.",
+                    "comments": [
+                        _role_comment_item(
+                            anchor_text="CR contact to payment",
+                            body="What is the baseline and control group?",
+                            severity="critical",
+                        )
+                    ],
+                },
+                {
+                    "voter": "CPO",
+                    "vote": "reject",
+                    "rationale": "Funnel target missed.",
+                    "comments": [
+                        _role_comment_item(
+                            anchor_text="CR contact to payment",
+                            body="Which product change closes the funnel gap?",
+                        )
+                    ],
+                },
+                {
+                    "voter": "TechDir",
+                    "vote": "reject",
+                    "rationale": "No A/B delta.",
+                    "comments": [
+                        _role_comment_item(
+                            anchor_text="A/B delta",
+                            body="Where is the experiment readout?",
+                            comment_type="methodology_issue",
+                        )
+                    ],
+                },
+                {
+                    "voter": "VertDir",
+                    "vote": "approve",
+                    "rationale": "Direction is useful.",
+                    "comments": [
+                        _role_comment_item(
+                            anchor_text="Business Services",
+                            body="Keep the vertical rollout gated by evidence.",
+                            comment_type="risk_not_addressed",
+                            severity="minor",
+                        )
+                    ],
+                },
             ],
             "tough_questions": [
                 {"question": "What is incremental impact?", "persona": "[[persona-managing-partner]]"},
@@ -523,6 +567,21 @@ def _devils_advocate_json() -> str:
             },
         }
     )
+
+
+def _role_comment_item(
+    *,
+    anchor_text: str,
+    body: str,
+    comment_type: str = "missing_data",
+    severity: str = "important",
+) -> dict:
+    return {
+        "anchor_text": anchor_text,
+        "body": body,
+        "comment_type": comment_type,
+        "severity": severity,
+    }
 
 
 def _main_analysis_json(summary: str = "Needs evidence.") -> str:
