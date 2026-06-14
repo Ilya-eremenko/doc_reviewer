@@ -5,7 +5,8 @@ from app.models.document import Document
 from app.models.provider_key import ProviderKey
 from app.models.skill_source import SkillSource, SkillSourceSnapshot
 from app.core.config import get_settings
-from app.schemas.enums import DocumentParseStatus, DocumentType, Provider, RunStatus
+from app.schemas.enums import DocumentParseStatus, DocumentType, Provider, Role, RunStatus
+from app.security.secrets import encrypt_secret
 from app.seeds.skills import seed_baseline_skills
 
 from test_documents_upload import create_user, login, upload_document
@@ -53,6 +54,7 @@ def test_create_analysis_queues_default_gate2_skill_with_snapshot(client, db_ses
         (source_root / "SKILL.md").write_text("Gate prompt", encoding="utf-8")
         (source_root / "references" / "rubric.md").write_text("Rubric", encoding="utf-8")
 
+        admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
         create_user(db_session, "author", "secret")
         seed_baseline_skills(db_session)
         gate_source = db_session.query(SkillSource).filter_by(slug="gate-challenger").one()
@@ -70,11 +72,12 @@ def test_create_analysis_queues_default_gate2_skill_with_snapshot(client, db_ses
         document.detected_document_type = DocumentType.GATE_2.value
         db_session.add(
             ProviderKey(
-                owner_id=document.owner_id,
+                owner_id=admin.id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
-                default_model="gpt-test",
-                encrypted_api_key=b"encrypted",
+                default_model="openai/gpt-5.5",
+                available_models=["openai/gpt-5.5", "google/gemini-3.5-flash"],
+                encrypted_api_key=encrypt_secret("sk-test"),
                 api_key_fingerprint="openai_compatible:...test",
             )
         )
@@ -82,7 +85,7 @@ def test_create_analysis_queues_default_gate2_skill_with_snapshot(client, db_ses
 
         response = client.post(
             f"/documents/{document_id}/analyses",
-            json={"provider": "openai_compatible", "model": "gpt-test"},
+            json={"provider": "openai_compatible", "model": "openai/gpt-5.5"},
         )
 
         assert response.status_code == 201
@@ -94,6 +97,7 @@ def test_create_analysis_queues_default_gate2_skill_with_snapshot(client, db_ses
         assert enqueued == [payload["id"]]
         analysis = db_session.get(Analysis, UUID(payload["id"]))
         assert analysis.status == RunStatus.QUEUED.value
+        assert analysis.model == "openai/gpt-5.5"
         assert analysis.run_parameters["skill_source_snapshot"]["name"] == "gate2_challenger_main_analysis"
         source_snapshot_id = UUID(analysis.run_parameters["source_snapshot_id"])
         source_snapshot = db_session.get(SkillSourceSnapshot, source_snapshot_id)
@@ -101,6 +105,62 @@ def test_create_analysis_queues_default_gate2_skill_with_snapshot(client, db_ses
         assert (tmp_path / "storage" / "skill-snapshots" / str(source_snapshot.id) / "files" / "SKILL.md").read_text(
             encoding="utf-8"
         ) == "Gate prompt"
+    finally:
+        get_settings.cache_clear()
+        app.dependency_overrides.pop(analyses_router.get_run_analysis_enqueue, None)
+        app.dependency_overrides.pop(documents_router.get_parse_document_enqueue, None)
+
+
+def test_create_analysis_rejects_model_outside_shared_admin_allowlist(client, db_session, monkeypatch, tmp_path):
+    from app.main import app
+    from app.routers import analyses as analyses_router
+    from app.routers import documents as documents_router
+
+    app.dependency_overrides[analyses_router.get_run_analysis_enqueue] = lambda: lambda analysis_id: None
+    app.dependency_overrides[documents_router.get_parse_document_enqueue] = lambda: lambda document_id: None
+    try:
+        monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
+        get_settings.cache_clear()
+        source_root = tmp_path / "gate-source"
+        (source_root / "references").mkdir(parents=True)
+        (source_root / "SKILL.md").write_text("Gate prompt", encoding="utf-8")
+
+        admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
+        create_user(db_session, "author", "secret")
+        seed_baseline_skills(db_session)
+        gate_source = db_session.query(SkillSource).filter_by(slug="gate-challenger").one()
+        gate_source.source_kind = "local_directory"
+        gate_source.local_path = str(source_root)
+        gate_source.entrypoint = "SKILL.md"
+        gate_source.required_paths = ["SKILL.md"]
+        db_session.add(
+            ProviderKey(
+                owner_id=admin.id,
+                provider=Provider.OPENAI_COMPATIBLE.value,
+                base_url=None,
+                default_model="openai/gpt-5.5",
+                available_models=["openai/gpt-5.5"],
+                encrypted_api_key=encrypt_secret("sk-test"),
+                api_key_fingerprint="openai_compatible:...test",
+            )
+        )
+        db_session.commit()
+        login(client, "author", "secret")
+        upload = upload_document(client, "gate.txt", b"Gate 2 MVP metrics")
+        document_id = UUID(upload.json()["id"])
+        document = db_session.get(Document, document_id)
+        document.parse_status = DocumentParseStatus.COMPLETED.value
+        document.parsed_text = "Gate 2 MVP traction metrics risks business case"
+        document.detected_document_type = DocumentType.GATE_2.value
+        db_session.commit()
+
+        response = client.post(
+            f"/documents/{document_id}/analyses",
+            json={"provider": "openai_compatible", "model": "google/gemini-3.5-flash"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Selected model is not available"
     finally:
         get_settings.cache_clear()
         app.dependency_overrides.pop(analyses_router.get_run_analysis_enqueue, None)
@@ -135,6 +195,7 @@ def test_create_analysis_defaults_to_development_snapshot_when_git_metadata_is_u
         skill_path.write_text("Gate prompt", encoding="utf-8")
         (references_path / "rubric.md").write_text("Rubric", encoding="utf-8")
 
+        admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
         create_user(db_session, "author", "secret")
         seed_baseline_skills(db_session)
         gate_source = db_session.query(SkillSource).filter_by(slug="gate-challenger").one()
@@ -151,11 +212,12 @@ def test_create_analysis_defaults_to_development_snapshot_when_git_metadata_is_u
         document.detected_document_type = DocumentType.GATE_2.value
         db_session.add(
             ProviderKey(
-                owner_id=document.owner_id,
+                owner_id=admin.id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
-                default_model="gpt-test",
-                encrypted_api_key=b"encrypted",
+                default_model="openai/gpt-5.5",
+                available_models=["openai/gpt-5.5"],
+                encrypted_api_key=encrypt_secret("sk-test"),
                 api_key_fingerprint="openai_compatible:...test",
             )
         )
@@ -163,7 +225,7 @@ def test_create_analysis_defaults_to_development_snapshot_when_git_metadata_is_u
 
         response = client.post(
             f"/documents/{document_id}/analyses",
-            json={"provider": "openai_compatible", "model": "gpt-test"},
+            json={"provider": "openai_compatible", "model": "openai/gpt-5.5"},
         )
 
         assert response.status_code == 201
@@ -190,6 +252,7 @@ def test_create_analysis_rejects_unavailable_external_skill_source(client, db_se
     app.dependency_overrides[analyses_router.get_run_analysis_enqueue] = lambda: lambda analysis_id: None
     app.dependency_overrides[documents_router.get_parse_document_enqueue] = lambda: lambda document_id: None
     try:
+        admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
         create_user(db_session, "author", "secret")
         seed_baseline_skills(db_session)
         gate_source = db_session.query(SkillSource).filter_by(slug="gate-challenger").one()
@@ -206,11 +269,12 @@ def test_create_analysis_rejects_unavailable_external_skill_source(client, db_se
         document.detected_document_type = DocumentType.GATE_2.value
         db_session.add(
             ProviderKey(
-                owner_id=document.owner_id,
+                owner_id=admin.id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
-                default_model="gpt-test",
-                encrypted_api_key=b"encrypted",
+                default_model="openai/gpt-5.5",
+                available_models=["openai/gpt-5.5"],
+                encrypted_api_key=encrypt_secret("sk-test"),
                 api_key_fingerprint="openai_compatible:...test",
             )
         )
@@ -218,7 +282,7 @@ def test_create_analysis_rejects_unavailable_external_skill_source(client, db_se
 
         response = client.post(
             f"/documents/{document_id}/analyses",
-            json={"provider": "openai_compatible", "model": "gpt-test"},
+            json={"provider": "openai_compatible", "model": "openai/gpt-5.5"},
         )
 
         assert response.status_code == 409

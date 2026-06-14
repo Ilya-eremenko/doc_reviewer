@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { createBenchmark, listBenchmarks, type BenchmarkRecord } from "@/lib/api/benchmarks";
 import { listEtalons, type EtalonRecord } from "@/lib/api/etalons";
 import type { Provider } from "@/lib/api/documents";
+import { getProviderDefaultModel, listProviderModels, type ProviderModelOptions } from "@/lib/api/provider-settings";
 import { listSkills, type SkillRecord } from "@/lib/api/skills";
 import { formatDate, formatLabel } from "@/lib/format";
 
@@ -19,16 +20,20 @@ export default function BenchmarksPage() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [provider, setProvider] = useState<Provider>("openai_compatible");
+  const [model, setModel] = useState("");
+  const [providerModels, setProviderModels] = useState<ProviderModelOptions[]>([]);
 
   async function refresh() {
-    const [benchmarkResponse, etalonResponse, skillResponse] = await Promise.all([
+    const [benchmarkResponse, etalonResponse, skillResponse, providerModelResponse] = await Promise.all([
       listBenchmarks(),
       listEtalons(),
       listSkills(),
+      listProviderModels(),
     ]);
     setBenchmarks(benchmarkResponse.benchmarks);
     setEtalons(etalonResponse.etalons.filter((item) => item.status === "active"));
     setSkills(skillResponse.skills);
+    setProviderModels(providerModelResponse.provider_models);
   }
 
   useEffect(() => {
@@ -37,6 +42,17 @@ export default function BenchmarksPage() {
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load benchmarks"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (providerModels.length > 0 && !providerModels.some((item) => item.provider === provider)) {
+      setProvider(providerModels[0].provider);
+      return;
+    }
+    const defaultModel = getProviderDefaultModel(providerModels, provider);
+    if (defaultModel) {
+      setModel(defaultModel);
+    }
+  }, [provider, providerModels]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,7 +67,7 @@ export default function BenchmarksPage() {
         etalon_ids: etalonIds,
         skill_id: String(form.get("skill_id") ?? ""),
         provider,
-        model: String(form.get("model") ?? ""),
+        model,
         judge_skill_id: String(form.get("judge_skill_id") ?? ""),
         evaluation_mode: "layer_1_and_layer_2",
         run_parameters: {},
@@ -73,7 +89,11 @@ export default function BenchmarksPage() {
     () => skills.filter((skill) => skill.skill_type === "benchmark_judge" && skill.status === "active"),
     [skills],
   );
-  const canLaunch = etalons.length > 0 && mainSkills.length > 0 && judgeSkills.length > 0;
+  const selectedProviderModel = useMemo(
+    () => providerModels.find((item) => item.provider === provider) ?? null,
+    [provider, providerModels],
+  );
+  const canLaunch = etalons.length > 0 && mainSkills.length > 0 && judgeSkills.length > 0 && Boolean(model && selectedProviderModel?.has_key);
   const completedCount = benchmarks.filter((benchmark) => benchmark.status === "completed").length;
   const runningCount = benchmarks.filter((benchmark) => ["queued", "running"].includes(benchmark.status)).length;
   const latestBenchmark = benchmarks[0];
@@ -121,14 +141,32 @@ export default function BenchmarksPage() {
               <label>
                 Provider
                 <select value={provider} onChange={(event) => setProvider(event.target.value as Provider)}>
-                  <option value="openai_compatible">OpenAI compatible</option>
-                  <option value="anthropic_compatible">Anthropic compatible</option>
-                  <option value="hermes">Hermes</option>
+                  {providerModels.length > 0 ? (
+                    providerModels.map((item) => (
+                      <option key={item.provider} value={item.provider}>
+                        {formatLabel(item.provider)}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="openai_compatible">No shared provider</option>
+                  )}
                 </select>
               </label>
               <label>
                 Model
-                <input name="model" required defaultValue="gpt-test" />
+                <select
+                  name="model"
+                  required
+                  disabled={!selectedProviderModel?.has_key || selectedProviderModel.available_models.length === 0}
+                  value={model}
+                  onChange={(event) => setModel(event.target.value)}
+                >
+                  {(selectedProviderModel?.available_models ?? []).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Main skill
@@ -171,6 +209,7 @@ export default function BenchmarksPage() {
                 {!etalons.length ? <span>No active etalons.</span> : null}
                 {!mainSkills.length ? <span>No active main-analysis skill.</span> : null}
                 {!judgeSkills.length ? <span>No active benchmark judge skill.</span> : null}
+                {!selectedProviderModel?.has_key ? <span>No shared provider key.</span> : null}
               </div>
             ) : null}
 

@@ -121,11 +121,10 @@ def _main_analysis_json() -> str:
                     "parent_layer_1_id": "L1-001",
                     "status": "fail",
                     "severity": "high",
-                    "title": "No incrementality evidence",
-                    "atomic_issue": "The metric uplift is not separated from baseline effects.",
+                    "question": "Is incrementality evidence separated from baseline effects?",
+                    "answer": "NO",
+                    "issue": "The metric uplift is not separated from baseline effects.",
                     "evidence": "No control group or holdout is shown.",
-                    "risk": "The output can overstate readiness.",
-                    "recommendation": "Provide experiment or holdout evidence.",
                 }
             ],
         }

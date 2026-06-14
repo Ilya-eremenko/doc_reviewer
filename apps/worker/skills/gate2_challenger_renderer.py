@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+from skills.layer_4_synthesis import format_layer_4_synthesis_markdown
 from skills.output_language import normalize_output_language, output_language_instruction
 from skills.snapshot_loader import SkillSourceSnapshotMaterial
 
@@ -56,8 +57,8 @@ def render_gate2_challenger_prompt(
                     "Each Layer 1 item must expose only issue, evidence, and severity; do not add Title, Impact, or Recommendation subblocks.",
                     "3. layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence.",
                     "4. layer_2_markdown: reader-facing Layer 2 block after Layer 1, in strict Gate Challenger format.",
-                    "5. layer_2: structured copy of every Layer 2 atomic weak-link item with parent_layer_1_id "
-                    "and status using pass, partial, fail, or not_applicable.",
+                    "5. layer_2: structured copy of every Layer 2 atomic check with id, parent_layer_1_id, status, "
+                    "severity, question, answer, evidence, issue. Layer 2 item must not include Risk or Recommendation fields.",
                     "Use Layer 4 expert analysis to strengthen or supplement Gate Challenger findings when it adds "
                     "document-grounded issues or reinforces problems you independently find.",
                     "Do not collapse Layer 1/Layer 2 into generic findings. The display order is always: "
@@ -95,6 +96,9 @@ def _layer_4_context_text(layer_4_context: dict | None) -> str | None:
         return None
     markdown = layer_4_context.get("markdown")
     if markdown:
+        synthesis_markdown = format_layer_4_synthesis_markdown(layer_4_context.get("synthesis"))
+        if synthesis_markdown and "Layer 4 synthesis - must-review Devil's Advocate signals" not in str(markdown):
+            return f"{markdown}\n\n3. Structured synthesis contract\n{synthesis_markdown}"
         return str(markdown)
 
     brutal_truth = layer_4_context.get("brutal_truth") or "No brutal truth block was captured."
@@ -115,6 +119,9 @@ def _layer_4_context_text(layer_4_context: dict | None) -> str | None:
         lines.extend(_contradiction_lines(contradictions))
     else:
         lines.append("No detected contradictions or missing proofs were captured.")
+    synthesis_markdown = format_layer_4_synthesis_markdown(layer_4_context.get("synthesis"))
+    if synthesis_markdown:
+        lines.extend(["", "3. Structured synthesis contract", synthesis_markdown])
     return "\n".join(lines)
 
 

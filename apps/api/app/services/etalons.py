@@ -363,17 +363,31 @@ def _normalize_layer_2(items: object, layer_1: list[dict]) -> list[dict]:
             continue
         evidence = _evidence_items(
             item.get("evidence"),
-            fallback=item.get("finding") or item.get("atomic_issue") or item.get("risk") or item.get("title"),
+            fallback=(
+                item.get("finding")
+                or item.get("issue")
+                or item.get("atomic_issue")
+                or item.get("risk")
+                or item.get("title")
+                or item.get("question")
+            ),
         )
         layer_2.append(
             {
                 "id": _normalized_item_id(item.get("id"), prefix="L2", index=index),
                 "parent_layer_1_id": parent_id,
-                "check": _first_text(item.get("check"), item.get("title"), item.get("atomic_issue"), f"Check {index}"),
+                "check": _first_text(
+                    item.get("check"),
+                    item.get("question"),
+                    item.get("title"),
+                    item.get("atomic_issue"),
+                    f"Check {index}",
+                ),
                 "status": _status_value(item.get("status"), item.get("severity")),
                 "severity": _severity_value(item.get("severity")),
                 "finding": _first_text(
                     item.get("finding"),
+                    item.get("issue"),
                     item.get("atomic_issue"),
                     item.get("risk"),
                     item.get("title"),

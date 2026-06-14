@@ -20,6 +20,7 @@ from app.schemas.enums import EntityStatus, Provider, RunStatus, SkillSourceType
 from app.security.secrets import decrypt_secret
 from app.services.audit import record_audit
 from app.services.devils_retrieval import create_devils_retrieval_snapshot
+from app.services.provider_keys import get_shared_provider_key
 from app.services.skill_snapshots import create_skill_source_snapshot
 from app.services.skill_sources import SkillSourceValidationError, refresh_skill_source_material
 from app.services.skills import skill_source_snapshot
@@ -28,6 +29,7 @@ from jobs.run_predicted_comments import run_predicted_comments
 from providers.base import ProviderRunRequest
 from providers.registry import get_provider_adapter
 from results.schema_validation import parse_and_validate_json_output
+from skills.layer_4_synthesis import build_layer_4_synthesis, format_layer_4_synthesis_markdown
 from skills.prompt_renderer import render_prompt
 
 
@@ -154,11 +156,7 @@ def run_analysis(analysis_id: str, *, db: Session | None = None, enqueue_predict
 
 
 def _get_provider_key(session: Session, analysis: Analysis, provider: Provider) -> ProviderKey | None:
-    statement = select(ProviderKey).where(
-        ProviderKey.owner_id == analysis.user_id,
-        ProviderKey.provider == provider.value,
-    )
-    return session.execute(statement).scalar_one_or_none()
+    return get_shared_provider_key(db=session, provider=provider)
 
 
 def _resolve_schema_path(schema_path: str) -> Path:
@@ -265,21 +263,24 @@ def _build_gate_challenger_layer_4_context(predicted_run: PredictedCommentRun) -
     structured = predicted_run.structured_output or {}
     brutal_truth = structured.get("brutal_truth")
     detected_contradictions = structured.get("detected_contradictions") or []
-    if not brutal_truth and not detected_contradictions:
+    synthesis = build_layer_4_synthesis(structured)
+    if not brutal_truth and not detected_contradictions and not synthesis.get("must_review_signals"):
         return None
     return {
         "source": "devils_advocate_predefense",
         "predicted_comment_run_id": str(predicted_run.id),
         "brutal_truth": brutal_truth or "",
         "detected_contradictions": detected_contradictions,
+        "synthesis": synthesis,
         "markdown": _format_layer_4_markdown(
             brutal_truth=brutal_truth or "",
             detected_contradictions=detected_contradictions,
+            synthesis=synthesis,
         ),
     }
 
 
-def _format_layer_4_markdown(*, brutal_truth: str, detected_contradictions: list) -> str:
+def _format_layer_4_markdown(*, brutal_truth: str, detected_contradictions: list, synthesis: dict | None = None) -> str:
     lines = [
         "Layer 4 - Devil's Advocate expert analysis",
         "These are results of expert analysis produced before Gate Challenger. Use them to strengthen or "
@@ -296,6 +297,9 @@ def _format_layer_4_markdown(*, brutal_truth: str, detected_contradictions: list
         lines.extend(_format_detected_contradictions(detected_contradictions))
     else:
         lines.append("No detected contradictions or missing proofs were captured.")
+    synthesis_markdown = format_layer_4_synthesis_markdown(synthesis)
+    if synthesis_markdown:
+        lines.extend(["", "3. Structured synthesis contract", synthesis_markdown])
     return "\n".join(lines)
 
 

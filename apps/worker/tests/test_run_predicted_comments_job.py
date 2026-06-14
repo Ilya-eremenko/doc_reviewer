@@ -549,11 +549,10 @@ def _main_analysis_json(summary: str = "Needs evidence.") -> str:
                     "parent_layer_1_id": "L1-001",
                     "status": "fail",
                     "severity": "high",
-                    "title": "Atomic weak-link finding",
-                    "atomic_issue": "A key target is not evidenced.",
+                    "question": "Is the key target evidenced?",
+                    "answer": "NO",
+                    "issue": "A key target is not evidenced.",
                     "evidence": "The mock document omits the proof.",
-                    "risk": "The model may overstate readiness.",
-                    "recommendation": "Add evidence before approval.",
                 }
             ],
         }
@@ -580,12 +579,12 @@ def _close_session(session: Session) -> None:
     engine.dispose()
 
 
-def _create_user(db: Session) -> User:
+def _create_user(db: Session, role: Role = Role.USER) -> User:
     user = User(
         login=f"user-{uuid4()}",
         display_name="User",
         password_hash=hash_password("secret"),
-        role=Role.USER.value,
+        role=role.value,
         status=UserStatus.ACTIVE.value,
     )
     db.add(user)
@@ -735,7 +734,7 @@ def _create_predicted_skill_with_source(db: Session, tmp_path) -> Skill:
 
 def _create_provider_key(db: Session, user: User) -> ProviderKey:
     key = ProviderKey(
-        owner_id=user.id,
+        owner_id=_create_user(db, role=Role.ADMIN).id,
         provider=Provider.OPENAI_COMPATIBLE.value,
         base_url=None,
         default_model="gpt-test",

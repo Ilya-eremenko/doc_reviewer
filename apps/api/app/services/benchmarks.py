@@ -10,7 +10,8 @@ from app.models.skill import Skill
 from app.models.user import User
 from app.schemas.benchmarks import BenchmarkCreate
 from app.schemas.enums import EntityStatus, EtalonStatus, Provider, RunStatus, SkillType
-from app.services.provider_keys import get_provider_key
+from app.schemas.provider_settings import normalize_available_models
+from app.services.provider_keys import get_shared_provider_key
 from app.services.skills import skill_source_snapshot
 from app.services.audit import record_audit
 
@@ -46,12 +47,13 @@ def create_benchmark(*, db: Session, actor: User, payload: BenchmarkCreate) -> B
     etalons = _resolve_active_etalons(db=db, etalon_ids=payload.etalon_ids)
     skill = _resolve_skill(db=db, skill_id=payload.skill_id, skill_type=SkillType.MAIN_ANALYSIS)
     judge_skill = _resolve_skill(db=db, skill_id=payload.judge_skill_id, skill_type=SkillType.BENCHMARK_JUDGE)
-    if _requires_provider_key(payload.provider, payload.run_parameters) and get_provider_key(
-        db=db,
-        owner_id=actor.id,
-        provider=payload.provider,
-    ) is None:
-        raise BenchmarkPreconditionError("Provider key is not configured")
+    if _requires_provider_key(payload.provider, payload.run_parameters):
+        provider_key = get_shared_provider_key(db=db, provider=payload.provider)
+        if provider_key is None:
+            raise BenchmarkPreconditionError("Provider key is not configured")
+        available_models = normalize_available_models(payload.provider, provider_key.available_models, provider_key.default_model)
+        if payload.model not in available_models:
+            raise BenchmarkPreconditionError("Selected model is not available")
 
     run_parameters = dict(payload.run_parameters)
     run_parameters["evaluation_mode"] = payload.evaluation_mode

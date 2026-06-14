@@ -41,7 +41,7 @@ def test_run_analysis_persists_structured_and_raw_output(tmp_path):
         document = _create_document(db, tmp_path, user)
         skill = _create_skill(db)
         key = ProviderKey(
-            owner_id=user.id,
+            owner_id=_create_user(db, role=Role.ADMIN).id,
             provider=Provider.OPENAI_COMPATIBLE.value,
             base_url=None,
             default_model="gpt-test",
@@ -120,7 +120,7 @@ def test_run_analysis_persists_structured_text_when_json_parse_fails(tmp_path):
         skill = _create_skill(db)
         db.add(
             ProviderKey(
-                owner_id=user.id,
+                owner_id=_create_user(db, role=Role.ADMIN).id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
                 default_model="gpt-test",
@@ -172,7 +172,7 @@ def test_run_analysis_marks_changed_external_skill_source_unavailable(tmp_path):
         )
         db.add(
             ProviderKey(
-                owner_id=user.id,
+                owner_id=_create_user(db, role=Role.ADMIN).id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
                 default_model="gpt-test",
@@ -231,7 +231,7 @@ def test_run_analysis_persists_rendered_prompt_from_source_snapshot(tmp_path, mo
         skill.prompt_text = "Stub prompt should not be used"
         db.add(
             ProviderKey(
-                owner_id=user.id,
+                owner_id=_create_user(db, role=Role.ADMIN).id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
                 default_model="gpt-test",
@@ -316,7 +316,7 @@ def test_run_analysis_runs_devils_advocate_before_gate_and_passes_layer_4_contex
         predicted_skill = _create_predicted_skill(db, tmp_path)
         db.add(
             ProviderKey(
-                owner_id=user.id,
+                owner_id=_create_user(db, role=Role.ADMIN).id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
                 default_model="gpt-test",
@@ -363,6 +363,15 @@ def test_run_analysis_runs_devils_advocate_before_gate_and_passes_layer_4_contex
         assert layer_4_context["predicted_comment_run_id"] == str(predicted_run.id)
         assert layer_4_context["brutal_truth"] == "Fatal flaw."
         assert layer_4_context["detected_contradictions"][0]["title"] == "Gross profit not shown"
+        synthesis = layer_4_context["synthesis"]
+        assert synthesis["version"] == "devils-advocate-layer-4-synthesis-v1"
+        assert synthesis["decision"]["verdict"] == "rework"
+        assert synthesis["must_review_signals"][0]["theme"] == "Gross profit not shown"
+        assert synthesis["must_review_signals"][0]["source"] == "detected_contradiction"
+        assert synthesis["must_review_signals"][0]["must_review"] is True
+        assert any(signal["theme"] == "Subsidy-dependent economics" for signal in synthesis["must_review_signals"])
+        assert "MP rejects: No incrementality proof." in synthesis["role_consensus"]
+        assert "What is gross profit?" in synthesis["open_ic_questions"]
 
         rendered_prompt = Path(analysis.run_parameters["rendered_prompt_artifact_path"]).read_text(encoding="utf-8")
         assert "Layer 4" in rendered_prompt
@@ -372,6 +381,8 @@ def test_run_analysis_runs_devils_advocate_before_gate_and_passes_layer_4_contex
         assert "Detected Contradictions & Missing Proofs" in rendered_prompt
         assert "Gross profit not shown" in rendered_prompt
         assert "strengthen or supplement Gate Challenger" in rendered_prompt
+        assert "Layer 4 synthesis - must-review Devil's Advocate signals" in rendered_prompt
+        assert "Subsidy-dependent economics" in rendered_prompt
     finally:
         get_settings.cache_clear()
         _close_session(db)
@@ -420,7 +431,7 @@ def test_run_analysis_propagates_snapshot_mode_to_predicted_comments(tmp_path, m
         db.add(predicted_skill)
         db.add(
             ProviderKey(
-                owner_id=user.id,
+                owner_id=_create_user(db, role=Role.ADMIN).id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
                 default_model="gpt-test",
@@ -533,11 +544,10 @@ def _main_analysis_json(summary: str = "Needs evidence.") -> str:
                     "parent_layer_1_id": "L1-001",
                     "status": "fail",
                     "severity": "high",
-                    "title": "Atomic weak-link finding",
-                    "atomic_issue": "A key target is not evidenced.",
+                    "question": "Is the key target evidenced?",
+                    "answer": "NO",
+                    "issue": "A key target is not evidenced.",
                     "evidence": "The mock document omits the proof.",
-                    "risk": "The model may overstate readiness.",
-                    "recommendation": "Add evidence before approval.",
                 }
             ],
         }
@@ -551,12 +561,12 @@ def _close_session(session: Session) -> None:
     engine.dispose()
 
 
-def _create_user(db: Session) -> User:
+def _create_user(db: Session, role: Role = Role.USER) -> User:
     user = User(
         login=f"user-{uuid4()}",
         display_name="User",
         password_hash=hash_password("secret"),
-        role=Role.USER.value,
+        role=role.value,
         status=UserStatus.ACTIVE.value,
     )
     db.add(user)
@@ -671,7 +681,19 @@ def _devils_advocate_json() -> str:
                 }
             ],
             "role_comments": [
-                {"voter": "MP", "vote": "reject", "rationale": "No incrementality proof.", "comments": []},
+                {
+                    "voter": "MP",
+                    "vote": "reject",
+                    "rationale": "No incrementality proof.",
+                    "comments": [
+                        {
+                            "anchor_text": "Subsidy-dependent economics",
+                            "body": "Cohorts may collapse when incentives are removed.",
+                            "comment_type": "weak_argument",
+                            "severity": "critical",
+                        }
+                    ],
+                },
                 {"voter": "CPO", "vote": "reject", "rationale": "Funnel target missed.", "comments": []},
                 {"voter": "TechDir", "vote": "reject", "rationale": "No A/B delta.", "comments": []},
                 {"voter": "VertDir", "vote": "approve", "rationale": "Direction is useful.", "comments": []},

@@ -9,8 +9,8 @@ import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { resolveApiBaseUrl } from "@/lib/api/client";
 import {
   getProviderDefaultModel,
-  listProviderKeys,
-  type ProviderKeyRecord,
+  listProviderModels,
+  type ProviderModelOptions,
 } from "@/lib/api/provider-settings";
 import {
   createAnalysis,
@@ -178,7 +178,7 @@ export default function DocumentDetailPage() {
   const [document, setDocument] = useState<DocumentRecord | null>(null);
   const [parsedText, setParsedText] = useState("");
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
-  const [providerKeys, setProviderKeys] = useState<ProviderKeyRecord[]>([]);
+  const [providerModels, setProviderModels] = useState<ProviderModelOptions[]>([]);
   const [provider, setProvider] = useState<Provider>("openai_compatible");
   const [model, setModel] = useState("");
   const [modelEdited, setModelEdited] = useState(false);
@@ -214,13 +214,13 @@ export default function DocumentDetailPage() {
   useEffect(() => {
     let ignore = false;
 
-    listProviderKeys()
+    listProviderModels()
       .then((response) => {
         if (!ignore) {
-          setProviderKeys(response.provider_keys);
+          setProviderModels(response.provider_models);
         }
       })
-      .catch(() => setProviderKeys([]));
+      .catch(() => setProviderModels([]));
 
     return () => {
       ignore = true;
@@ -231,21 +231,21 @@ export default function DocumentDetailPage() {
     if (modelEdited) {
       return;
     }
-    const defaultModel = getProviderDefaultModel(providerKeys, provider);
+    const defaultModel = getProviderDefaultModel(providerModels, provider);
     if (defaultModel) {
       setModel(defaultModel);
     }
-  }, [modelEdited, provider, providerKeys]);
+  }, [modelEdited, provider, providerModels]);
 
-  const savedProviderKeys = useMemo(() => providerKeys.filter((item) => item.has_key), [providerKeys]);
-  const providerKeyOptions = savedProviderKeys.length > 0 ? savedProviderKeys : providerKeys;
-  const selectedProviderKey = useMemo(
-    () => providerKeys.find((item) => item.provider === provider) ?? null,
-    [provider, providerKeys],
+  const configuredProviderModels = useMemo(() => providerModels.filter((item) => item.has_key), [providerModels]);
+  const providerModelOptions = configuredProviderModels.length > 0 ? configuredProviderModels : providerModels;
+  const selectedProviderModel = useMemo(
+    () => providerModels.find((item) => item.provider === provider) ?? null,
+    [provider, providerModels],
   );
-  const selectedDraftProviderKey = useMemo(
-    () => providerKeys.find((item) => item.provider === draftProvider) ?? null,
-    [draftProvider, providerKeys],
+  const selectedDraftProviderModel = useMemo(
+    () => providerModels.find((item) => item.provider === draftProvider) ?? null,
+    [draftProvider, providerModels],
   );
   const workflowSteps = useMemo(() => (document ? buildWorkflowSteps(document, analyses) : []), [analyses, document]);
 
@@ -265,15 +265,15 @@ export default function DocumentDetailPage() {
   }, [modelDialogOpen]);
 
   useEffect(() => {
-    if (savedProviderKeys.length === 0 || savedProviderKeys.some((item) => item.provider === provider)) {
+    if (configuredProviderModels.length === 0 || configuredProviderModels.some((item) => item.provider === provider)) {
       return;
     }
 
-    const nextProvider = savedProviderKeys[0].provider;
+    const nextProvider = configuredProviderModels[0].provider;
     setProvider(nextProvider);
     setModelEdited(false);
-    setModel(getProviderDefaultModel(providerKeys, nextProvider));
-  }, [provider, providerKeys, savedProviderKeys]);
+    setModel(getProviderDefaultModel(providerModels, nextProvider));
+  }, [provider, providerModels, configuredProviderModels]);
 
   function openModelDialog() {
     setDraftProvider(provider);
@@ -283,7 +283,7 @@ export default function DocumentDetailPage() {
 
   function changeDraftProvider(nextProvider: Provider) {
     setDraftProvider(nextProvider);
-    setDraftModel(getProviderDefaultModel(providerKeys, nextProvider));
+    setDraftModel(getProviderDefaultModel(providerModels, nextProvider));
   }
 
   function changeDraftModel(nextModel: string) {
@@ -293,13 +293,13 @@ export default function DocumentDetailPage() {
   function saveModelSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextModel = draftModel.trim();
-    if (!nextModel || !selectedDraftProviderKey?.has_key) {
+    if (!nextModel || !selectedDraftProviderModel?.has_key) {
       return;
     }
 
     setProvider(draftProvider);
     setModel(nextModel);
-    setModelEdited(nextModel !== getProviderDefaultModel(providerKeys, draftProvider));
+    setModelEdited(nextModel !== getProviderDefaultModel(providerModels, draftProvider));
     setModelDialogOpen(false);
   }
 
@@ -419,7 +419,7 @@ export default function DocumentDetailPage() {
                   </button>
                   <button
                     className="gc-primary"
-                    disabled={pending || document.parse_status !== "completed" || !model.trim() || !selectedProviderKey?.has_key}
+                    disabled={pending || document.parse_status !== "completed" || !model.trim() || !selectedProviderModel?.has_key}
                     type="button"
                     onClick={launchAnalysis}
                   >
@@ -432,33 +432,42 @@ export default function DocumentDetailPage() {
                     <label>
                       <span>Provider</span>
                       <select
-                        disabled={providerKeyOptions.length === 0}
+                        disabled={providerModelOptions.length === 0}
                         value={draftProvider}
                         onChange={(event) => changeDraftProvider(event.target.value as Provider)}
                       >
-                        {providerKeyOptions.length > 0 ? (
-                          providerKeyOptions.map((item) => (
+                        {providerModelOptions.length > 0 ? (
+                          providerModelOptions.map((item) => (
                             <option key={item.provider} value={item.provider}>
                               {providerLabels[item.provider]}
-                              {item.api_key_fingerprint ? ` · ${item.api_key_fingerprint}` : ""}
                             </option>
                           ))
                         ) : (
-                          <option value={draftProvider}>No saved keys</option>
+                          <option value={draftProvider}>No shared provider</option>
                         )}
                       </select>
                     </label>
 
                     <div className="gc-key-state">
-                      <span>Saved key</span>
-                      <strong className={selectedDraftProviderKey?.has_key ? "is-valid" : "is-missing"}>
-                        {selectedDraftProviderKey?.has_key ? "Valid" : "Missing"}
+                      <span>Shared key</span>
+                      <strong className={selectedDraftProviderModel?.has_key ? "is-valid" : "is-missing"}>
+                        {selectedDraftProviderModel?.has_key ? "Valid" : "Missing"}
                       </strong>
                     </div>
 
                     <label>
                       <span>Model</span>
-                      <input value={draftModel} onChange={(event) => changeDraftModel(event.target.value)} />
+                      <select
+                        disabled={!selectedDraftProviderModel?.has_key || selectedDraftProviderModel.available_models.length === 0}
+                        value={draftModel}
+                        onChange={(event) => changeDraftModel(event.target.value)}
+                      >
+                        {(selectedDraftProviderModel?.available_models ?? []).map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
                     </label>
 
                     <div className="gc-popover-field">
@@ -479,10 +488,10 @@ export default function DocumentDetailPage() {
                       </div>
                     </div>
 
-                    {!selectedDraftProviderKey?.has_key ? (
+                    {!selectedDraftProviderModel?.has_key ? (
                       <div className="gc-provider-note is-warning">
-                        <strong>No saved key</strong>
-                        <span>Add a provider key in Settings before starting analysis.</span>
+                        <strong>No shared key</strong>
+                        <span>Ask an admin to add a provider key in Settings before starting analysis.</span>
                       </div>
                     ) : null}
 
@@ -490,7 +499,7 @@ export default function DocumentDetailPage() {
                       <button className="gc-ghost" type="button" onClick={() => setModelDialogOpen(false)}>
                         Cancel
                       </button>
-                      <button className="gc-primary" disabled={!draftModel.trim() || !selectedDraftProviderKey?.has_key} type="submit">
+                      <button className="gc-primary" disabled={!draftModel.trim() || !selectedDraftProviderModel?.has_key} type="submit">
                         Apply
                       </button>
                     </div>

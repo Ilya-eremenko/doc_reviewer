@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, LargeBinary, String, UniqueConstraint
+from sqlalchemy import ForeignKey, JSON, LargeBinary, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -18,5 +18,6 @@ class ProviderKey(TimestampMixin, Base):
     provider: Mapped[str] = mapped_column(String, nullable=False)
     base_url: Mapped[str | None] = mapped_column(String, nullable=True)
     default_model: Mapped[str] = mapped_column(String, nullable=False)
+    available_models: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     encrypted_api_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     api_key_fingerprint: Mapped[str] = mapped_column(String, nullable=False)

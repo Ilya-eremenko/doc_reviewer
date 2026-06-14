@@ -15,6 +15,7 @@ from app.models.skill import Skill
 from app.models.base import utc_now
 from app.schemas.enums import Provider, RunStatus
 from app.security.secrets import decrypt_secret
+from app.services.provider_keys import get_shared_provider_key
 from app.services.audit import record_audit
 from benchmark.judge_prompt import build_judge_prompt
 from benchmark.report_builder import build_benchmark_report
@@ -211,11 +212,7 @@ def _run_provider(
 def _get_provider_key(*, session: Session, benchmark: Benchmark, provider: Provider) -> ProviderKey | None:
     if "mock_provider_result" in benchmark.run_parameters:
         return None
-    return (
-        session.query(ProviderKey)
-        .filter(ProviderKey.owner_id == benchmark.started_by_id, ProviderKey.provider == provider.value)
-        .one_or_none()
-    )
+    return get_shared_provider_key(db=session, provider=provider)
 
 
 def _load_schema(schema_path: str) -> dict:

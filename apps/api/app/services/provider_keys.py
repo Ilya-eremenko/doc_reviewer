@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.provider_key import ProviderKey
 from app.models.user import User
-from app.schemas.enums import Provider
+from app.schemas.enums import Provider, Role, UserStatus
+from app.schemas.provider_settings import normalize_available_models
 from app.security.secrets import decrypt_secret, encrypt_secret
 
 
@@ -37,6 +38,7 @@ def upsert_provider_key(
     api_key: str,
     base_url: str | None,
     default_model: str,
+    available_models: list[str] | None = None,
 ) -> ProviderKey:
     provider_key = get_provider_key(db=db, owner_id=actor.id, provider=provider)
     if provider_key is None:
@@ -45,6 +47,7 @@ def upsert_provider_key(
 
     provider_key.base_url = base_url
     provider_key.default_model = default_model
+    provider_key.available_models = normalize_available_models(provider, available_models, default_model)
     provider_key.encrypted_api_key = encrypt_secret(api_key)
     provider_key.api_key_fingerprint = _fingerprint(provider, api_key)
     db.commit()
@@ -57,12 +60,39 @@ def list_provider_keys(*, db: Session, actor: User) -> list[ProviderKey]:
     return list(db.execute(statement).scalars().all())
 
 
+def list_shared_provider_keys(*, db: Session) -> list[ProviderKey]:
+    statement = (
+        select(ProviderKey)
+        .join(User, ProviderKey.owner_id == User.id)
+        .where(User.role == Role.ADMIN.value, User.status == UserStatus.ACTIVE.value)
+        .order_by(ProviderKey.provider, ProviderKey.updated_at.desc())
+    )
+    latest_by_provider: dict[str, ProviderKey] = {}
+    for provider_key in db.execute(statement).scalars().all():
+        latest_by_provider.setdefault(provider_key.provider, provider_key)
+    return list(latest_by_provider.values())
+
+
 def get_provider_key(*, db: Session, owner_id, provider: Provider) -> ProviderKey | None:
     statement = select(ProviderKey).where(
         ProviderKey.owner_id == owner_id,
         ProviderKey.provider == provider.value,
     )
     return db.execute(statement).scalar_one_or_none()
+
+
+def get_shared_provider_key(*, db: Session, provider: Provider) -> ProviderKey | None:
+    statement = (
+        select(ProviderKey)
+        .join(User, ProviderKey.owner_id == User.id)
+        .where(
+            ProviderKey.provider == provider.value,
+            User.role == Role.ADMIN.value,
+            User.status == UserStatus.ACTIVE.value,
+        )
+        .order_by(ProviderKey.updated_at.desc())
+    )
+    return db.execute(statement).scalars().first()
 
 
 def delete_provider_key(*, db: Session, actor: User, provider: Provider) -> bool:

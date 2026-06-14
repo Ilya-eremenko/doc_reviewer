@@ -42,11 +42,10 @@ def test_main_analysis_schema_accepts_valid_result():
                 "parent_layer_1_id": "L1-001",
                 "status": "fail",
                 "severity": "high",
-                "title": "Atomic weak-link finding",
-                "atomic_issue": "CR creation to payment missed target.",
+                "question": "Does the metric prove the claimed funnel readiness?",
+                "answer": "NO",
+                "issue": "CR creation to payment missed target.",
                 "evidence": "36.7% actual vs >53% target.",
-                "risk": "Funnel economics are not de-risked.",
-                "recommendation": "Show funnel recovery before resource approval.",
             }
         ],
     }
@@ -95,11 +94,10 @@ def test_main_analysis_schema_accepts_gate_challenger_parity_fields():
                 "parent_layer_1_id": "L1-001",
                 "status": "fail",
                 "severity": "high",
-                "title": "Atomic weak-link finding",
-                "atomic_issue": "CR creation to payment missed target.",
+                "question": "Does the metric prove the claimed funnel readiness?",
+                "answer": "NO",
+                "issue": "CR creation to payment missed target.",
                 "evidence": "36.7% actual vs >53% target.",
-                "risk": "Funnel economics are not de-risked.",
-                "recommendation": "Show funnel recovery before resource approval.",
             }
         ],
         "narrative_summary": {
@@ -150,8 +148,49 @@ def test_main_analysis_schema_rejects_expanded_layer_1_fields():
                 "parent_layer_1_id": "L1-001",
                 "status": "fail",
                 "severity": "high",
-                "title": "Atomic weak-link finding",
-                "atomic_issue": "CR creation to payment missed target.",
+                "question": "Does the metric prove the claimed funnel readiness?",
+                "answer": "NO",
+                "issue": "CR creation to payment missed target.",
+                "evidence": "36.7% actual vs >53% target.",
+            }
+        ],
+    }
+
+    try:
+        validate(instance=payload, schema=schema)
+    except ValidationError:
+        return
+
+    raise AssertionError("schema accepted expanded Layer 1 fields")
+
+
+def test_main_analysis_schema_rejects_non_skill_layer_2_fields():
+    schema = load_schema("main-analysis-result.schema.json")
+    payload = {
+        "verdict": "need_evidence",
+        "summary": "Evidence is incomplete.",
+        "assessment_markdown": "Оценка документа\nРекомендация: не одобрять полный запуск.",
+        "findings": [],
+        "checks": [],
+        "layer_1_markdown": "Layer 1\nL1-001 — Decision-critical blocker.",
+        "layer_1": [
+            {
+                "id": "L1-001",
+                "severity": "critical",
+                "issue": "Mandatory TRX-only readiness is not proven.",
+                "evidence": "Closure test is planned for Q1 2027.",
+            }
+        ],
+        "layer_2_markdown": "Layer 2\nL2-001 — Atomic weak-link finding.",
+        "layer_2": [
+            {
+                "id": "L2-001",
+                "parent_layer_1_id": "L1-001",
+                "status": "fail",
+                "severity": "high",
+                "question": "Does the metric prove the claimed funnel readiness?",
+                "answer": "NO",
+                "issue": "CR creation to payment missed target.",
                 "evidence": "36.7% actual vs >53% target.",
                 "risk": "Funnel economics are not de-risked.",
                 "recommendation": "Show funnel recovery before resource approval.",
@@ -164,7 +203,7 @@ def test_main_analysis_schema_rejects_expanded_layer_1_fields():
     except ValidationError:
         return
 
-    raise AssertionError("schema accepted expanded Layer 1 fields")
+    raise AssertionError("schema accepted non-skill Layer 2 risk/recommendation fields")
 
 
 def test_devils_advocate_schema_accepts_retrieval_context():

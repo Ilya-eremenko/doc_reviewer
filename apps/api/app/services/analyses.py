@@ -22,7 +22,8 @@ from app.schemas.enums import (
 )
 from app.services.documents import DocumentNotFoundError, get_document_for_actor
 from app.services.external_sources import SourceUnavailableError
-from app.services.provider_keys import get_provider_key
+from app.services.provider_keys import get_shared_provider_key
+from app.schemas.provider_settings import normalize_available_models
 from app.services.skill_snapshots import create_skill_source_snapshot
 from app.services.skills import skill_source_snapshot
 from app.services.audit import record_audit
@@ -58,8 +59,13 @@ def create_analysis_for_document(
         else document.manual_document_type or document.detected_document_type
     )
     skill = _resolve_skill(db=db, skill_id=skill_id, document_type=document_type)
-    if provider != Provider.HERMES and get_provider_key(db=db, owner_id=actor.id, provider=provider) is None:
-        raise AnalysisPreconditionError("Provider key is not configured")
+    if provider != Provider.HERMES:
+        provider_key = get_shared_provider_key(db=db, provider=provider)
+        if provider_key is None:
+            raise AnalysisPreconditionError("Provider key is not configured")
+        available_models = normalize_available_models(provider, provider_key.available_models, provider_key.default_model)
+        if model not in available_models:
+            raise AnalysisPreconditionError("Selected model is not available")
     if provider == Provider.HERMES and not get_settings().hermes_enabled:
         raise AnalysisPreconditionError("Hermes provider is disabled")
 

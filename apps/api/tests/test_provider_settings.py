@@ -2,22 +2,23 @@ from cryptography.fernet import InvalidToken
 
 from app.models.audit_log import AuditLog
 from app.models.provider_key import ProviderKey
-from app.schemas.enums import Provider
+from app.schemas.enums import Provider, Role
 from app.security.secrets import decrypt_secret, encrypt_secret
 
 from test_documents_upload import create_user, login
 
 
-def test_provider_key_roundtrip_is_masked_and_encrypted(client, db_session):
-    create_user(db_session, "author", "secret")
-    login(client, "author", "secret")
+def test_admin_provider_key_roundtrip_includes_model_allowlist_and_is_masked(client, db_session):
+    create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    login(client, "admin", "secret")
 
     save = client.put(
         f"/settings/provider-keys/{Provider.OPENAI_COMPATIBLE.value}",
         json={
             "api_key": "sk-test-SECRET1234",
             "base_url": "https://api.example.test/v1",
-            "default_model": "gpt-test",
+            "default_model": "openai/gpt-5.5",
+            "available_models": ["openai/gpt-5.5", "google/gemini-3.5-flash"],
         },
     )
 
@@ -26,7 +27,8 @@ def test_provider_key_roundtrip_is_masked_and_encrypted(client, db_session):
     assert payload == {
         "provider": "openai_compatible",
         "base_url": "https://api.example.test/v1",
-        "default_model": "gpt-test",
+        "default_model": "openai/gpt-5.5",
+        "available_models": ["openai/gpt-5.5", "google/gemini-3.5-flash"],
         "api_key_fingerprint": "openai_compatible:...1234",
         "has_key": True,
     }
@@ -39,12 +41,68 @@ def test_provider_key_roundtrip_is_masked_and_encrypted(client, db_session):
     assert "SECRET" not in listing.text
 
 
-def test_provider_key_delete_removes_row(client, db_session):
+def test_provider_key_management_requires_admin(client, db_session):
     create_user(db_session, "author", "secret")
     login(client, "author", "secret")
+
+    response = client.put(
+        f"/settings/provider-keys/{Provider.OPENAI_COMPATIBLE.value}",
+        json={
+            "api_key": "sk-test-SECRET1234",
+            "base_url": "https://api.example.test/v1",
+            "default_model": "openai/gpt-5.5",
+            "available_models": ["openai/gpt-5.5"],
+        },
+    )
+    listing = client.get("/settings/provider-keys")
+
+    assert response.status_code == 403
+    assert listing.status_code == 403
+
+
+def test_non_admin_can_read_shared_launch_model_options(client, db_session):
+    admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    create_user(db_session, "author", "secret")
+    db_session.add(
+        ProviderKey(
+            owner_id=admin.id,
+            provider=Provider.OPENAI_COMPATIBLE.value,
+            base_url="https://api.example.test/v1",
+            default_model="openai/gpt-5.5",
+            available_models=["openai/gpt-5.5", "google/gemini-3.5-flash"],
+            encrypted_api_key=encrypt_secret("sk-test-SECRET1234"),
+            api_key_fingerprint="openai_compatible:...1234",
+        )
+    )
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.get("/settings/provider-models")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider_models": [
+            {
+                "provider": "openai_compatible",
+                "default_model": "openai/gpt-5.5",
+                "available_models": ["openai/gpt-5.5", "google/gemini-3.5-flash"],
+                "has_key": True,
+            }
+        ]
+    }
+    assert "SECRET" not in response.text
+
+
+def test_provider_key_delete_removes_row(client, db_session):
+    create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    login(client, "admin", "secret")
     response = client.put(
         f"/settings/provider-keys/{Provider.ANTHROPIC_COMPATIBLE.value}",
-        json={"api_key": "anthropic-secret", "default_model": "claude-test"},
+        json={
+            "api_key": "anthropic-secret",
+            "default_model": "anthropic/claude-opus-4.7",
+            "available_models": ["anthropic/claude-opus-4.7"],
+        },
     )
     assert response.status_code == 200
 
@@ -56,14 +114,15 @@ def test_provider_key_delete_removes_row(client, db_session):
 
 
 def test_provider_key_test_endpoint_checks_stored_key_without_exposing_plaintext(client, db_session):
-    create_user(db_session, "author", "secret")
-    login(client, "author", "secret")
+    create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    login(client, "admin", "secret")
     save = client.put(
         f"/settings/provider-keys/{Provider.OPENAI_COMPATIBLE.value}",
         json={
             "api_key": "sk-test-CONNECTION1234",
             "base_url": "https://api.example.test/v1",
-            "default_model": "gpt-test",
+            "default_model": "openai/gpt-5.5",
+            "available_models": ["openai/gpt-5.5"],
         },
     )
     assert save.status_code == 200
@@ -75,7 +134,7 @@ def test_provider_key_test_endpoint_checks_stored_key_without_exposing_plaintext
         "provider": "openai_compatible",
         "status": "ok",
         "message": "Provider key is configured and decryptable.",
-        "default_model": "gpt-test",
+        "default_model": "openai/gpt-5.5",
         "base_url": "https://api.example.test/v1",
     }
     assert "CONNECTION" not in response.text
@@ -83,8 +142,8 @@ def test_provider_key_test_endpoint_checks_stored_key_without_exposing_plaintext
 
 
 def test_provider_key_test_endpoint_requires_saved_key(client, db_session):
-    create_user(db_session, "author", "secret")
-    login(client, "author", "secret")
+    create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    login(client, "admin", "secret")
 
     response = client.post(f"/settings/provider-keys/{Provider.ANTHROPIC_COMPATIBLE.value}/test")
 

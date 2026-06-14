@@ -13,13 +13,36 @@ import {
 import type { Provider } from "@/lib/api/documents";
 
 const providers: Provider[] = ["openai_compatible", "anthropic_compatible", "hermes"];
+const defaultOpenAIModels = [
+  "anthropic/claude-opus-4.7",
+  "anthropic/claude-sonnet-4.6",
+  "deepseek/deepseek-v4-pro",
+  "google/gemini-3.5-flash",
+  "openai/gpt-5.5",
+  "qwen/qwen3.5-397b-a17b",
+];
+
+function normalizeModelList(value: string): string[] {
+  const seen = new Set<string>();
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+}
 
 export default function SettingsPage() {
   const [keys, setKeys] = useState<ProviderKeyRecord[]>([]);
   const [provider, setProvider] = useState<Provider>("openai_compatible");
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [model, setModel] = useState("gpt-test");
+  const [model, setModel] = useState(defaultOpenAIModels[0]);
+  const [modelList, setModelList] = useState(defaultOpenAIModels.join("\n"));
   const [error, setError] = useState("");
   const [testMessage, setTestMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -42,10 +65,12 @@ export default function SettingsPage() {
     setError("");
     setTestMessage("");
     try {
+      const availableModels = normalizeModelList(modelList);
       await saveProviderKey(provider, {
         api_key: apiKey,
         base_url: baseUrl || null,
         default_model: model,
+        available_models: availableModels,
       });
       setApiKey("");
       await refresh();
@@ -120,7 +145,28 @@ export default function SettingsPage() {
             </label>
             <label>
               Default model
-              <input value={model} onChange={(event) => setModel(event.target.value)} />
+              <select value={model} onChange={(event) => setModel(event.target.value)}>
+                {normalizeModelList(modelList).map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Model allowlist
+              <textarea
+                rows={6}
+                value={modelList}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setModelList(nextValue);
+                  const nextModels = normalizeModelList(nextValue);
+                  if (nextModels.length > 0 && !nextModels.includes(model)) {
+                    setModel(nextModels[0]);
+                  }
+                }}
+              />
             </label>
           </div>
           {error ? <div className="error">{error}</div> : null}
@@ -145,6 +191,7 @@ export default function SettingsPage() {
                   <tr>
                     <th>Provider</th>
                     <th>Model</th>
+                    <th>Allowlist</th>
                     <th>Key</th>
                     <th>Base URL</th>
                     <th>Status</th>
@@ -156,6 +203,7 @@ export default function SettingsPage() {
                     <tr key={item.provider}>
                       <td>{item.provider.replaceAll("_", " ")}</td>
                       <td>{item.default_model}</td>
+                      <td className="small">{item.available_models.join(", ")}</td>
                       <td className="small">{item.api_key_fingerprint}</td>
                       <td>{item.base_url ?? "-"}</td>
                       <td>

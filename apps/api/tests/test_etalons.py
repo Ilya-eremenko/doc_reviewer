@@ -114,11 +114,10 @@ def test_create_etalon_draft_maps_gate_challenger_layers(client, db_session):
                 "parent_layer_1_id": "L1-001",
                 "status": "fail",
                 "severity": "high",
-                "title": "Incrementality evidence is missing",
-                "atomic_issue": "The claimed metric lift is not tied to a holdout.",
+                "question": "Is incrementality evidence tied to a holdout?",
+                "answer": "NO",
+                "issue": "The claimed metric lift is not tied to a holdout.",
                 "evidence": "No cohort, control group, or before-after guardrail is provided.",
-                "risk": "The investment case may overstate incremental impact.",
-                "recommendation": "Provide an experiment readout with denominator and baseline.",
             }
         ],
         "key_findings": ["Metric proof is incomplete"],
@@ -134,9 +133,9 @@ def test_create_etalon_draft_maps_gate_challenger_layers(client, db_session):
     assert payload["layer_1"][0]["status"] == "fail"
     assert payload["layer_1"][0]["summary"] == "The document claims traction without a control-group readout."
     assert payload["layer_1"][0]["evidence"][0]["quote"] == "The document names traction but does not provide a cohort readout."
-    assert payload["layer_2"][0]["check"] == "Incrementality evidence is missing"
+    assert payload["layer_2"][0]["check"] == "Is incrementality evidence tied to a holdout?"
     assert payload["layer_2"][0]["finding"] == "The claimed metric lift is not tied to a holdout."
-    assert payload["layer_2"][0]["expected_fix"] == "Provide an experiment readout with denominator and baseline."
+    assert payload["layer_2"][0]["expected_fix"] == ""
 
 
 def test_user_cannot_create_etalon_draft_from_another_users_analysis(client, db_session):

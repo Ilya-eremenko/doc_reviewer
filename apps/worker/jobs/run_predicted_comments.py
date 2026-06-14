@@ -5,7 +5,6 @@ from uuid import UUID
 
 from redis import Redis
 from rq import Queue
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -18,6 +17,7 @@ from app.models.skill import Skill
 from app.models.base import utc_now
 from app.schemas.enums import Provider, RunStatus, SkillSourceType
 from app.security.secrets import decrypt_secret
+from app.services.provider_keys import get_shared_provider_key
 from app.services.skill_sources import SkillSourceValidationError, refresh_skill_source_material
 from app.storage.local import LocalDocumentStorage
 from providers.base import ProviderRunRequest
@@ -126,11 +126,7 @@ def run_predicted_comments(predicted_comment_run_id: str, *, db: Session | None 
 
 
 def _get_provider_key(session: Session, analysis: Analysis, provider: Provider) -> ProviderKey | None:
-    statement = select(ProviderKey).where(
-        ProviderKey.owner_id == analysis.user_id,
-        ProviderKey.provider == provider.value,
-    )
-    return session.execute(statement).scalar_one_or_none()
+    return get_shared_provider_key(db=session, provider=provider)
 
 
 def _resolve_schema_path(schema_path: str) -> Path:

@@ -103,11 +103,10 @@ def _main_analysis_json_with_benchmark_ids() -> str:
                     "parent_layer_1_id": "A1",
                     "status": "fail",
                     "severity": "high",
-                    "title": "No incrementality evidence",
-                    "atomic_issue": "The metric uplift is not separated from baseline effects.",
+                    "question": "Is incrementality evidence separated from baseline effects?",
+                    "answer": "NO",
+                    "issue": "The metric uplift is not separated from baseline effects.",
                     "evidence": "No control group or holdout is shown.",
-                    "risk": "The benchmark should score this as only a partial Layer 2 match.",
-                    "recommendation": "Provide experiment or holdout evidence.",
                 }
             ],
         }

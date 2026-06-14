@@ -44,7 +44,8 @@ def test_gate2_challenger_renderer_frames_external_skill_with_schema_and_documen
     assert "layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence." in prompt
     assert "title, issue, evidence, impact, recommendation" not in prompt
     assert "layer_2_markdown" in prompt
-    assert "layer_2: structured copy of every Layer 2 atomic weak-link item with parent_layer_1_id and status" in prompt
+    assert "layer_2: structured copy of every Layer 2 atomic check with id, parent_layer_1_id, status, severity, question, answer, evidence, issue." in prompt
+    assert "Layer 2 item must not include Risk or Recommendation fields" in prompt
     assert "The initiative claims strong MVP traction" in prompt
 
 
@@ -107,6 +108,29 @@ def test_gate2_challenger_renderer_includes_devils_advocate_layer_4_context():
                     "severity": "critical",
                 }
             ],
+            "synthesis": {
+                "version": "devils-advocate-layer-4-synthesis-v1",
+                "decision": {"verdict": "rework", "rationale": "Missing proof."},
+                "must_review_signals": [
+                    {
+                        "source": "detected_contradiction",
+                        "theme": "Gross profit not shown",
+                        "severity": "critical",
+                        "evidence": "[[financial-revenue-and-gross-profit]]",
+                        "why_it_matters": "Revenue is shown but gross profit is absent.",
+                    },
+                    {
+                        "source": "role_comment",
+                        "theme": "Subsidy-dependent economics",
+                        "severity": "important",
+                        "evidence": "Subsidies for sellers",
+                        "why_it_matters": "Cohorts may collapse when incentives are removed.",
+                        "persona": "MP",
+                    },
+                ],
+                "role_consensus": ["MP rejects: No incrementality proof."],
+                "open_ic_questions": ["What is gross profit?"],
+            },
             "source": "devils_advocate_predefense",
         },
     )
@@ -118,6 +142,10 @@ def test_gate2_challenger_renderer_includes_devils_advocate_layer_4_context():
     assert "Detected Contradictions & Missing Proofs" in prompt
     assert "Gross profit not shown" in prompt
     assert "strengthen or supplement Gate Challenger" in prompt
+    assert "Layer 4 synthesis - must-review Devil's Advocate signals" in prompt
+    assert "Critical/high/important Devil's Advocate signals must not be silently dropped." in prompt
+    assert "Subsidy-dependent economics" in prompt
+    assert "If a must-review signal is not included in Layer 1 or Layer 2, explicitly explain why it is not material." in prompt
 
 
 def test_gate2_challenger_renderer_uses_snapshot_files_instead_of_stub_prompt(tmp_path):

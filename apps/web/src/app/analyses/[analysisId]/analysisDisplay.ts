@@ -3,6 +3,54 @@ import type { AnalysisRecord } from "@/lib/api/documents";
 type SummarySource = Pick<AnalysisRecord, "summary" | "structured_output">;
 
 const ASSESSMENT_HEADINGS = new Set(["Оценка документа", "Document assessment"]);
+const NO_MATERIAL_ISSUE = "No material issue";
+
+const GATE_LAYER_METADATA = new Map(
+  [
+    {
+      key: "problem framing and segments",
+      title: "Problem Framing and Segments",
+      description: "Target segment, pain, behavior change, and Gate 1 hypothesis framing",
+      layer2Title: "Problem Framing and Significance: Were the Gate 1 Hypotheses Confirmed?",
+    },
+    {
+      key: "solution quality and logic",
+      title: "Solution Quality and Logic",
+      description: "Hypothesis validation, decision logic, and product friction",
+      layer2Title: "Solution Quality and Logic",
+    },
+    {
+      key: "scope of work and implementation plan",
+      title: "Scope of Work and Implementation Plan",
+      description: "Rollout sequencing, operational constraints, legal and compliance readiness",
+      layer2Title: "Scope of Work and Implementation Plan",
+    },
+    {
+      key: "success criteria and metrics",
+      title: "Success Criteria and Metrics",
+      description: "Thresholds, measured results, and decision-grade metric evidence",
+      layer2Title: "Success Criteria and Metrics",
+    },
+    {
+      key: "traction model credibility",
+      title: "Traction Model Credibility",
+      description: "Adoption model, subsidies, organic demand, and unit economics",
+      layer2Title: "Traction Model Credibility",
+    },
+    {
+      key: "key assumptions and risks completeness",
+      title: "Key Assumptions and Risks Completeness",
+      description: "Scenario failure conditions, risks, and reversal logic",
+      layer2Title: "Key Assumptions and Risks Completeness",
+    },
+    {
+      key: "consistency",
+      title: "Consistency",
+      description: "Internal contradiction checks across targets, resources, and conclusions",
+      layer2Title: "Consistency",
+    },
+  ].map((item) => [item.key, item]),
+);
 
 export type DevilsAdvocateMarkdownSection = {
   title: string;
@@ -19,11 +67,38 @@ export type DevilsAdvocateRoleComment = {
   severity: string | null;
 };
 
+export type DocumentCommentTone = "good" | "warn" | "bad" | "neutral";
+
+export type DocumentCommentAnchor = {
+  id: string;
+  anchorText: string;
+  commentIds: string[];
+  commentCount: number;
+  tone: DocumentCommentTone;
+};
+
+export type DocumentCommentSegment = {
+  id: string;
+  text: string;
+  anchorId: string | null;
+  commentCount: number;
+  tone: DocumentCommentTone;
+};
+
+export type DocumentCommentAnchors = {
+  anchors: DocumentCommentAnchor[];
+  segments: DocumentCommentSegment[];
+  unmatchedComments: DevilsAdvocateRoleComment[];
+};
+
 export type LayeredGateCheck = {
   id: string;
+  title: string;
+  description: string | null;
+  status: string | null;
   severity: string | null;
   issue: string;
-  evidence: string;
+  evidence: string | null;
   layer2: LayeredGateLayer2Check[];
 };
 
@@ -33,10 +108,10 @@ export type LayeredGateLayer2Check = {
   status: string | null;
   severity: string | null;
   title: string;
+  question: string;
+  answer: string | null;
   issue: string;
-  evidence: string;
-  risk: string | null;
-  recommendation: string | null;
+  evidence: string | null;
 };
 
 export function analysisShortSummary(analysis: SummarySource): string | null {
@@ -118,33 +193,144 @@ export function devilsAdvocateRoleComments(
   });
 }
 
-export function buildLayeredGateChecks(output: Record<string, unknown> | null | undefined): LayeredGateCheck[] {
-  const markdownStatuses = parseLayer2MarkdownStatuses(asString(output?.layer_2_markdown));
-  const layer1 = asRecordArray(output?.layer_1)
-    .map((record, index) => {
-      const id = asString(record.id) || `L1-${index + 1}`;
-      const issue = asString(record.issue);
-      const evidence = asString(record.evidence);
-      if (!issue || !evidence) {
-        return null;
-      }
+export function buildDocumentCommentAnchors(
+  documentText: string | null | undefined,
+  comments: DevilsAdvocateRoleComment[],
+): DocumentCommentAnchors {
+  const text = documentText || "";
+  const groupedAnchors = new Map<string, { anchorText: string; comments: DevilsAdvocateRoleComment[] }>();
+  for (const comment of comments) {
+    const key = normalizeAnchorText(comment.anchorText);
+    if (!key) {
+      continue;
+    }
+    const group = groupedAnchors.get(key) || { anchorText: comment.anchorText, comments: [] };
+    group.comments.push(comment);
+    groupedAnchors.set(key, group);
+  }
 
-      return {
+  const matchedGroups = Array.from(groupedAnchors.values())
+    .map((group) => ({ ...group, match: findAnchorMatch(text, group.anchorText) }))
+    .filter((group): group is { anchorText: string; comments: DevilsAdvocateRoleComment[]; match: AnchorMatch } =>
+      Boolean(group.match),
+    )
+    .sort((left, right) => left.match.start - right.match.start);
+
+  const anchors: DocumentCommentAnchor[] = [];
+  const segments: DocumentCommentSegment[] = [];
+  let cursor = 0;
+  for (const group of matchedGroups) {
+    if (group.match.start < cursor) {
+      continue;
+    }
+
+    if (group.match.start > cursor) {
+      segments.push({
+        id: `text-${segments.length + 1}`,
+        text: text.slice(cursor, group.match.start),
+        anchorId: null,
+        commentCount: 0,
+        tone: "neutral",
+      });
+    }
+
+    const id = `anchor-${anchors.length + 1}`;
+    const tone = toneForComments(group.comments);
+    anchors.push({
+      id,
+      anchorText: group.anchorText,
+      commentIds: group.comments.map((comment) => comment.id),
+      commentCount: group.comments.length,
+      tone,
+    });
+    segments.push({
+      id: `segment-${id}`,
+      text: text.slice(group.match.start, group.match.end),
+      anchorId: id,
+      commentCount: group.comments.length,
+      tone,
+    });
+    cursor = group.match.end;
+  }
+
+  if (cursor < text.length || !segments.length) {
+    segments.push({
+      id: `text-${segments.length + 1}`,
+      text: text.slice(cursor),
+      anchorId: null,
+      commentCount: 0,
+      tone: "neutral",
+    });
+  }
+
+  const matchedCommentIds = new Set(anchors.flatMap((anchor) => anchor.commentIds));
+  return {
+    anchors,
+    segments,
+    unmatchedComments: comments.filter((comment) => !matchedCommentIds.has(comment.id)),
+  };
+}
+
+export function buildLayeredGateChecks(output: Record<string, unknown> | null | undefined): LayeredGateCheck[] {
+  const layer1Sections = parseLayer1MarkdownSections(asString(output?.layer_1_markdown));
+  const layer2Sections = parseLayer2MarkdownSections(asString(output?.layer_2_markdown));
+  const layer1Records = asRecordArray(output?.layer_1);
+  const layer1RecordsById = new Map(
+    layer1Records.map((record, index) => [asString(record.id) || `L1-${index + 1}`, record]),
+  );
+  const consumedLayer1Ids = new Set<string>();
+  const layer1: LayeredGateCheck[] = layer1Sections.map((section, index) => {
+    const structured = section.id ? layer1RecordsById.get(section.id) : null;
+    const id = (structured && asString(structured.id)) || section.id || syntheticId("layer-1", section.key);
+    consumedLayer1Ids.add(id);
+    return layer1GroupFromSources({
+      id,
+      key: section.key,
+      structured,
+      section,
+      fallbackIndex: index + 1,
+    });
+  });
+
+  for (const [index, record] of layer1Records.entries()) {
+    const id = asString(record.id) || `L1-${index + 1}`;
+    if (consumedLayer1Ids.has(id)) {
+      continue;
+    }
+    const issue = asString(record.issue);
+    const evidence = asString(record.evidence);
+    if (!issue || !evidence) {
+      continue;
+    }
+    layer1.push(
+      layer1GroupFromSources({
         id,
-        severity: asString(record.severity),
-        issue,
-        evidence,
-        layer2: [] as LayeredGateLayer2Check[],
-      };
-    })
-    .filter((record): record is LayeredGateCheck => Boolean(record));
+        key: normalizeLayerKey(asString(record.dimension) || asString(record.title) || issue),
+        structured: record,
+        section: null,
+        fallbackIndex: index + 1,
+      }),
+    );
+  }
 
   if (!layer1.length) {
     return [];
   }
 
   const groupsById = new Map(layer1.map((group) => [group.id, group]));
+  const groupsByKey = new Map(layer1.map((group) => [normalizeLayerKey(group.title), group]));
   const groupIndexById = new Map(layer1.map((group, index) => [group.id, index]));
+  const sectionByKey = new Map(layer2Sections.map((section) => [section.key, section]));
+  const markdownQuestionsById = new Map<string, ParsedLayer2Question>();
+  for (const section of layer2Sections) {
+    for (const question of section.questions) {
+      if (question.id) {
+        markdownQuestionsById.set(question.id, question);
+      }
+    }
+  }
+
+  const consumedMarkdownQuestions = new Set<ParsedLayer2Question>();
   for (const [index, record] of asRecordArray(output?.layer_2).entries()) {
     const parentLayer1Id = asString(record.parent_layer_1_id);
     if (!parentLayer1Id) {
@@ -155,30 +341,295 @@ export function buildLayeredGateChecks(output: Record<string, unknown> | null | 
       continue;
     }
 
-    const title = asString(record.title) || asString(record.check) || `Layer 2 check ${index + 1}`;
-    const issue = asString(record.atomic_issue) || asString(record.finding) || asString(record.risk) || title;
-    const evidence = asString(record.evidence) || asString(record.explanation) || "";
-    const groupIndex = groupIndexById.get(parentLayer1Id) ?? -1;
+    const groupIndex = groupIndexById.get(group.id) ?? -1;
+    const section = sectionByKey.get(normalizeLayerKey(group.title)) || layer2Sections[groupIndex];
     const childIndex = group.layer2.length;
-    const status =
-      normalizeCheckStatus(record.status) ||
-      markdownStatuses.byQuestion.get(normalizeQuestionKey(title)) ||
-      markdownStatuses.byGroup[groupIndex]?.[childIndex] ||
+    const markdownQuestion =
+      markdownQuestionsById.get(asString(record.id) || "") ||
+      section?.questions.find((question) => question.parentLayer1Id === parentLayer1Id && !consumedMarkdownQuestions.has(question)) ||
+      section?.questions[childIndex] ||
       null;
-    group.layer2.push({
-      id: asString(record.id) || `L2-${index + 1}`,
-      parentLayer1Id,
-      status,
-      severity: asString(record.severity),
-      title,
-      issue,
-      evidence,
-      risk: asString(record.risk),
-      recommendation: asString(record.recommendation) || asString(record.expected_fix),
-    });
+    if (markdownQuestion) {
+      consumedMarkdownQuestions.add(markdownQuestion);
+    }
+    group.layer2.push(layer2CheckFromSources(record, index, group, markdownQuestion, section));
+  }
+
+  for (const section of layer2Sections) {
+    const group = groupsByKey.get(section.key);
+    if (!group) {
+      continue;
+    }
+    for (const [index, question] of section.questions.entries()) {
+      if (consumedMarkdownQuestions.has(question)) {
+        continue;
+      }
+      consumedMarkdownQuestions.add(question);
+      group.layer2.push(layer2CheckFromMarkdown(section, question, group, index));
+    }
   }
 
   return layer1;
+}
+
+function layer1GroupFromSources({
+  id,
+  key,
+  structured,
+  section,
+  fallbackIndex,
+}: {
+  id: string;
+  key: string;
+  structured: Record<string, unknown> | null | undefined;
+  section: ParsedLayer1Section | null;
+  fallbackIndex: number;
+}): LayeredGateCheck {
+  const metadata = GATE_LAYER_METADATA.get(key);
+  const title = metadata?.title || section?.title || toTitleCase(asString(structured?.title) || `Layer 1 ${fallbackIndex}`);
+  const issue = asString(structured?.issue) || section?.issue || NO_MATERIAL_ISSUE;
+  return {
+    id,
+    title,
+    description: metadata?.description || null,
+    status: section?.status || null,
+    severity: asString(structured?.severity) || section?.severity || null,
+    issue,
+    evidence: asString(structured?.evidence) || section?.evidence || null,
+    layer2: [],
+  };
+}
+
+function layer2CheckFromSources(
+  record: Record<string, unknown>,
+  index: number,
+  group: LayeredGateCheck,
+  markdownQuestion: ParsedLayer2Question | null,
+  section: ParsedLayer2Section | null | undefined,
+): LayeredGateLayer2Check {
+  const question =
+    markdownQuestion?.question ||
+    asString(record.question) ||
+    asString(record.title) ||
+    asString(record.check) ||
+    markdownQuestion?.title ||
+    GATE_LAYER_METADATA.get(normalizeLayerKey(group.title))?.layer2Title ||
+    `Layer 2 check ${index + 1}`;
+  const status = normalizeCheckStatus(record.status) || markdownQuestion?.status || section?.status || null;
+  const issue =
+    markdownQuestion?.issue ||
+    asString(record.issue) ||
+    asString(record.atomic_issue) ||
+    asString(record.finding) ||
+    markdownQuestion?.atomicIssue ||
+    (status === "pass" ? NO_MATERIAL_ISSUE : question);
+  const evidence = asString(record.evidence) || asString(record.explanation) || markdownQuestion?.evidence;
+  return {
+    id: asString(record.id) || markdownQuestion?.id || `L2-${index + 1}`,
+    parentLayer1Id: group.id,
+    status,
+    severity: asString(record.severity) || markdownQuestion?.severity || null,
+    title: question,
+    question,
+    answer: markdownQuestion?.answer || asString(record.answer) || answerForStatus(status),
+    issue,
+    evidence: evidence || null,
+  };
+}
+
+function layer2CheckFromMarkdown(
+  section: ParsedLayer2Section,
+  question: ParsedLayer2Question,
+  group: LayeredGateCheck,
+  index: number,
+): LayeredGateLayer2Check {
+  const id = question.id || syntheticId("layer-2", `${section.key}-${index + 1}`);
+  const title = question.question || question.title || GATE_LAYER_METADATA.get(section.key)?.layer2Title || section.title;
+  return {
+    id,
+    parentLayer1Id: group.id,
+    status: question.status || section.status,
+    severity: question.severity || null,
+    title,
+    question: title,
+    answer: question.answer || answerForStatus(question.status || section.status),
+    issue: question.atomicIssue || question.issue || (section.status === "pass" ? NO_MATERIAL_ISSUE : question.question),
+    evidence: question.evidence || null,
+  };
+}
+
+type ParsedLayer1Section = {
+  key: string;
+  title: string;
+  status: string | null;
+  id: string | null;
+  severity: string | null;
+  issue: string | null;
+  evidence: string | null;
+};
+
+type ParsedLayer2Section = {
+  key: string;
+  title: string;
+  status: string | null;
+  questions: ParsedLayer2Question[];
+};
+
+type ParsedLayer2Question = {
+  id: string | null;
+  parentLayer1Id: string | null;
+  status: string | null;
+  severity: string | null;
+  title: string | null;
+  atomicIssue: string | null;
+  question: string;
+  answer: string | null;
+  evidence: string | null;
+  issue: string | null;
+};
+
+function parseLayer1MarkdownSections(markdown: string | null): ParsedLayer1Section[] {
+  return splitLayerMarkdownSections(markdown, false).map((section) => {
+    const fields = parseMarkdownFields(section.lines);
+    const noMaterialIssue = findNoMaterialIssue(section.lines);
+    return {
+      key: section.key,
+      title: section.title,
+      status: section.status,
+      id: fields.id || null,
+      severity: fields.severity || null,
+      issue: fields.issue || noMaterialIssue,
+      evidence: fields.evidence || null,
+    };
+  });
+}
+
+function parseLayer2MarkdownSections(markdown: string | null): ParsedLayer2Section[] {
+  return splitLayerMarkdownSections(markdown, true).map((section) => ({
+    key: section.key,
+    title: section.title,
+    status: section.status,
+    questions: parseLayer2Questions(section.lines),
+  }));
+}
+
+function splitLayerMarkdownSections(
+  markdown: string | null,
+  stripAtomicPrefix: boolean,
+): Array<{ key: string; title: string; status: string | null; lines: string[] }> {
+  const value = asString(markdown);
+  if (!value) {
+    return [];
+  }
+  const sections: Array<{ rawTitle: string; status: string | null; lines: string[] }> = [];
+  let current: { rawTitle: string; status: string | null; lines: string[] } | null = null;
+  for (const line of value.replace(/\r\n/g, "\n").split("\n")) {
+    const heading = line.match(/^\s*#{1,6}\s+(.+?)\s*:\s*(PASS|PARTIAL|FAIL|YES|NO)\s*$/i);
+    if (heading) {
+      current = { rawTitle: heading[1].trim(), status: normalizeCheckStatus(heading[2]), lines: [] };
+      sections.push(current);
+      continue;
+    }
+    if (current) {
+      current.lines.push(line);
+    }
+  }
+  return sections.map((section) => {
+    const rawTitle = stripAtomicPrefix
+      ? section.rawTitle.replace(/^Atomic checks\s*[-:]\s*/i, "").trim()
+      : section.rawTitle;
+    const key = normalizeLayerKey(rawTitle);
+    return {
+      key,
+      title: GATE_LAYER_METADATA.get(key)?.title || toTitleCase(rawTitle),
+      status: section.status,
+      lines: section.lines,
+    };
+  });
+}
+
+function parseLayer2Questions(lines: string[]): ParsedLayer2Question[] {
+  const questions: Array<{ question: string; lines: string[] }> = [];
+  let current: { question: string; lines: string[] } | null = null;
+  for (const line of lines) {
+    const questionMatch = line.match(/^\s*-\s*question:\s*(.+?)\s*$/i);
+    if (questionMatch) {
+      current = { question: questionMatch[1].trim(), lines: [] };
+      questions.push(current);
+      continue;
+    }
+    if (current) {
+      current.lines.push(line);
+    }
+  }
+
+  return questions.map((item) => {
+    const fields = parseMarkdownFields(item.lines);
+    return {
+      id: fields.id || null,
+      parentLayer1Id: fields.parent_layer_1_id || null,
+      status: normalizeCheckStatus(fields.status) || normalizeCheckStatus(fields.answer),
+      severity: fields.severity || null,
+      title: fields.title || null,
+      atomicIssue: fields.atomic_issue || null,
+      question: item.question,
+      answer: fields.answer || null,
+      evidence: fields.evidence || null,
+      issue: fields.issue || null,
+    };
+  });
+}
+
+function answerForStatus(value: string | null): string | null {
+  if (value === "pass") {
+    return "YES";
+  }
+  if (value === "partial") {
+    return "PARTIAL";
+  }
+  if (value === "fail") {
+    return "NO";
+  }
+  return null;
+}
+
+function parseMarkdownFields(lines: string[]): Record<string, string | null> {
+  const fields: Record<string, string | null> = {};
+  for (const line of lines) {
+    const match = line.match(/^\s*(?:-\s*)?([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*?)\s*$/);
+    if (match) {
+      fields[match[1].toLowerCase()] = match[2].trim();
+    }
+  }
+  return fields;
+}
+
+function findNoMaterialIssue(lines: string[]): string | null {
+  return lines.some((line) => /^(\s*-\s*)?No material issue\.?\s*$/i.test(line)) ? NO_MATERIAL_ISSUE : null;
+}
+
+function normalizeLayerKey(value: string | null): string {
+  return (value || "")
+    .replace(/^Atomic checks\s*[-:]\s*/i, "")
+    .replace(/\s*:\s*(PASS|PARTIAL|FAIL|YES|NO)\s*$/i, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function syntheticId(prefix: string, value: string): string {
+  const normalized = normalizeLayerKey(value).replace(/\s+/g, "-");
+  return `${prefix}-${normalized || "item"}`;
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .trim()
+    .split(/\s+/)
+    .map((word) => (word.length ? `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}` : word))
+    .join(" ");
 }
 
 function summaryFromOutput(output: Record<string, unknown> | null | undefined): string | null {
@@ -238,6 +689,60 @@ function isTrimmedBoundary(line: string): boolean {
   return !trimmed || /^(?:-{3,}|\*{3,}|_{3,})$/.test(trimmed);
 }
 
+type AnchorMatch = {
+  start: number;
+  end: number;
+};
+
+function normalizeAnchorText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function findAnchorMatch(documentText: string, anchorText: string): AnchorMatch | null {
+  const exactStart = documentText.indexOf(anchorText);
+  if (exactStart >= 0) {
+    return { start: exactStart, end: exactStart + anchorText.length };
+  }
+
+  const normalizedAnchor = normalizeAnchorText(anchorText);
+  if (!normalizedAnchor) {
+    return null;
+  }
+
+  const lowerDocument = documentText.toLowerCase();
+  const lowerAnchor = anchorText.toLowerCase();
+  const caseInsensitiveStart = lowerDocument.indexOf(lowerAnchor);
+  return caseInsensitiveStart >= 0 ? { start: caseInsensitiveStart, end: caseInsensitiveStart + anchorText.length } : null;
+}
+
+function toneForComments(comments: DevilsAdvocateRoleComment[]): DocumentCommentTone {
+  const tones = comments.map((comment) => toneForVote(comment.vote));
+  if (tones.includes("bad")) {
+    return "bad";
+  }
+  if (tones.includes("good")) {
+    return "good";
+  }
+  if (tones.includes("warn")) {
+    return "warn";
+  }
+  return "neutral";
+}
+
+function toneForVote(value: string | null): DocumentCommentTone {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return "warn";
+  }
+  if (["reject", "rework", "fail", "no"].includes(normalized)) {
+    return "bad";
+  }
+  if (["approve", "approved", "pass", "yes", "for", "за"].includes(normalized)) {
+    return "good";
+  }
+  return "warn";
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -262,51 +767,4 @@ function normalizeCheckStatus(value: unknown): string | null {
     return "fail";
   }
   return ["pass", "partial", "fail", "not_applicable"].includes(normalized) ? normalized : null;
-}
-
-function parseLayer2MarkdownStatuses(markdown: string | null): { byGroup: string[][]; byQuestion: Map<string, string> } {
-  const byQuestion = new Map<string, string>();
-  const byGroup: string[][] = [];
-  if (!markdown) {
-    return { byGroup, byQuestion };
-  }
-
-  let currentQuestion: string | null = null;
-  let currentGroupIndex = -1;
-  for (const line of markdown.split(/\r?\n/)) {
-    if (/^\s*#{1,6}\s+Atomic checks\b/i.test(line)) {
-      currentGroupIndex += 1;
-      byGroup[currentGroupIndex] = [];
-      currentQuestion = null;
-      continue;
-    }
-
-    const questionMatch = line.match(/^\s*-\s*question:\s*(.+?)\s*$/i);
-    if (questionMatch) {
-      currentQuestion = questionMatch[1];
-      continue;
-    }
-
-    if (!currentQuestion) {
-      continue;
-    }
-    const answerMatch = line.match(/^\s*answer:\s*([A-Z_]+)\s*$/i);
-    if (!answerMatch) {
-      continue;
-    }
-    const status = normalizeCheckStatus(answerMatch[1]);
-    if (status) {
-      byQuestion.set(normalizeQuestionKey(currentQuestion), status);
-      if (currentGroupIndex >= 0) {
-        byGroup[currentGroupIndex].push(status);
-      }
-    }
-    currentQuestion = null;
-  }
-
-  return { byGroup, byQuestion };
-}
-
-function normalizeQuestionKey(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }

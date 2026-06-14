@@ -2,7 +2,7 @@ import logging
 
 from app.models.analysis import Analysis
 from app.models.provider_key import ProviderKey
-from app.schemas.enums import Provider, RunStatus
+from app.schemas.enums import Provider, Role, RunStatus
 from app.security.secrets import encrypt_secret
 from jobs.run_analysis import run_analysis
 
@@ -24,7 +24,7 @@ def test_worker_and_provider_logs_include_job_context_without_api_key(tmp_path, 
         skill = _create_skill(db)
         db.add(
             ProviderKey(
-                owner_id=user.id,
+                owner_id=_create_user(db, role=Role.ADMIN).id,
                 provider=Provider.OPENAI_COMPATIBLE.value,
                 base_url=None,
                 default_model="gpt-test",
