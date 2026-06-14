@@ -21,6 +21,29 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Save staged Gate Challenger lazy-details technical specification in
+  `docs/superpowers/specs/2026-06-14-staged-gate-challenger-lazy-details.md`.
+- [x] Add and run isolated `prototypes/admllm-session-probe` for admllm
+  Responses API: `/v1/responses` works with `previous_response_id` on
+  `openai/gpt-5.5`, follow-up remembered the synthetic marker without
+  resending it, `background=true` and `/responses/compact` were accepted,
+  while `/responses/{id}/input_items` returned `model=None` 400 even after a
+  retry with `model=openai/gpt-5.5`.
+- [x] Diagnose analysis `36a2b89c-7f19-4acc-9666-bea9bcc9aee6`
+  timeout: Devil's Advocate prepass completed in 44s, then the main Gate
+  Challenger `openai_compatible` / `openai/gpt-5.5` call through
+  `https://admllm.data-light.ru/v1` failed after roughly 3 minutes with
+  upstream `InternalServerError` request-id
+  `25aa1f00-adf2-42ff-a79d-94d1bd500269`; failed call returned no usage, but
+  the saved main prompt is 286,847 chars / 289,036 bytes, with an estimated
+  61.5k input tokens based on successful same-document Gate Challenger runs;
+  the preceding Devil's Advocate prepass completed in 44.154s with 58,304 input
+  tokens and 3,790 output tokens.
+- [x] Add an in-page waiting loader and automatic polling to the Gate
+  Challenger analysis result page while the main or Devil's Advocate run is
+  `queued` / `running`; polling stops on terminal statuses. Verified with the
+  focused analysis page test, full frontend tests, production build, Compose
+  config, web container rebuild, and localhost browser smoke.
 - [x] Fix the document-detail `Model` button display by replacing the
   concatenated text chevron with a dedicated CSS chevron and trigger spacing,
   and simplify the model popover to only output language, model selection, and

@@ -57,6 +57,8 @@ const feedbackRatings = [
   { value: 5, label: "Very useful" },
 ] as const;
 
+const ANALYSIS_POLL_INTERVAL_MS = 5000;
+
 type FeedbackRating = (typeof feedbackRatings)[number]["value"];
 
 export default function AnalysisDetailPage() {
@@ -73,12 +75,61 @@ export default function AnalysisDetailPage() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>("mainOutput");
   const [runDetailsOpen, setRunDetailsOpen] = useState(false);
+  const [isRefreshingAnalysis, setIsRefreshingAnalysis] = useState(false);
 
   useEffect(() => {
+    let ignore = false;
+    setAnalysis(null);
+    setError("");
     getAnalysis(params.analysisId)
-      .then(setAnalysis)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load analysis"));
+      .then((loadedAnalysis) => {
+        if (!ignore) {
+          setAnalysis(loadedAnalysis);
+          setError("");
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : "Failed to load analysis");
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [params.analysisId]);
+
+  useEffect(() => {
+    if (!isAnalysisRefreshPending(analysis)) {
+      return;
+    }
+
+    let ignore = false;
+    async function refreshAnalysis() {
+      setIsRefreshingAnalysis(true);
+      try {
+        const refreshedAnalysis = await getAnalysis(params.analysisId);
+        if (!ignore) {
+          setAnalysis(refreshedAnalysis);
+          setError("");
+        }
+      } catch (err) {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : "Failed to refresh analysis");
+        }
+      } finally {
+        if (!ignore) {
+          setIsRefreshingAnalysis(false);
+        }
+      }
+    }
+
+    const intervalId = window.setInterval(refreshAnalysis, ANALYSIS_POLL_INTERVAL_MS);
+    return () => {
+      ignore = true;
+      window.clearInterval(intervalId);
+    };
+  }, [analysis?.status, analysis?.predicted_comment_run?.status, params.analysisId]);
 
   useEffect(() => {
     if (!analysis?.document_id) {
@@ -208,6 +259,10 @@ export default function AnalysisDetailPage() {
             {runDetailsOpen ? <RunDetailsDialog analysis={analysis} onClose={() => setRunDetailsOpen(false)} /> : null}
 
             {analysis.error_message ? <section className="analysis-alert">{analysis.error_message}</section> : null}
+
+            {isAnalysisRefreshPending(analysis) ? (
+              <AnalysisWaitingPanel analysis={analysis} isRefreshing={isRefreshingAnalysis} />
+            ) : null}
 
             <div className="analysis-layout">
               <section className="analysis-main stack">
@@ -370,6 +425,41 @@ function FeedbackFaceIcon({ rating }: { rating: FeedbackRating }) {
       <circle cx="15" cy="10.5" r="1.05" fill="currentColor" />
       <path d={mouthPath} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
     </svg>
+  );
+}
+
+function AnalysisWaitingPanel({
+  analysis,
+  isRefreshing,
+}: {
+  analysis: AnalysisRecord;
+  isRefreshing: boolean;
+}) {
+  const activeStatus = isActiveRunStatus(analysis.status)
+    ? analysis.status
+    : analysis.predicted_comment_run?.status || analysis.status;
+  let title = "Finishing analysis";
+  let detail = "The main result is ready while the remaining output finishes.";
+
+  if (analysis.status === "queued") {
+    title = "Analysis queued";
+    detail = "The run is waiting for a worker. Output will appear when processing completes.";
+  }
+  if (analysis.status === "running") {
+    title = "Analysis running";
+    detail = "Gate Challenger is processing the document. Output will appear when the run completes.";
+  }
+
+  return (
+    <section className="analysis-card analysis-waiting" aria-live="polite">
+      <span className="analysis-waiting__spinner" aria-hidden="true" />
+      <div className="analysis-waiting__copy">
+        <h2>{title}</h2>
+        <p>{detail}</p>
+        <span>{isRefreshing ? "Refreshing status" : "Waiting for output"}</span>
+      </div>
+      <StatusBadge status={activeStatus} />
+    </section>
   );
 }
 
@@ -1214,6 +1304,17 @@ function formatNumber(value: number | null): string {
   return value === null ? "-" : new Intl.NumberFormat("en").format(value);
 }
 
+function isAnalysisRefreshPending(analysis: AnalysisRecord | null): boolean {
+  return Boolean(
+    analysis &&
+      (isActiveRunStatus(analysis.status) || isActiveRunStatus(analysis.predicted_comment_run?.status)),
+  );
+}
+
+function isActiveRunStatus(status: AnalysisRecord["status"] | null | undefined): boolean {
+  return status === "queued" || status === "running";
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -1632,6 +1733,52 @@ const analysisStyles = `
 
 .analysis-loading {
   color: #94a3b8;
+}
+
+.analysis-waiting {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-color: rgba(56, 189, 248, 0.36);
+  background:
+    linear-gradient(180deg, rgba(12, 74, 110, 0.3), rgba(15, 23, 42, 0.96)),
+    #020617;
+}
+
+.analysis-waiting__spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(125, 211, 252, 0.18);
+  border-top-color: #5eead4;
+  border-radius: 999px;
+  animation: analysis-spin 900ms linear infinite;
+}
+
+.analysis-waiting__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.analysis-waiting__copy p {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.analysis-waiting__copy span {
+  color: #7dd3fc;
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+@keyframes analysis-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .analysis-tabs {
@@ -2292,6 +2439,15 @@ const analysisStyles = `
     padding: 14px;
   }
 
+  .analysis-waiting {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .analysis-waiting .badge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
   .analysis-hero__title-row {
     align-items: stretch;
     flex-direction: column;
@@ -2501,6 +2657,24 @@ const paperAnalysisOverrides = `
 .analysis-card {
   border-radius: 8px;
   padding: 22px 24px;
+}
+
+.analysis-waiting {
+  border-color: #b7dfcf;
+  background: #f7fcfa;
+}
+
+.analysis-waiting__spinner {
+  border-color: #ccebdd;
+  border-top-color: #0e9f6e;
+}
+
+.analysis-waiting__copy p {
+  color: #344054;
+}
+
+.analysis-waiting__copy span {
+  color: #087d5f;
 }
 
 .analysis-short-summary {

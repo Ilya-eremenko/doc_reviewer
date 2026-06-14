@@ -100,4 +100,24 @@ describe("analysis result page", () => {
     expect(shortSummaryParagraphStyles).toContain("width: 100%");
     expect(shortSummaryParagraphStyles).not.toContain("max-width");
   });
+
+  it("polls analysis detail while the main or predicted-comment run is still active", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(pageSource).toContain("const ANALYSIS_POLL_INTERVAL_MS");
+    expect(pageSource).toContain("function isAnalysisRefreshPending");
+    expect(pageSource).toContain("analysis.predicted_comment_run?.status");
+    expect(pageSource).toContain("window.setInterval(refreshAnalysis, ANALYSIS_POLL_INTERVAL_MS)");
+    expect(pageSource).toContain("window.clearInterval(intervalId)");
+  });
+
+  it("renders a waiting loader for queued and running analysis states", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+    expect(pageSource).toContain("function AnalysisWaitingPanel");
+    expect(pageSource).toContain("analysis-waiting__spinner");
+    expect(pageSource).toContain('aria-live="polite"');
+    expect(pageSource).toContain('analysis.status === "queued"');
+    expect(pageSource).toContain('analysis.status === "running"');
+  });
 });
