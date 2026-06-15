@@ -23,3 +23,29 @@ def test_cors_allows_localhost_and_loopback_frontend_origins(client):
         assert response.status_code == 200
         assert response.headers["access-control-allow-origin"] == origin
         assert response.headers["access-control-allow-credentials"] == "true"
+
+
+def test_cors_allows_configured_production_frontend_origin(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.core.config import get_settings
+    from app.main import create_app
+
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "http://avi-ix-devbox04:3000")
+    get_settings.cache_clear()
+
+    try:
+        with TestClient(create_app()) as test_client:
+            response = test_client.options(
+                "/auth/login",
+                headers={
+                    "Origin": "http://avi-ix-devbox04:3000",
+                    "Access-Control-Request-Method": "POST",
+                },
+            )
+    finally:
+        get_settings.cache_clear()
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://avi-ix-devbox04:3000"
+    assert response.headers["access-control-allow-credentials"] == "true"

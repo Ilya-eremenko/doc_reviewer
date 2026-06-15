@@ -8,7 +8,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
-from app.core.config import get_settings
+from app.core.config import default_skill_source_snapshot_mode, get_settings
 from app.logging import worker_logger
 from app.models.analysis import Analysis, PredictedCommentRun
 from app.models.document import Document
@@ -401,7 +401,7 @@ def _attach_predicted_comment_snapshots(
     if source is None:
         raise RuntimeError("skill_source_missing")
     storage = LocalDocumentStorage(get_settings().storage_root)
-    snapshot_mode = run_parameters.get("snapshot_mode", "production_latest")
+    snapshot_mode = run_parameters.get("snapshot_mode") or default_skill_source_snapshot_mode()
     source_snapshot = create_skill_source_snapshot(
         db=session,
         storage=storage,

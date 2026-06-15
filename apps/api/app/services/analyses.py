@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.authz.policies import can_read_analysis
-from app.core.config import get_settings
+from app.core.config import default_skill_source_snapshot_mode, get_settings
 from app.models.analysis import Analysis, AnalysisDetailRun, PredictedCommentRun
 from app.models.document import Document
 from app.models.skill import Skill
@@ -125,7 +125,7 @@ def _attach_source_snapshot(
     if source is None:
         raise AnalysisPreconditionError("Skill source is not configured")
     settings = get_settings()
-    snapshot_mode = run_parameters.get("snapshot_mode", _default_snapshot_mode(settings.app_env))
+    snapshot_mode = run_parameters.get("snapshot_mode") or default_skill_source_snapshot_mode(settings)
     storage = LocalDocumentStorage(settings.storage_root)
     try:
         snapshot = create_skill_source_snapshot(
@@ -154,12 +154,6 @@ def _attach_source_snapshot(
         "snapshot_mode": snapshot.snapshot_mode,
         "is_dirty": snapshot.is_dirty,
     }
-
-
-def _default_snapshot_mode(app_env: str) -> str:
-    if app_env == "development":
-        return "development_current"
-    return "production_latest"
 
 
 def get_analysis_for_actor(*, db: Session, actor: User, analysis_id: UUID) -> Analysis:

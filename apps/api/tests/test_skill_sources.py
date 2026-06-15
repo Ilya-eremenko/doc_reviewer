@@ -195,6 +195,34 @@ def test_git_freshness_allows_development_snapshot_when_git_is_unavailable(tmp_p
     assert health.dirty_details == {"git_unavailable": True}
 
 
+def test_git_freshness_allows_production_export_when_git_is_unavailable(tmp_path, monkeypatch):
+    root = tmp_path / "source"
+    root.mkdir()
+    (root / "SKILL.md").write_text("Main prompt", encoding="utf-8")
+    source = SkillSource(
+        slug="source",
+        display_name="Source",
+        source_kind="local_git_repo",
+        local_path=str(root),
+        default_ref="main",
+        entrypoint="SKILL.md",
+        required_paths=["SKILL.md"],
+        update_policy="require_latest",
+        status="active",
+    )
+
+    def unavailable_git(*args):
+        raise SourceUnavailableError("git command failed: rev-parse HEAD")
+
+    monkeypatch.setattr(external_sources, "_git", unavailable_git)
+
+    health = check_git_freshness(source, snapshot_mode="production_export")
+
+    assert health.resolved_revision is None
+    assert health.is_dirty is False
+    assert health.dirty_details == {"git_unavailable": True}
+
+
 def test_create_skill_source_snapshot_writes_artifact_files(db_session, tmp_path):
     source_root = tmp_path / "source"
     (source_root / "references").mkdir(parents=True)

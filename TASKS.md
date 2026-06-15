@@ -21,6 +21,67 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Fix Gate Challenger markdown display bug where a bold standalone section
+  label after a loose ordered list was rendered as part of the previous list,
+  causing the following improvement items to keep numbering as 6/7/... instead
+  of restarting visually. Added parser coverage for the Gate output shape and
+  verified the focused parser test, full frontend unit suite, and production
+  frontend build locally. Deployed the code to `178.250.159.250`, rebuilt
+  production web/API/worker containers, and verified server-side API health,
+  `/login`, and container status. Local web container rebuild is blocked by a
+  Colima image checksum mismatch while starting Docker.
+- [x] Diagnose production analysis `7142b87b-76a5-499e-b76c-463ff94bfbb6`
+  failure: main worker job failed before provider call while creating the
+  Devil's Advocate source snapshot because `/external/devils-advocate` had
+  the source files nested under an absolute local path instead of at the
+  configured source root. Re-synchronized the required DA files/directories to
+  the production source root and verified the production container can now
+  collect a 96-file DA manifest in `production_export` mode.
+- [x] Fix production `git command failed: rev-parse HEAD` for exported skill
+  source directories: added configurable `SKILL_SOURCE_SNAPSHOT_MODE`, set
+  prod compose default to `production_export`, and verified API snapshots can
+  persist manifest/fingerprint artifacts from read-only source exports without
+  git metadata while strict `production_latest` remains available.
+- [x] Deploy production MVP to new server `178.250.159.250`: installed Docker,
+  Compose, Git, and rsync; synchronized the current working tree plus clean
+  git snapshot copies of the Gate Challenger and Devil's Advocate skill
+  sources; created server-local production `.env` and bootstrap admin
+  credentials under `/root/gate-challenger-admin.txt`; rebuilt and started
+  postgres, redis, api, worker, web, and nginx edge on host port 80; applied
+  Alembic migrations, seeded 5 baseline skills, created admin user `admin`,
+  and verified public `http://178.250.159.250/api/health`,
+  `http://178.250.159.250/login`, admin login/me, and container status.
+- [x] Move production entrypoint off port 80 on `avi-ix-devbox04`: production
+  compose now defaults nginx edge to host port `8092` and binds direct API/web
+  published ports to `127.0.0.1`, so the shared devbox main address is no
+  longer occupied by this project. Deployed release
+  `20260615-000224-port8092-e7d3cb6`, rebuilt web with
+  `NEXT_PUBLIC_API_BASE_URL=http://avi-ix-devbox04:8092/api`, verified
+  server-side `/api/health`, `/login`, CORS for `http://avi-ix-devbox04:8092`,
+  admin auth, and skill listing through port `8092`; direct Codex sandbox HTTP
+  access to devbox still times out due the external network path.
+- [x] Fix responsive UI artifacts across the main web screens: analysis tabs
+  now wrap instead of clipping `Full Output`, route-local buttons/links/inputs
+  keep 44px touch targets, document filter tabs wrap on compact widths, the
+  analysis feedback action leaves bottom breathing room, and checkbox labels
+  have a 44px tap target. Follow-up desktop audit fixed document-detail
+  workflow metadata clipping and parsed Markdown table cell clipping at
+  1366px/1024px. Also synchronized the web e2e mock/scenario with the current
+  Devil's Advocate contract and analysis feedback flow. Verified with focused
+  responsive tests, full frontend tests, production build, e2e MVP flow, local
+  web container rebuild, and localhost browser audits at mobile, 1024px, and
+  1366px across documents, analysis, etalons, benchmarks, settings, and admin
+  routes.
+- [x] Deploy production MVP to `avi-ix-devbox04`: added production compose,
+  production Next.js Dockerfile, configurable CORS origins, external skill
+  source mounts, and nginx edge proxy for `http://avi-ix-devbox04/api` plus
+  Next.js web at `http://avi-ix-devbox04`; local API/worker/frontend tests and
+  builds passed, prod Alembic upgrade/admin bootstrap/skill seeding completed,
+  server-side edge/API/web/worker smoke passed, and a test document upload was
+  parsed and deleted successfully. Direct HTTP from the Codex sandbox to
+  `avi-ix-devbox04` timed out even though the server listens on 80/3000/8000
+  and answers on all local interfaces, so any remaining access issue is outside
+  the app/container layer.
 - [x] Restrict Etalons and Benchmarks top navigation to admins: shared app
   navigation now hides `/etalons` and `/benchmarks` for `user` and
   `annotator` roles while keeping them visible for `admin`. Verified with the

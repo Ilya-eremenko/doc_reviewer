@@ -27,6 +27,7 @@ export function parseLooseOrderedList(lines: string[], startIndex: number): Loos
 
   const items: LooseOrderedListItem[] = [];
   let index = startIndex;
+  const listStart = orderedListStart(lines, startIndex, firstMatch.number);
 
   while (index < lines.length) {
     const itemMatch = orderedListMarker(lines[index]);
@@ -50,7 +51,7 @@ export function parseLooseOrderedList(lines: string[], startIndex: number): Loos
         break;
       }
       if (isLooseListTerminator(lines, index)) {
-        return { items: [...items, item], nextIndex: index, start: firstMatch.number };
+        return { items: [...items, item], nextIndex: index, start: listStart };
       }
       if (isUnorderedListMarker(trimmed)) {
         const nestedItems: string[] = [];
@@ -84,7 +85,7 @@ export function parseLooseOrderedList(lines: string[], startIndex: number): Loos
     items.push(item);
   }
 
-  return { items, nextIndex: index, start: firstMatch.number };
+  return { items, nextIndex: index, start: listStart };
 }
 
 export function isOrderedListMarker(line: string): boolean {
@@ -113,8 +114,53 @@ function isLooseListTerminator(lines: string[], index: number): boolean {
     trimmed.startsWith("```") ||
     trimmed.startsWith(">") ||
     /^---+$|^\*\*\*+$/.test(trimmed) ||
+    isStandaloneSectionLabelBeforeOrderedList(lines, index) ||
     (isMarkdownTableRow(trimmed) && index + 1 < lines.length && isMarkdownTableSeparator(lines[index + 1]))
   );
+}
+
+function orderedListStart(lines: string[], startIndex: number, markerNumber: number): number {
+  if (markerNumber <= 1) {
+    return markerNumber;
+  }
+
+  const previousIndex = previousNonBlankLineIndex(lines, startIndex);
+  if (previousIndex !== null && isStandaloneSectionLabel(lines[previousIndex].trim())) {
+    return 1;
+  }
+
+  return markerNumber;
+}
+
+function isStandaloneSectionLabelBeforeOrderedList(lines: string[], index: number): boolean {
+  if (!isStandaloneSectionLabel(lines[index].trim())) {
+    return false;
+  }
+
+  const nextIndex = nextNonBlankLineIndex(lines, index);
+  return nextIndex !== null && Boolean(orderedListMarker(lines[nextIndex]));
+}
+
+function isStandaloneSectionLabel(trimmed: string): boolean {
+  return /^(\*\*[^*]+:\*\*|__[^_]+:__)$/.test(trimmed);
+}
+
+function previousNonBlankLineIndex(lines: string[], startIndex: number): number | null {
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    if (lines[index].trim()) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function nextNonBlankLineIndex(lines: string[], startIndex: number): number | null {
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    if (lines[index].trim()) {
+      return index;
+    }
+  }
+  return null;
 }
 
 function isMarkdownTableRow(line: string): boolean {
