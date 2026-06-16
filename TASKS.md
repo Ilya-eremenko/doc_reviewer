@@ -21,6 +21,28 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Implement resilient Document comments anchoring: frontend anchor matching
+  now falls back from exact/case-insensitive search to whitespace-normalized,
+  punctuation-normalized, and high-confidence token-window matching while
+  preserving original parsed-text spans. Devil's Advocate prompt/schema now
+  require short source quotes copied from parsed document text instead of
+  paraphrased/broad anchor summaries. Verified focused analysis display tests,
+  full frontend tests, production frontend build, full API tests, full worker
+  tests, local web container rebuild, Compose container status, API health, and
+  web `/login` smoke. Read-only projection against the production DOM for
+  analysis `6946539f-53a3-4605-b05c-2822fbd427dd` matched all 4 existing
+  comments: 1 whitespace-normalized match and 3 token-window matches. Deployed
+  to `178.250.159.250`, rebuilt production API/worker/web, verified public
+  `/api/health`, public `/login`, production container status, and confirmed
+  the analysis UI now renders 4 anchor groups, 4 matched comment cards, and 0
+  unmatched cards.
+- [x] Diagnose production analysis `6946539f-53a3-4605-b05c-2822fbd427dd`
+  Document comments anchoring: the page has 4 Devil's Advocate role comments
+  and parsed text loads correctly, but 0 document anchor spans render because
+  all 4 `anchor_text` values fail the current exact/case-insensitive frontend
+  match. One anchor would match after whitespace/punctuation normalization;
+  the others only partially overlap the parsed text, so they remain visible as
+  unlinked comment cards.
 - [x] Reduce Gate Challenger main prompt size for known stage documents without
   dropping reproducibility: source snapshots still persist the full
   Gate-challenger reference set, but the worker renderer now sends only common
@@ -29,6 +51,11 @@ Primary plan index:
   retaining Gate 2, verdict, synthesis, adversarial, output-contract, and
   stage-detection rules. Verified with focused renderer coverage and the full
   worker test suite.
+- [x] Record and verify infrastructure access note: root SSH to
+  `178.250.159.250` works with explicit identity `~/.ssh/my-server-codex`
+  (codex key) and returns `root`; the default identities are rejected for that
+  host. Root SSH to `avi-ix-devbox04` with the same key was rejected
+  (`publickey`). Private key material must not be stored or committed.
 - [x] Render an explicit blank paragraph after the Gate Challenger verdict line:
   production data already contains a blank line after `Recommendation`, but the
   markdown renderer intentionally skipped blank lines. The renderer now inserts

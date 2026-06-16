@@ -390,6 +390,10 @@ def test_devils_advocate_renderer_requires_original_skill_comment_contract(tmp_p
     assert "anchor_text" in prompt
     assert "body" in prompt
     assert "Do not use anchor/comment aliases" in prompt
+    assert "anchor_text must be a short source quote copied from Parsed document text" in prompt
+    assert "must not be a paraphrase, section label, topic label, broad summary, or model inference" in prompt
+    assert "verify every anchor_text is findable in Parsed document text after only whitespace normalization" in prompt
+    assert "Anchor quote column in native_markdown must exactly equal" in prompt
 
 
 def test_devils_advocate_renderer_requires_anonymized_table_comments_without_stopping(tmp_path):

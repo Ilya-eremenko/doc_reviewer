@@ -92,8 +92,13 @@ def render_devils_advocate_prompt(
                     "role_comments must preserve the original ic-voting-prompt.md subagent contract:",
                     "role_comments[].comments[] must contain exactly anchor_text, body, comment_type, severity.",
                     "role_comments[].comments[] must contain at least one item for each voter.",
-                    "anchor_text must be an exact verbatim substring from the input document when possible.",
-                    "If anchor_text would contain a real name, replace only that name with the same fictional placeholder used above.",
+                    "anchor_text must be a short source quote copied from Parsed document text, ideally 6-18 words.",
+                    "anchor_text must not be a paraphrase, section label, topic label, broad summary, or model inference.",
+                    "Before returning JSON, verify every anchor_text is findable in Parsed document text after only whitespace "
+                    "normalization; if not, replace it with a shorter quote from the same source paragraph.",
+                    "Prefer anchor_text quotes that avoid real names. If the only decision-relevant quote contains a real name, "
+                    "replace only that name with the same fictional placeholder used above and keep the rest of the quote verbatim.",
+                    "The Anchor quote column in native_markdown must exactly equal the matching role_comments[].comments[].anchor_text.",
                     "body must be clean IC-comment prose, no wiki links, no anonym slugs, no persona labels.",
                     "severity for role comments must be one of critical, important, minor.",
                     "Do not use anchor/comment aliases for role_comments[].comments[]; use anchor_text/body.",

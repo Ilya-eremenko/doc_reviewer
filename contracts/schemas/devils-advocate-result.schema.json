@@ -168,7 +168,11 @@
       "required": ["anchor_text", "body", "comment_type", "severity"],
       "additionalProperties": false,
       "properties": {
-        "anchor_text": { "type": "string", "minLength": 1 },
+        "anchor_text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short source quote copied from parsed document text, preferably 6-18 words; not a paraphrase, section label, broad summary, or model inference."
+        },
         "body": { "type": "string", "minLength": 1 },
         "comment_type": {
           "type": "string",

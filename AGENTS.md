@@ -73,6 +73,12 @@ Canonical external skill sources:
   tools.
 - Use `.env.example` for non-secret configuration templates only.
 
+## Infrastructure Access
+
+- When root access is required for `178.250.159.250`, use the SSH identity
+  `~/.ssh/my-server-codex` (the codex key) with `IdentitiesOnly`; the default
+  SSH identities are not accepted. Never store or commit private key material.
+
 ## Workflow For Agents
 
 1. Read `AGENTS.md`, `TASKS.md`, and the relevant implementation plan before

@@ -159,6 +159,57 @@ describe("analysis display helpers", () => {
     ]);
   });
 
+  it("matches Devil's Advocate anchors across parser spacing and punctuation differences", () => {
+    const comments = [
+      {
+        id: "MP-0",
+        voter: "MP",
+        vote: "reject",
+        anchorText: "Approve an additional RUB 14M in CY 26 for the B2C New Cars test",
+        body: "This funding request needs a stricter approval gate.",
+        commentType: "risk_not_addressed",
+        severity: "important",
+      },
+    ];
+
+    const result = buildDocumentCommentAnchors(
+      "The proposal asks to Approve an additional RUB 14M in CY'26 for the B2C New Cars test before PMF is proven.",
+      comments,
+    );
+
+    expect(result.anchors).toHaveLength(1);
+    expect(result.unmatchedComments).toEqual([]);
+    expect(result.segments.find((segment) => segment.anchorId === "anchor-1")?.text).toBe(
+      "Approve an additional RUB 14M in CY'26 for the B2C New Cars test",
+    );
+  });
+
+  it("anchors an over-broad model quote to the strongest exact token window in parsed text", () => {
+    const comments = [
+      {
+        id: "CPO-0",
+        voter: "CPO",
+        vote: "reject",
+        anchorText:
+          "Overall business case metrics are behind plan due to dealer stock contraction. For Jan-Apr CY'26 monetized transactions miss budget by 16%.",
+        body: "The plan uses a weak base for scaling.",
+        commentType: "weak_argument",
+        severity: "important",
+      },
+    ];
+
+    const result = buildDocumentCommentAnchors(
+      "Overall business case metrics are behind plan due to dealer stock contraction. The follow-up table is OCR-fragmented.",
+      comments,
+    );
+
+    expect(result.anchors).toHaveLength(1);
+    expect(result.unmatchedComments).toEqual([]);
+    expect(result.segments.find((segment) => segment.anchorId === "anchor-1")?.text).toContain(
+      "Overall business case metrics are behind plan due to dealer stock contraction",
+    );
+  });
+
   it("keeps comments visible when their anchor is not present in parsed text", () => {
     const comments = [
       {

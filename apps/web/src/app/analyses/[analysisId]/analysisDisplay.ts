@@ -724,6 +724,12 @@ type AnchorMatch = {
   end: number;
 };
 
+type NormalizedTextIndex = {
+  text: string;
+  sourceStarts: number[];
+  sourceEnds: number[];
+};
+
 function normalizeAnchorText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -742,7 +748,129 @@ function findAnchorMatch(documentText: string, anchorText: string): AnchorMatch 
   const lowerDocument = documentText.toLowerCase();
   const lowerAnchor = anchorText.toLowerCase();
   const caseInsensitiveStart = lowerDocument.indexOf(lowerAnchor);
-  return caseInsensitiveStart >= 0 ? { start: caseInsensitiveStart, end: caseInsensitiveStart + anchorText.length } : null;
+  if (caseInsensitiveStart >= 0) {
+    return { start: caseInsensitiveStart, end: caseInsensitiveStart + anchorText.length };
+  }
+
+  return (
+    findNormalizedAnchorMatch(documentText, anchorText, normalizeWhitespaceIndexed) ||
+    findNormalizedAnchorMatch(documentText, anchorText, normalizeTokensIndexed) ||
+    findTokenWindowAnchorMatch(documentText, anchorText)
+  );
+}
+
+function findNormalizedAnchorMatch(
+  documentText: string,
+  anchorText: string,
+  normalizer: (value: string) => NormalizedTextIndex,
+): AnchorMatch | null {
+  const normalizedDocument = normalizer(documentText);
+  const normalizedAnchor = normalizer(anchorText).text;
+  if (!normalizedDocument.text || !normalizedAnchor) {
+    return null;
+  }
+
+  const start = normalizedDocument.text.indexOf(normalizedAnchor);
+  return start >= 0 ? normalizedRangeToSourceMatch(normalizedDocument, start, normalizedAnchor.length) : null;
+}
+
+function findTokenWindowAnchorMatch(documentText: string, anchorText: string): AnchorMatch | null {
+  const normalizedDocument = normalizeTokensIndexed(documentText);
+  const anchorTokens = normalizeTokensIndexed(anchorText).text.split(" ").filter(Boolean);
+  const maxWindowSize = Math.min(16, anchorTokens.length);
+  const minWindowSize = Math.min(6, maxWindowSize);
+
+  for (let windowSize = maxWindowSize; windowSize >= minWindowSize; windowSize -= 1) {
+    for (let startToken = 0; startToken + windowSize <= anchorTokens.length; startToken += 1) {
+      const candidate = anchorTokens.slice(startToken, startToken + windowSize).join(" ");
+      if (candidate.length < 32) {
+        continue;
+      }
+      const start = normalizedDocument.text.indexOf(candidate);
+      if (start >= 0) {
+        return normalizedRangeToSourceMatch(normalizedDocument, start, candidate.length);
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizedRangeToSourceMatch(
+  normalizedDocument: NormalizedTextIndex,
+  normalizedStart: number,
+  normalizedLength: number,
+): AnchorMatch | null {
+  const normalizedEnd = normalizedStart + normalizedLength - 1;
+  const start = normalizedDocument.sourceStarts[normalizedStart];
+  const end = normalizedDocument.sourceEnds[normalizedEnd];
+  return start === undefined || end === undefined || start >= end ? null : { start, end };
+}
+
+function normalizeWhitespaceIndexed(value: string): NormalizedTextIndex {
+  return normalizeIndexedText(value, (character) => /\s/.test(character));
+}
+
+function normalizeTokensIndexed(value: string): NormalizedTextIndex {
+  return normalizeIndexedText(value, (character) => !isAnchorTokenCharacter(character));
+}
+
+function normalizeIndexedText(value: string, isBoundaryCharacter: (character: string) => boolean): NormalizedTextIndex {
+  const characters: string[] = [];
+  const sourceStarts: number[] = [];
+  const sourceEnds: number[] = [];
+  for (let index = 0; index < value.length; ) {
+    const codePoint = value.codePointAt(index);
+    const character = codePoint === undefined ? value[index] : String.fromCodePoint(codePoint);
+    const start = index;
+    const end = index + character.length;
+    index = end;
+
+    if (isBoundaryCharacter(character)) {
+      appendNormalizedBoundary(characters, sourceStarts, sourceEnds, start, end);
+      continue;
+    }
+
+    characters.push(character.toLowerCase());
+    sourceStarts.push(start);
+    sourceEnds.push(end);
+  }
+  return trimNormalizedIndex({ text: characters.join(""), sourceStarts, sourceEnds });
+}
+
+function appendNormalizedBoundary(
+  characters: string[],
+  sourceStarts: number[],
+  sourceEnds: number[],
+  start: number,
+  end: number,
+) {
+  if (!characters.length || characters[characters.length - 1] === " ") {
+    return;
+  }
+  characters.push(" ");
+  sourceStarts.push(start);
+  sourceEnds.push(end);
+}
+
+function trimNormalizedIndex(index: NormalizedTextIndex): NormalizedTextIndex {
+  let start = 0;
+  let end = index.text.length;
+  while (start < end && index.text[start] === " ") {
+    start += 1;
+  }
+  while (end > start && index.text[end - 1] === " ") {
+    end -= 1;
+  }
+  return {
+    text: index.text.slice(start, end),
+    sourceStarts: index.sourceStarts.slice(start, end),
+    sourceEnds: index.sourceEnds.slice(start, end),
+  };
+}
+
+function isAnchorTokenCharacter(character: string): boolean {
+  return /[\p{L}\p{N}]/u.test(character);
 }
 
 function toneForComments(comments: DevilsAdvocateRoleComment[]): DocumentCommentTone {
