@@ -21,6 +21,14 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Reduce Gate Challenger main prompt size for known stage documents without
+  dropping reproducibility: source snapshots still persist the full
+  Gate-challenger reference set, but the worker renderer now sends only common
+  references plus the matching stage rubric to the model. For `gate_2` runs
+  this removes the Gate 3 and Stream Review rubrics from the model input while
+  retaining Gate 2, verdict, synthesis, adversarial, output-contract, and
+  stage-detection rules. Verified with focused renderer coverage and the full
+  worker test suite.
 - [x] Render an explicit blank paragraph after the Gate Challenger verdict line:
   production data already contains a blank line after `Recommendation`, but the
   markdown renderer intentionally skipped blank lines. The renderer now inserts

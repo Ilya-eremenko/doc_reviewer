@@ -200,6 +200,78 @@ def test_gate2_challenger_renderer_uses_snapshot_files_instead_of_stub_prompt(tm
     assert "Stub prompt should not be used" not in prompt
 
 
+def test_gate2_challenger_renderer_filters_stage_references_for_known_document_type(tmp_path):
+    snapshot_dir = tmp_path / "skill-snapshots" / str(uuid4())
+    files_dir = snapshot_dir / "files"
+    skill_file = files_dir / "skills" / "gate-challenger" / "SKILL.md"
+    references_dir = files_dir / "skills" / "gate-challenger" / "references"
+    references_dir.mkdir(parents=True)
+    skill_file.write_text("Snapshot Gate instructions", encoding="utf-8")
+    reference_files = {
+        "common-output-contract.md": "Common output contract",
+        "common-verdict-policy.md": "Common verdict policy",
+        "stage-detection.md": "Stage detection instructions",
+        "gate-2-rubric.md": "Gate 2 rubric that must be used",
+        "gate-3-rubric.md": "Gate 3 rubric that should not be sent",
+        "stream-review-1-rubric.md": "Stream review 1 rubric that should not be sent",
+        "stream-review-2-plus-rubric.md": "Stream review 2 plus rubric that should not be sent",
+        "custom-calibration.md": "Custom calibration note",
+    }
+    for filename, text in reference_files.items():
+        (references_dir / filename).write_text(text, encoding="utf-8")
+    (snapshot_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "source_slug": "gate-challenger",
+                "resolved_revision": "abc123",
+                "source_fingerprint": "snapshot-fingerprint",
+                "files": [
+                    {"path": "skills/gate-challenger/SKILL.md", "sha256": "skill-hash"},
+                    *[
+                        {
+                            "path": f"skills/gate-challenger/references/{filename}",
+                            "sha256": f"{filename}-hash",
+                        }
+                        for filename in reference_files
+                    ],
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = SimpleNamespace(
+        title="Gate 2 defense",
+        parsed_text="The initiative claims strong MVP traction but omits cohort evidence.",
+        manual_document_type=None,
+        detected_document_type="gate_2",
+    )
+    skill = SimpleNamespace(
+        name="gate2_challenger_main_analysis",
+        version="baseline",
+        prompt_text="Stub prompt should not be used",
+        source_uri="/external/gate-challenger",
+        source_entrypoint="skills/gate-challenger/SKILL.md",
+        source_revision="old",
+        source_fingerprint="old",
+    )
+
+    prompt = render_gate2_challenger_prompt(
+        document=document,
+        skill=skill,
+        response_schema={"title": "MainAnalysisResult", "type": "object"},
+        source_snapshot=load_skill_source_snapshot(str(snapshot_dir)),
+    )
+
+    assert "Common output contract" in prompt
+    assert "Common verdict policy" in prompt
+    assert "Stage detection instructions" in prompt
+    assert "Gate 2 rubric that must be used" in prompt
+    assert "Custom calibration note" in prompt
+    assert "Gate 3 rubric that should not be sent" not in prompt
+    assert "Stream review 1 rubric that should not be sent" not in prompt
+    assert "Stream review 2 plus rubric that should not be sent" not in prompt
+
+
 def test_gate2_prompt_renderer_requires_snapshot_for_external_snapshot_required_skill():
     document = SimpleNamespace(
         title="Gate 2 defense",

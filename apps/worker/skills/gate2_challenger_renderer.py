@@ -5,6 +5,21 @@ from skills.layer_4_synthesis import format_layer_4_synthesis_markdown
 from skills.output_language import normalize_output_language, output_language_instruction
 from skills.snapshot_loader import SkillSourceSnapshotMaterial
 
+_COMMON_REFERENCE_FILES = {
+    "common-adversarial-rubric.md",
+    "common-output-contract.md",
+    "common-synthesis-contract.md",
+    "common-verdict-policy.md",
+    "stage-detection.md",
+}
+_STAGE_REFERENCE_FILES = {
+    "gate_2": "gate-2-rubric.md",
+    "stream_review_1": "stream-review-1-rubric.md",
+    "stream_review_2_plus": "stream-review-2-plus-rubric.md",
+    "gate_3": "gate-3-rubric.md",
+}
+_KNOWN_STAGE_REFERENCE_FILES = set(_STAGE_REFERENCE_FILES.values())
+
 
 def render_gate2_challenger_prompt(
     *,
@@ -17,7 +32,7 @@ def render_gate2_challenger_prompt(
 ) -> str:
     document_type = getattr(document, "manual_document_type", None) or getattr(document, "detected_document_type", "unknown")
     skill_prompt = _skill_prompt_text(skill=skill, source_snapshot=source_snapshot)
-    reference_context = _reference_context(source_snapshot)
+    reference_context = _reference_context(source_snapshot, document_type=document_type)
     normalized_output_language = normalize_output_language(output_language)
     layer_4_context_text = _layer_4_context_text(layer_4_context)
     source_lines = [
@@ -183,15 +198,28 @@ def _skill_prompt_text(*, skill: Any, source_snapshot: SkillSourceSnapshotMateri
     return "\n\n".join(source_snapshot.files[path] for path in sorted(source_snapshot.files))
 
 
-def _reference_context(source_snapshot: SkillSourceSnapshotMaterial | None) -> str:
+def _reference_context(source_snapshot: SkillSourceSnapshotMaterial | None, *, document_type: str | None) -> str:
     if source_snapshot is None:
         return "No snapshot references were attached."
     sections = []
     for relative_path, text in sorted(source_snapshot.files.items()):
         if relative_path.endswith("/SKILL.md") or relative_path == "SKILL.md":
             continue
+        if not _should_include_reference(relative_path=relative_path, document_type=document_type):
+            continue
         sections.append(f"# {relative_path}\n{text}")
     return "\n\n".join(sections) if sections else "No snapshot references were attached."
+
+
+def _should_include_reference(*, relative_path: str, document_type: str | None) -> bool:
+    filename = relative_path.rsplit("/", 1)[-1]
+    expected_stage_file = _STAGE_REFERENCE_FILES.get(str(document_type or ""))
+
+    if filename in _COMMON_REFERENCE_FILES:
+        return True
+    if expected_stage_file and filename in _KNOWN_STAGE_REFERENCE_FILES:
+        return filename == expected_stage_file
+    return True
 
 
 def _source_value(skill: Any, source_snapshot: SkillSourceSnapshotMaterial | None, key: str) -> str:
