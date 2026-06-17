@@ -6,7 +6,7 @@ dependencies = [
   "gate-challenger-api",
   "redis",
   "rq",
-  "docling",
+  "docling-slim",
   "python-docx",
   "pypdf",
   "jsonschema",

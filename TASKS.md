@@ -28,9 +28,11 @@ Primary plan index:
   block spans, and quality diagnostics. Parse jobs persist `parsed.txt`,
   `parsed.md`, `structured.json`, and `quality.json` under the existing parsed
   artifact directory, and audit metadata records parser/quality summary
-  without storage paths. Added Docling as the preferred `.docx`/`.pdf` worker
-  adapter when installed, with fallback to the current python-docx/pypdf
-  adapters when unavailable or conversion fails. Verified focused
+  without storage paths. Added lightweight `docling-slim` as the preferred
+  `.docx`/`.pdf` worker adapter when installed, with fallback to the current
+  python-docx/pypdf adapters when unavailable or conversion fails; the full
+  `docling` package was avoided because it pulls Torch/CUDA into the production
+  worker image. Verified focused
   parser/parse-job/schema tests, full worker tests, and full API tests.
 - [x] Add analysis deletion: implemented soft-delete for analysis runs via
   `deleted_at`, `DELETE /analyses/{analysis_id}` with owner/admin access,
