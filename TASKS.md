@@ -29,6 +29,11 @@ Primary plan index:
   tests, full worker tests, full frontend unit tests, production web build,
   Compose config, local web/API container rebuild, Alembic upgrade to
   `202606170001`, local container status, API `/health`, and web `/login`.
+  Merged into `main`, deployed to `178.250.159.250`, rebuilt production
+  API/worker/web, applied production Alembic upgrade to `202606170001`,
+  verified production container status, public `/api/health`, public `/login`,
+  public unauthenticated `DELETE /api/analyses/{id}` returns auth failure
+  instead of method-not-allowed, and checked fresh API/web/worker logs.
 - [x] Fix production document-detail workflow card height mismatch: root cause
   is the document-detail stepper using flex cross-axis centering, so shorter
   status cards such as `Ready` keep their content-height while neighboring
