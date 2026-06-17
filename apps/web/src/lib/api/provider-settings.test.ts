@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getProviderDefaultModel, listProviderModels, testProviderKey } from "./provider-settings";
+import { getProviderDefaultModel, listProviderModels, testProviderKey, updateProviderKeySettings } from "./provider-settings";
 
 const originalFetch = global.fetch;
 
@@ -84,6 +84,45 @@ describe("provider settings api", () => {
       expect.objectContaining({
         method: "POST",
         credentials: "include",
+      }),
+    );
+  });
+
+  it("patches saved provider key model settings without sending a secret", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        provider: "openai_compatible",
+        base_url: "https://api.example.test/v1",
+        default_model: "google/gemini-3.5-flash",
+        available_models: ["google/gemini-3.5-flash", "openai/gpt-5.5"],
+        api_key_fingerprint: "openai_compatible:...test",
+        has_key: true,
+      }),
+    });
+    global.fetch = fetchMock;
+
+    const response = await updateProviderKeySettings("openai_compatible", {
+      default_model: "google/gemini-3.5-flash",
+      available_models: ["google/gemini-3.5-flash", "openai/gpt-5.5"],
+    });
+
+    expect(response.default_model).toBe("google/gemini-3.5-flash");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/settings/provider-keys/openai_compatible",
+      expect.objectContaining({
+        method: "PATCH",
+        credentials: "include",
+        body: JSON.stringify({
+          default_model: "google/gemini-3.5-flash",
+          available_models: ["google/gemini-3.5-flash", "openai/gpt-5.5"],
+        }),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining("api_key"),
       }),
     );
   });

@@ -55,6 +55,16 @@ export async function saveProviderKey(
   });
 }
 
+export async function updateProviderKeySettings(
+  provider: Provider,
+  payload: { default_model: string; available_models: string[] },
+): Promise<ProviderKeyRecord> {
+  return apiFetch<ProviderKeyRecord>(`/settings/provider-keys/${provider}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteProviderKey(provider: Provider): Promise<{ status: string }> {
   return apiFetch<{ status: string }>(`/settings/provider-keys/${provider}`, { method: "DELETE" });
 }

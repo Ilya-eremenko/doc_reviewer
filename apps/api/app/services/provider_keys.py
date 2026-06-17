@@ -55,6 +55,24 @@ def upsert_provider_key(
     return provider_key
 
 
+def update_provider_key_model_settings(
+    *,
+    db: Session,
+    actor: User,
+    provider: Provider,
+    default_model: str,
+    available_models: list[str],
+) -> ProviderKey | None:
+    provider_key = get_provider_key(db=db, owner_id=actor.id, provider=provider)
+    if provider_key is None:
+        return None
+
+    provider_key.default_model = default_model
+    provider_key.available_models = normalize_available_models(provider, available_models, default_model)
+    db.flush()
+    return provider_key
+
+
 def list_provider_keys(*, db: Session, actor: User) -> list[ProviderKey]:
     statement = select(ProviderKey).where(ProviderKey.owner_id == actor.id).order_by(ProviderKey.provider)
     return list(db.execute(statement).scalars().all())

@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Add editing for saved provider key Model and Allowlist in Settings:
+  implemented local `PATCH /settings/provider-keys/{provider}` to update
+  `default_model` and `available_models` without replacing encrypted key
+  material, added inline edit/save/cancel controls in the saved keys table, and
+  verified API/frontend tests plus production frontend build locally. Deployed
+  to `178.250.159.250`, rebuilt production API/web, and verified container
+  status, edge `/api/health`, direct `/settings`, and unauthenticated
+  `PATCH /settings/provider-keys/openai_compatible` returns auth failure
+  instead of method-not-allowed.
 - [x] Reduce Devil's Advocate prompt size without dropping retrieval evidence:
   renderer no longer sends the expanded retrieval `evidence_packet` twice.
   The retrieval dossier block now contains compact selection/trace metadata and

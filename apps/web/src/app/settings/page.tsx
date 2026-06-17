@@ -8,6 +8,7 @@ import {
   listProviderKeys,
   saveProviderKey,
   testProviderKey,
+  updateProviderKeySettings,
   type ProviderKeyRecord,
 } from "@/lib/api/provider-settings";
 import type { Provider } from "@/lib/api/documents";
@@ -47,6 +48,9 @@ export default function SettingsPage() {
   const [testMessage, setTestMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
+  const [editingModel, setEditingModel] = useState("");
+  const [editingModelList, setEditingModelList] = useState("");
 
   async function refresh() {
     const response = await listProviderKeys();
@@ -90,6 +94,56 @@ export default function SettingsPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete provider key");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function startModelEdit(item: ProviderKeyRecord) {
+    setError("");
+    setTestMessage("");
+    setEditingProvider(item.provider);
+    setEditingModel(item.default_model);
+    setEditingModelList(item.available_models.join("\n"));
+  }
+
+  function cancelModelEdit() {
+    setEditingProvider(null);
+    setEditingModel("");
+    setEditingModelList("");
+  }
+
+  function updateEditingModelList(nextValue: string) {
+    setEditingModelList(nextValue);
+    const nextModels = normalizeModelList(nextValue);
+    if (nextModels.length > 0 && !nextModels.includes(editingModel)) {
+      setEditingModel(nextModels[0]);
+    }
+  }
+
+  async function saveModelSettings(providerName: Provider) {
+    const availableModels = normalizeModelList(editingModelList);
+    if (!editingModel || availableModels.length === 0) {
+      setError("At least one model is required");
+      return;
+    }
+    if (!availableModels.includes(editingModel)) {
+      setError("Default model must be included in model allowlist");
+      return;
+    }
+
+    setPending(true);
+    setError("");
+    setTestMessage("");
+    try {
+      await updateProviderKeySettings(providerName, {
+        default_model: editingModel,
+        available_models: availableModels,
+      });
+      await refresh();
+      cancelModelEdit();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update provider key settings");
     } finally {
       setPending(false);
     }
@@ -199,26 +253,92 @@ export default function SettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {keys.map((item) => (
-                    <tr key={item.provider}>
-                      <td>{item.provider.replaceAll("_", " ")}</td>
-                      <td>{item.default_model}</td>
-                      <td className="small">{item.available_models.join(", ")}</td>
-                      <td className="small">{item.api_key_fingerprint}</td>
-                      <td>{item.base_url ?? "-"}</td>
-                      <td>
-                        <span className={item.has_key ? "badge ok" : "badge"}>{item.has_key ? "stored" : "missing"}</span>
-                      </td>
-                      <td className="button-row">
-                        <button className="secondary" disabled={pending} type="button" onClick={() => testKey(item.provider)}>
-                          Test
-                        </button>
-                        <button className="danger" disabled={pending} type="button" onClick={() => remove(item.provider)}>
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {keys.map((item) => {
+                    const isEditing = editingProvider === item.provider;
+                    const editingModels = normalizeModelList(editingModelList);
+                    return (
+                      <tr key={item.provider}>
+                        <td>{item.provider.replaceAll("_", " ")}</td>
+                        <td>
+                          {isEditing ? (
+                            <select
+                              aria-label={`Default model for ${item.provider.replaceAll("_", " ")}`}
+                              value={editingModel}
+                              onChange={(event) => setEditingModel(event.target.value)}
+                            >
+                              {editingModels.map((modelName) => (
+                                <option key={modelName} value={modelName}>
+                                  {modelName}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            item.default_model
+                          )}
+                        </td>
+                        <td className={isEditing ? undefined : "small"}>
+                          {isEditing ? (
+                            <textarea
+                              aria-label={`Model allowlist for ${item.provider.replaceAll("_", " ")}`}
+                              rows={4}
+                              value={editingModelList}
+                              onChange={(event) => updateEditingModelList(event.target.value)}
+                            />
+                          ) : (
+                            item.available_models.join(", ")
+                          )}
+                        </td>
+                        <td className="small">{item.api_key_fingerprint}</td>
+                        <td>{item.base_url ?? "-"}</td>
+                        <td>
+                          <span className={item.has_key ? "badge ok" : "badge"}>{item.has_key ? "stored" : "missing"}</span>
+                        </td>
+                        <td className="button-row">
+                          {isEditing ? (
+                            <>
+                              <button
+                                disabled={pending || !editingModel || editingModels.length === 0}
+                                type="button"
+                                onClick={() => saveModelSettings(item.provider)}
+                              >
+                                Save
+                              </button>
+                              <button className="secondary" disabled={pending} type="button" onClick={cancelModelEdit}>
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                className="secondary"
+                                disabled={pending || editingProvider !== null}
+                                type="button"
+                                onClick={() => startModelEdit(item)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="secondary"
+                                disabled={pending || editingProvider !== null}
+                                type="button"
+                                onClick={() => testKey(item.provider)}
+                              >
+                                Test
+                              </button>
+                              <button
+                                className="danger"
+                                disabled={pending || editingProvider !== null}
+                                type="button"
+                                onClick={() => remove(item.provider)}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

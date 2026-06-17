@@ -8,6 +8,7 @@ from app.models.provider_key import ProviderKey
 from app.models.user import User
 from app.schemas.enums import Provider
 from app.schemas.provider_settings import (
+    ProviderKeyModelSettingsUpdate,
     ProviderKeyRead,
     ProviderKeyTestResponse,
     ProviderKeysListResponse,
@@ -23,6 +24,7 @@ from app.services.provider_keys import (
     list_shared_provider_keys,
     list_provider_keys,
     test_provider_key_configuration,
+    update_provider_key_model_settings,
     upsert_provider_key,
 )
 from app.services.audit import record_audit
@@ -93,6 +95,39 @@ def put_provider_key(
         "provider_key.saved",
         provider_key,
         {"provider": provider.value, "default_model": provider_key.default_model, "base_url": provider_key.base_url},
+    )
+    db.commit()
+    db.refresh(provider_key)
+    return _read_provider_key(provider_key)
+
+
+@router.patch("/provider-keys/{provider}", response_model=ProviderKeyRead)
+def patch_provider_key_model_settings(
+    provider: Provider,
+    payload: ProviderKeyModelSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> ProviderKeyRead:
+    provider_key = update_provider_key_model_settings(
+        db=db,
+        actor=current_user,
+        provider=provider,
+        default_model=payload.default_model,
+        available_models=payload.available_models,
+    )
+    if provider_key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Provider key is not configured")
+
+    _audit(
+        db,
+        current_user,
+        "provider_key.updated",
+        provider_key,
+        {
+            "provider": provider.value,
+            "default_model": provider_key.default_model,
+            "available_models": provider_key.available_models,
+        },
     )
     db.commit()
     db.refresh(provider_key)

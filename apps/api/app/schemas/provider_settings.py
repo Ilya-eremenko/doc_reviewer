@@ -44,6 +44,33 @@ class ProviderKeyUpsert(BaseModel):
         return self
 
 
+class ProviderKeyModelSettingsUpdate(BaseModel):
+    default_model: str
+    available_models: list[str]
+
+    @field_validator("default_model")
+    @classmethod
+    def default_model_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Default model is required")
+        return stripped
+
+    @field_validator("available_models")
+    @classmethod
+    def available_models_must_not_contain_blanks(cls, value: list[str]) -> list[str]:
+        models = _normalize_models(value)
+        if not models:
+            raise ValueError("At least one model is required")
+        return models
+
+    @model_validator(mode="after")
+    def default_model_must_be_available(self) -> "ProviderKeyModelSettingsUpdate":
+        if self.default_model not in self.available_models:
+            raise ValueError("Default model must be included in available models")
+        return self
+
+
 class ProviderKeyRead(BaseModel):
     provider: Provider
     base_url: str | None
