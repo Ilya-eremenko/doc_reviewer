@@ -137,6 +137,7 @@ class AdminFeedbackRead(BaseModel):
     model: str
     skill_id: UUID
     skill_version: str
+    rating: int | None
     usefulness: FeedbackUsefulness
     verdict_correct: bool | None
     has_false_findings: bool | None
@@ -147,5 +148,20 @@ class AdminFeedbackRead(BaseModel):
     created_at: datetime
 
 
+class AdminFeedbackSummary(BaseModel):
+    total_count: int
+    scored_count: int
+    average_rating: float | None
+    usefulness_counts: dict[str, int]
+    incorrect_verdict_count: int
+    false_findings_count: int
+    missed_findings_count: int
+    benchmark_candidate_count: int
+    unprocessed_count: int
+    low_rating_count: int
+    legacy_count: int
+
+
 class AdminFeedbackListResponse(BaseModel):
     feedback: list[AdminFeedbackRead]
+    summary: AdminFeedbackSummary

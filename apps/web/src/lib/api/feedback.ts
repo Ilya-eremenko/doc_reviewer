@@ -1,7 +1,8 @@
 import { apiFetch } from "./client";
 
 export type FeedbackPayload = {
-  usefulness: "useful" | "partially_useful" | "useless";
+  usefulness?: "useful" | "partially_useful" | "useless";
+  rating?: number | null;
   verdict_correct?: boolean | null;
   has_false_findings?: boolean | null;
   has_missed_findings?: boolean | null;

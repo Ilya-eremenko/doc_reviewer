@@ -46,6 +46,27 @@ describe("admin api", () => {
     );
   });
 
+  it("serializes feedback dashboard filters", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ feedback: [], summary: {} }) });
+    global.fetch = fetchMock;
+
+    await listAdminFeedback({
+      provider: "openai_compatible",
+      model: "gpt-test",
+      verdict: "need_evidence",
+      skill_id: "skill-id",
+      user_id: "user-id",
+      date_from: "2026-06-01",
+      date_to: "2026-06-18",
+      processed_state: "unprocessed",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/admin/feedback?provider=openai_compatible&model=gpt-test&verdict=need_evidence&skill_id=skill-id&user_id=user-id&date_from=2026-06-01&date_to=2026-06-18&processed_state=unprocessed",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
   it("deletes admin etalons without parsing a response body", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
     global.fetch = fetchMock;

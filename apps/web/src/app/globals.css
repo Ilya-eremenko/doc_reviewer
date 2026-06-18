@@ -939,6 +939,42 @@ details.details-panel[open] summary {
   gap: 8px;
 }
 
+.feedback-dashboard__filters label {
+  min-width: 180px;
+}
+
+.feedback-dashboard__signals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.feedback-dashboard__signal {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel-soft);
+  padding: 14px;
+}
+
+.feedback-dashboard__signal strong {
+  color: var(--foreground);
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.feedback-dashboard__signal p,
+.feedback-dashboard__comment {
+  margin: 0;
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+
+.feedback-dashboard__table table {
+  min-width: 1180px;
+}
+
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));

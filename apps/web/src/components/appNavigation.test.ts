@@ -9,11 +9,13 @@ describe("app navigation", () => {
     expect(labels).toEqual(["Documents"]);
     expect(labels).not.toContain("Etalons");
     expect(labels).not.toContain("Benchmarks");
+    expect(labels).not.toContain("Feedback");
   });
 
   it("shows etalons and benchmarks to admins", () => {
     const labels = getVisibleNavItems("admin").map((item) => item.label);
 
+    expect(labels).toContain("Feedback");
     expect(labels).toContain("Etalons");
     expect(labels).toContain("Benchmarks");
     expect(labels).toContain("Settings");

@@ -10,7 +10,6 @@ const adminLinks = [
   ["/admin/skills", "Skills"],
   ["/admin/etalons", "Etalons"],
   ["/admin/benchmarks", "Benchmarks"],
-  ["/admin/feedback", "Feedback"],
 ];
 
 export function AdminTabs() {

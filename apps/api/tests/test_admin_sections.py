@@ -250,6 +250,115 @@ def test_admin_feedback_filters_by_model_skill_user_and_verdict(client, db_sessi
     assert payload["feedback"][0]["analysis_verdict"] == "need_evidence"
 
 
+def test_admin_feedback_returns_summary_for_filtered_dashboard(client, db_session):
+    admin = create_user(db_session, "admin", "secret", Role.ADMIN)
+    user = create_user(db_session, "analyst", "secret")
+    other_user = create_user(db_session, "reviewer", "secret")
+    skills = seed_baseline_skills(db_session)
+    document = _document_for_user(client, db_session, user, "gate.txt", DocumentType.GATE_2)
+    other_document = _document_for_user(client, db_session, other_user, "other.txt", DocumentType.GATE_2)
+    analysis = _analysis(
+        db_session,
+        document=document,
+        user_id=user.id,
+        skill_id=skills[0].id,
+        skill_version=skills[0].version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="need_evidence",
+    )
+    other_analysis = _analysis(
+        db_session,
+        document=other_document,
+        user_id=other_user.id,
+        skill_id=skills[0].id,
+        skill_version=skills[0].version,
+        provider=Provider.ANTHROPIC_COMPATIBLE.value,
+        model="claude-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="approve",
+    )
+    db_session.add_all(
+        [
+            Feedback(
+                user_id=user.id,
+                document_id=document.id,
+                analysis_id=analysis.id,
+                provider=analysis.provider,
+                model=analysis.model,
+                skill_id=analysis.skill_id,
+                skill_version=analysis.skill_version,
+                rating=2,
+                usefulness=FeedbackUsefulness.USELESS.value,
+                verdict_correct=False,
+                has_false_findings=True,
+                has_missed_findings=True,
+                comment="Missed the real risk and invented another one.",
+                can_use_for_benchmark=True,
+            ),
+            Feedback(
+                user_id=user.id,
+                document_id=document.id,
+                analysis_id=analysis.id,
+                provider=analysis.provider,
+                model=analysis.model,
+                skill_id=analysis.skill_id,
+                skill_version=analysis.skill_version,
+                rating=None,
+                usefulness=FeedbackUsefulness.PARTIALLY_USEFUL.value,
+                verdict_correct=True,
+                has_false_findings=False,
+                has_missed_findings=False,
+                comment="Legacy feedback.",
+                can_use_for_benchmark=False,
+            ),
+            Feedback(
+                user_id=other_user.id,
+                document_id=other_document.id,
+                analysis_id=other_analysis.id,
+                provider=other_analysis.provider,
+                model=other_analysis.model,
+                skill_id=other_analysis.skill_id,
+                skill_version=other_analysis.skill_version,
+                rating=5,
+                usefulness=FeedbackUsefulness.USEFUL.value,
+                verdict_correct=True,
+                has_false_findings=False,
+                has_missed_findings=False,
+                can_use_for_benchmark=False,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    login(client, admin.login, "secret")
+    response = client.get("/admin/feedback?model=gpt-test")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["feedback"]) == 2
+    legacy = next(item for item in payload["feedback"] if item["comment"] == "Legacy feedback.")
+    assert legacy["rating"] is None
+    assert legacy["has_false_findings"] is False
+    assert legacy["has_missed_findings"] is False
+    assert legacy["can_use_for_benchmark"] is False
+    summary = payload["summary"]
+    assert summary == {
+        "total_count": 2,
+        "scored_count": 1,
+        "average_rating": 2.0,
+        "usefulness_counts": {"useful": 0, "partially_useful": 1, "useless": 1},
+        "incorrect_verdict_count": 1,
+        "false_findings_count": 1,
+        "missed_findings_count": 1,
+        "benchmark_candidate_count": 1,
+        "unprocessed_count": 2,
+        "low_rating_count": 1,
+        "legacy_count": 1,
+    }
+
+
 def _as_user_get(client, db_session, path: str):
     client.post("/auth/logout")
     create_user(db_session, "normal", "secret")

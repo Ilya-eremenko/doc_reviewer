@@ -91,7 +91,7 @@ function isActivePath(pathname: string, href: string) {
   }
 
   if (href === "/admin/users") {
-    return pathname.startsWith("/admin");
+    return pathname.startsWith("/admin") && !pathname.startsWith("/admin/feedback");
   }
 
   return pathname === href || pathname.startsWith(`${href}/`);

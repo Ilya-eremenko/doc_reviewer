@@ -36,7 +36,6 @@ import {
   splitDevilsAdvocateMarkdown,
   stripAssessmentHeading,
 } from "./analysisDisplay";
-import { usefulnessForFeedbackRating, type FeedbackUsefulness } from "./feedbackDisplay";
 
 type AnalysisTab = "mainOutput" | "documentComments" | "fullOutput";
 
@@ -77,7 +76,6 @@ export default function AnalysisDetailPage() {
   const [feedbackStatus, setFeedbackStatus] = useState("");
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackRating, setFeedbackRating] = useState<FeedbackRating>(4);
-  const [usefulness, setUsefulness] = useState<FeedbackUsefulness>("useful");
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>("mainOutput");
   const [runDetailsOpen, setRunDetailsOpen] = useState(false);
@@ -187,7 +185,7 @@ export default function AnalysisDetailPage() {
     setError("");
     try {
       await submitFeedback(analysis.id, {
-        usefulness,
+        rating: feedbackRating,
         verdict_correct: null,
         has_false_findings: null,
         has_missed_findings: null,
@@ -242,7 +240,6 @@ export default function AnalysisDetailPage() {
 
   function chooseFeedbackRating(rating: FeedbackRating) {
     setFeedbackRating(rating);
-    setUsefulness(usefulnessForFeedbackRating(rating));
   }
 
   useEffect(() => {

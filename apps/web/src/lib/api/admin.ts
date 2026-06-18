@@ -80,7 +80,9 @@ export type AdminBenchmark = {
 
 export type AdminFeedback = {
   id: string;
+  user_id: string;
   user_login: string;
+  document_id: string;
   document_title: string;
   analysis_id: string;
   analysis_verdict: string | null;
@@ -88,11 +90,29 @@ export type AdminFeedback = {
   model: string;
   skill_id: string;
   skill_version: string;
+  rating: number | null;
   usefulness: string;
   verdict_correct: boolean | null;
+  has_false_findings: boolean | null;
+  has_missed_findings: boolean | null;
   comment: string | null;
+  can_use_for_benchmark: boolean;
   processed_at: string | null;
   created_at: string;
+};
+
+export type AdminFeedbackSummary = {
+  total_count: number;
+  scored_count: number;
+  average_rating: number | null;
+  usefulness_counts: Record<string, number>;
+  incorrect_verdict_count: number;
+  false_findings_count: number;
+  missed_findings_count: number;
+  benchmark_candidate_count: number;
+  unprocessed_count: number;
+  low_rating_count: number;
+  legacy_count: number;
 };
 
 type QueryValue = string | null | undefined;
@@ -140,8 +160,17 @@ export function listAdminBenchmarks(filters: { provider?: Provider | ""; status?
   return apiFetch<{ benchmarks: AdminBenchmark[] }>(withQuery("/admin/benchmarks", filters));
 }
 
-export function listAdminFeedback(filters: { model?: string; verdict?: string; skill_id?: string; user_id?: string } = {}) {
-  return apiFetch<{ feedback: AdminFeedback[] }>(withQuery("/admin/feedback", filters));
+export function listAdminFeedback(filters: {
+  provider?: Provider | "";
+  model?: string;
+  verdict?: string;
+  skill_id?: string;
+  user_id?: string;
+  date_from?: string;
+  date_to?: string;
+  processed_state?: "all" | "processed" | "unprocessed" | "";
+} = {}) {
+  return apiFetch<{ feedback: AdminFeedback[]; summary: AdminFeedbackSummary }>(withQuery("/admin/feedback", filters));
 }
 
 export function markAdminFeedbackProcessed(feedbackId: string) {

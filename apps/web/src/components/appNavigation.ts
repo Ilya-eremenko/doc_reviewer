@@ -8,6 +8,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { href: "/documents", label: "Documents" },
+  { href: "/admin/feedback", label: "Feedback", requiresAdmin: true },
   { href: "/etalons", label: "Etalons", requiresAdmin: true },
   { href: "/benchmarks", label: "Benchmarks", requiresAdmin: true },
   { href: "/settings", label: "Settings", requiresAdmin: true },

@@ -32,6 +32,32 @@ def test_user_can_submit_feedback_for_accessible_analysis(client, db_session):
     assert db_session.query(Feedback).one().comment == "Missed one risk."
 
 
+def test_user_can_submit_feedback_with_rating_and_derives_usefulness(client, db_session):
+    user = create_user(db_session, "author", "secret")
+    analysis = _create_completed_analysis(client, db_session, user)
+    login(client, "author", "secret")
+
+    response = client.post(
+        f"/analyses/{analysis.id}/feedback",
+        json={
+            "rating": 2,
+            "verdict_correct": False,
+            "has_false_findings": True,
+            "has_missed_findings": False,
+            "comment": "Wrong emphasis.",
+            "can_use_for_benchmark": True,
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["rating"] == 2
+    assert payload["usefulness"] == "useless"
+    stored = db_session.query(Feedback).one()
+    assert stored.rating == 2
+    assert stored.usefulness == FeedbackUsefulness.USELESS.value
+
+
 def test_user_cannot_submit_feedback_for_deleted_analysis(client, db_session):
     user = create_user(db_session, "author", "secret")
     analysis = _create_completed_analysis(client, db_session, user)

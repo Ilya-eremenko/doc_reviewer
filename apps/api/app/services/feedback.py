@@ -8,6 +8,7 @@ from app.models.analysis import Analysis
 from app.models.base import utc_now
 from app.models.feedback import Feedback
 from app.models.user import User
+from app.schemas.enums import FeedbackUsefulness
 from app.schemas.feedback import FeedbackCreate
 from app.services.audit import record_audit
 
@@ -25,6 +26,10 @@ def create_feedback(*, db: Session, actor: User, analysis_id: UUID, payload: Fee
     if analysis is None or analysis.deleted_at is not None or not can_read_analysis(actor, analysis):
         raise FeedbackNotFoundError("Analysis not found")
 
+    usefulness = _usefulness_from_rating(payload.rating) if payload.rating is not None else payload.usefulness
+    if usefulness is None:
+        raise FeedbackNotFoundError("Feedback usefulness not found")
+
     feedback = Feedback(
         user_id=actor.id,
         document_id=analysis.document_id,
@@ -33,7 +38,8 @@ def create_feedback(*, db: Session, actor: User, analysis_id: UUID, payload: Fee
         model=analysis.model,
         skill_id=analysis.skill_id,
         skill_version=analysis.skill_version,
-        usefulness=payload.usefulness.value,
+        rating=payload.rating,
+        usefulness=usefulness.value,
         verdict_correct=payload.verdict_correct,
         has_false_findings=payload.has_false_findings,
         has_missed_findings=payload.has_missed_findings,
@@ -52,6 +58,14 @@ def create_feedback(*, db: Session, actor: User, analysis_id: UUID, payload: Fee
     db.commit()
     db.refresh(feedback)
     return feedback
+
+
+def _usefulness_from_rating(rating: int) -> FeedbackUsefulness:
+    if rating <= 2:
+        return FeedbackUsefulness.USELESS
+    if rating == 3:
+        return FeedbackUsefulness.PARTIALLY_USEFUL
+    return FeedbackUsefulness.USEFUL
 
 
 def list_feedback_for_admin(*, db: Session, actor: User) -> list[Feedback]:

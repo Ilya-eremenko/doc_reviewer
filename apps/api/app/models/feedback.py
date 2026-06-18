@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import Uuid
 
@@ -19,6 +19,7 @@ class Feedback(Base):
     model: Mapped[str] = mapped_column(String, nullable=False)
     skill_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("skills.id"), nullable=False)
     skill_version: Mapped[str] = mapped_column(String, nullable=False)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     usefulness: Mapped[str] = mapped_column(String, nullable=False)
     verdict_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     has_false_findings: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
