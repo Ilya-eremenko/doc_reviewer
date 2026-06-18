@@ -25,7 +25,10 @@ import {
   analysisShortSummary,
   buildDocumentCommentAnchors,
   buildLayeredGateChecks,
+  devilsAdvocateMarkdownFromRun,
   devilsAdvocateRoleComments,
+  predictedRunDisplayError,
+  providerMessageContentFromRaw,
   type DocumentCommentAnchor,
   type LayeredGateCheck,
   type LayeredGateLayer2Check,
@@ -943,9 +946,10 @@ function PredictedSkillOutputSection({ run }: { run: PredictedCommentRunRecord |
     );
   }
 
-  const markdown = predictedSkillMarkdown(run);
+  const markdown = devilsAdvocateMarkdownFromRun(run);
   const sections = splitDevilsAdvocateMarkdown(markdown);
   const roleComments = devilsAdvocateRoleComments(run.structured_output);
+  const displayError = predictedRunDisplayError(run);
 
   return (
     <section className="analysis-full-output-section stack">
@@ -958,7 +962,7 @@ function PredictedSkillOutputSection({ run }: { run: PredictedCommentRunRecord |
         </div>
         <StatusBadge status={run.status} />
       </div>
-      {run.error_message ? <div className="analysis-alert">{run.error_message}</div> : null}
+      {displayError ? <div className="analysis-alert">{displayError}</div> : null}
       {sections.length ? (
         <div className="analysis-da-sections">
           {sections.map((section) => (
@@ -1027,7 +1031,7 @@ function mainSkillMarkdownSections(analysis: AnalysisRecord): { main: string | n
     asString(output?.markdown) ||
     asString(output?.output_markdown) ||
     asString(output?.summary_markdown) ||
-    (!layer1 && !layer2 ? extractProviderMessageContent(analysis.raw_output) : null);
+    (!layer1 && !layer2 ? providerMessageContentFromRaw(analysis.raw_output) : null);
   const main = stripAssessmentHeading(rawMain);
 
   return { main, layer1, layer2 };
@@ -1069,10 +1073,6 @@ function isStagedSummaryAnalysis(analysis: AnalysisRecord): boolean {
       Array.isArray(output.layer_1_index) ||
       Array.isArray(output.layer_2_index),
   );
-}
-
-function predictedSkillMarkdown(run: PredictedCommentRunRecord): string | null {
-  return bestMarkdownOutput(run.structured_output) || extractProviderMessageContent(run.raw_output);
 }
 
 function CollapsibleMarkdown({ markdown, title }: { markdown: string; title: string }) {
@@ -1476,72 +1476,6 @@ function asStringArray(value: unknown): string[] {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function bestMarkdownOutput(output: Record<string, unknown> | null | undefined): string | null {
-  if (!output) {
-    return null;
-  }
-
-  const directFields = [
-    output.native_markdown,
-    output.markdown,
-    output.output_markdown,
-    output.assessment_markdown,
-    output.summary_markdown,
-  ];
-  const direct = directFields.map(asString).find(Boolean);
-  if (direct) {
-    return direct;
-  }
-
-  const sections = [output.layer_1_markdown, output.layer_2_markdown].map(asString).filter((section): section is string => Boolean(section));
-  return sections.length ? sections.join("\n\n---\n\n") : null;
-}
-
-function extractProviderMessageContent(rawOutput: string | null): string | null {
-  const raw = asString(rawOutput);
-  if (!raw) {
-    return null;
-  }
-
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-    return trimmed;
-  }
-
-  try {
-    return extractMessageContent(JSON.parse(trimmed));
-  } catch {
-    return null;
-  }
-}
-
-function extractMessageContent(value: unknown): string | null {
-  if (typeof value === "string") {
-    return asString(value);
-  }
-  if (Array.isArray(value)) {
-    const parts = value.map(extractMessageContent).filter((part): part is string => Boolean(part));
-    return parts.length ? parts.join("\n") : null;
-  }
-  const record = asRecord(value);
-  if (!record) {
-    return null;
-  }
-
-  const direct = [record.structured_text, record.content, record.output, record.text].map(asString).find(Boolean);
-  if (direct) {
-    return direct;
-  }
-
-  const openAiContent = asRecord(asRecordArray(record.choices)[0]?.message)?.content;
-  const openAiText = extractMessageContent(openAiContent);
-  if (openAiText) {
-    return openAiText;
-  }
-
-  return extractMessageContent(record.content);
 }
 
 const analysisStyles = `

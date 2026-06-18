@@ -430,6 +430,46 @@ def test_devils_advocate_renderer_requires_anonymized_table_comments_without_sto
     assert "role_comments[].comments[] must contain at least one item for each voter" in prompt
 
 
+def test_devils_advocate_renderer_uses_compact_prepass_contract(tmp_path):
+    (tmp_path / "ic-voting-prompt.md").write_text("IC voting orchestrator", encoding="utf-8")
+    document = SimpleNamespace(
+        title="Gate 3 defense",
+        parsed_text="The document asks for investment approval without incrementality proof.",
+        manual_document_type=None,
+        detected_document_type="gate_3",
+    )
+    skill = SimpleNamespace(
+        name="devils_advocate_predefense",
+        version="baseline",
+        prompt_text="Fallback DA prompt",
+        source_uri=str(tmp_path / "ic-voting-prompt.md"),
+        source_entrypoint="ic-voting-prompt.md",
+        source_revision="def456",
+        source_fingerprint="da-fingerprint",
+        source_metadata={},
+    )
+    analysis = SimpleNamespace(verdict=None, summary=None, structured_output={})
+
+    prompt = render_devils_advocate_prompt(
+        document=document,
+        analysis=analysis,
+        skill=skill,
+        response_schema={"title": "DevilsAdvocateResult", "type": "object"},
+        run_parameters={
+            "run_order": "before_gate_challenger",
+            "devils_advocate_output_contract": "compact_prepass",
+        },
+    )
+
+    assert "Compact Devil's Advocate prepass output contract" in prompt
+    assert "This is not the full UI report" in prompt
+    assert "native_markdown must be at most 1200 characters" in prompt
+    assert "detected_contradictions: return at most 3 items" in prompt
+    assert "role_comments: return exactly 4 voters and exactly 1 comment per voter" in prompt
+    assert "Do not include a Markdown role-comments table" in prompt
+    assert "| Role | Vote | Decision | Anchor quote | Comment | Type | Severity |" not in prompt
+
+
 def test_devils_advocate_renderer_can_require_english_output(tmp_path):
     (tmp_path / "ic-voting-prompt.md").write_text("IC voting orchestrator", encoding="utf-8")
     document = SimpleNamespace(

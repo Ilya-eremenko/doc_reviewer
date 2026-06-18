@@ -1,4 +1,4 @@
-import type { AnalysisRecord } from "@/lib/api/documents";
+import type { AnalysisRecord, PredictedCommentRunRecord } from "@/lib/api/documents";
 
 type SummarySource = Pick<AnalysisRecord, "summary" | "structured_output">;
 type GateDetailsSource = Pick<AnalysisRecord, "structured_output" | "detail_run">;
@@ -201,6 +201,171 @@ export function devilsAdvocateRoleComments(
       ];
     });
   });
+}
+
+export function devilsAdvocateMarkdownFromRun(
+  run: Pick<PredictedCommentRunRecord, "structured_output" | "raw_output">,
+): string | null {
+  return (
+    bestMarkdownOutput(run.structured_output) ||
+    extractNativeMarkdownFromJsonLikeText(providerMessageContentFromRaw(run.raw_output)) ||
+    providerMessageContentFromRaw(run.raw_output)
+  );
+}
+
+export function predictedRunDisplayError(
+  run: Pick<PredictedCommentRunRecord, "error_message" | "status">,
+): string | null {
+  const message = asString(run.error_message);
+  if (!message) {
+    return null;
+  }
+  if (/Unterminated string starting at:/i.test(message)) {
+    return "Provider cut off the Devil's Advocate response before valid JSON was completed. Partial output is shown below when available.";
+  }
+  return message;
+}
+
+export function providerMessageContentFromRaw(rawOutput: string | null): string | null {
+  const raw = asString(rawOutput);
+  if (!raw) {
+    return null;
+  }
+
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return trimmed;
+  }
+
+  try {
+    return extractMessageContent(JSON.parse(trimmed));
+  } catch {
+    return null;
+  }
+}
+
+function bestMarkdownOutput(output: Record<string, unknown> | null | undefined): string | null {
+  if (!output) {
+    return null;
+  }
+
+  const directFields = [
+    output.native_markdown,
+    output.markdown,
+    output.output_markdown,
+    output.assessment_markdown,
+    output.summary_markdown,
+  ];
+  const direct = directFields.map(asString).find(Boolean);
+  if (direct) {
+    return direct;
+  }
+
+  const sections = [output.layer_1_markdown, output.layer_2_markdown].map(asString).filter((section): section is string => Boolean(section));
+  return sections.length ? sections.join("\n\n---\n\n") : null;
+}
+
+function extractNativeMarkdownFromJsonLikeText(value: string | null): string | null {
+  const text = asString(value);
+  if (!text) {
+    return null;
+  }
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  try {
+    return bestMarkdownOutput(JSON.parse(trimmed));
+  } catch {
+    return (
+      extractJsonStringProperty(trimmed, "native_markdown") ||
+      extractJsonStringProperty(trimmed, "markdown") ||
+      extractJsonStringProperty(trimmed, "output_markdown")
+    );
+  }
+}
+
+function extractJsonStringProperty(text: string, key: string): string | null {
+  const match = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"`).exec(text);
+  if (!match) {
+    return null;
+  }
+
+  let value = "";
+  let index = match.index + match[0].length;
+  while (index < text.length) {
+    const character = text[index];
+    if (character === '"') {
+      return asString(value);
+    }
+    if (character === "\\") {
+      const next = text[index + 1];
+      if (!next) {
+        break;
+      }
+      const decoded = decodeJsonEscape(next, text.slice(index + 2, index + 6));
+      value += decoded.value;
+      index += decoded.consumed + 1;
+      continue;
+    } else {
+      value += character;
+    }
+    index += 1;
+  }
+  return asString(value);
+}
+
+function decodeJsonEscape(next: string, unicodeHex: string): { value: string; consumed: number } {
+  if (next === "n") {
+    return { value: "\n", consumed: 1 };
+  }
+  if (next === "r") {
+    return { value: "\r", consumed: 1 };
+  }
+  if (next === "t") {
+    return { value: "\t", consumed: 1 };
+  }
+  if (next === "b") {
+    return { value: "\b", consumed: 1 };
+  }
+  if (next === "f") {
+    return { value: "\f", consumed: 1 };
+  }
+  if (next === "u" && /^[0-9a-fA-F]{4}$/.test(unicodeHex)) {
+    return { value: String.fromCharCode(Number.parseInt(unicodeHex, 16)), consumed: 5 };
+  }
+  return { value: next, consumed: 1 };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractMessageContent(value: unknown): string | null {
+  if (typeof value === "string") {
+    return asString(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value.map(extractMessageContent).filter((part): part is string => Boolean(part));
+    return parts.length ? parts.join("\n") : null;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const direct = [record.structured_text, record.content, record.output, record.text].map(asString).find(Boolean);
+  if (direct) {
+    return direct;
+  }
+
+  const openAiContent = asRecord(asRecordArray(record.choices)[0]?.message)?.content;
+  const openAiText = extractMessageContent(openAiContent);
+  if (openAiText) {
+    return openAiText;
+  }
+
+  return extractMessageContent(record.content);
 }
 
 export function buildDocumentCommentAnchors(

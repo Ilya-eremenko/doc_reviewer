@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ def render_devils_advocate_prompt(
     source_snapshot: SkillSourceSnapshotMaterial | None = None,
     retrieval_snapshot: RetrievalSnapshotMaterial | None = None,
     output_language: str | None = None,
+    run_parameters: dict | None = None,
 ) -> str:
     source_text = _read_source_text(skill, source_snapshot=source_snapshot)
     wiki_sections = _read_selected_wiki_sections(
@@ -46,11 +48,14 @@ def render_devils_advocate_prompt(
         ]
     )
     document_type = getattr(document, "manual_document_type", None) or getattr(document, "detected_document_type", "unknown")
+    compact_prepass = _is_compact_prepass(run_parameters)
+    prompt_schema = _compact_prepass_response_schema(response_schema) if compact_prepass else response_schema
 
     return "\n\n".join(
         [
             f"Skill: {skill.name} ({skill.version})",
             "Run mode: full_ic_voting",
+            "Output contract: compact_prepass" if compact_prepass else "Output contract: full_ic_voting_report",
             _run_mode_instruction(has_main_context),
             output_language_instruction(output_language) if output_language is not None else "",
             "Devil's Advocate source snapshot:",
@@ -65,56 +70,136 @@ def render_devils_advocate_prompt(
             "\n\n".join(wiki_sections) if wiki_sections else "No selected wiki pages were available.",
             _main_context_heading(has_main_context),
             json.dumps(main_context if has_main_context else _empty_main_context(), ensure_ascii=False, sort_keys=True),
-            "Mandatory native IC voting output format:",
-            "\n".join(
-                [
-                    "Return JSON only, but encode the exact visible Devil's Advocate answer in native_markdown.",
-                    "native_markdown must be written in the requested output language.",
-                    "native_markdown must follow ic-voting-prompt.md / wiki-ic/meta/output-format.md order:",
-                    "1. Title line: 🔴 Devil's Advocate — <IC/stage/domain/document>",
-                    "2. Pre-flight summary",
-                    "3. The Brutal Truth",
-                    "4. Detected Contradictions & Missing Proofs",
-                    "5. Role comments / voter synthesis for MP, CPO, TechDir, VertDir using role_comments",
-                    "6. The \"Tough Co-CEO\" Questions",
-                    "7. Actionable JTBDs",
-                    "8. === IC Decision === block with vote tally, rationale, conditions, heuristics, patterns, precedents, next IC.",
-                    "Real-name handling for this service runtime:",
-                    "Do not stop or return a pre-flight-only answer because of real names in the input document.",
-                    "Record anonymization as a pre-flight anomaly, replace real names with fictional neutral placeholders, "
-                    "and continue the Devil's Advocate critique.",
-                    "Never copy or cite real names from the document in native_markdown or JSON fields.",
-                    "Role comments table requirement:",
-                    "native_markdown Role comments section must include a Markdown pipe table with exactly this header:",
-                    "| Role | Vote | Decision | Anchor quote | Comment | Type | Severity |",
-                    "|---|---|---|---|---|---|---|",
-                    "Each table row must mirror one role_comments[].comments[] item.",
-                    "role_comments must preserve the original ic-voting-prompt.md subagent contract:",
-                    "role_comments[].comments[] must contain exactly anchor_text, body, comment_type, severity.",
-                    "role_comments[].comments[] must contain at least one item for each voter.",
-                    "anchor_text must be a short source quote copied from Parsed document text, ideally 6-18 words.",
-                    "anchor_text must not be a paraphrase, section label, topic label, broad summary, or model inference.",
-                    "Before returning JSON, verify every anchor_text is findable in Parsed document text after only whitespace "
-                    "normalization; if not, replace it with a shorter quote from the same source paragraph.",
-                    "Prefer anchor_text quotes that avoid real names. If the only decision-relevant quote contains a real name, "
-                    "replace only that name with the same fictional placeholder used above and keep the rest of the quote verbatim.",
-                    "The Anchor quote column in native_markdown must exactly equal the matching role_comments[].comments[].anchor_text.",
-                    "body must be clean IC-comment prose, no wiki links, no anonym slugs, no persona labels.",
-                    "severity for role comments must be one of critical, important, minor.",
-                    "Do not use anchor/comment aliases for role_comments[].comments[]; use anchor_text/body.",
-                    "The required JSON fields must mirror native_markdown: preflight_summary, brutal_truth, "
-                    "detected_contradictions, role_comments, tough_questions, actionable_jtbds, ic_decision, retrieval.",
-                    "Do not return the old compact anchored_comments/trailer-only shape as the primary answer.",
-                ]
-            ),
+            _output_format_instruction(compact_prepass=compact_prepass),
             f"Document title: {document.title}",
             f"Document type: {document_type}",
             "Return only JSON matching this schema:",
-            json.dumps(response_schema, ensure_ascii=False, sort_keys=True),
+            json.dumps(prompt_schema, ensure_ascii=False, sort_keys=True),
             "Parsed document text:",
             document.parsed_text or "",
         ]
     )
+
+
+def _is_compact_prepass(run_parameters: dict | None) -> bool:
+    parameters = run_parameters or {}
+    return (
+        parameters.get("devils_advocate_output_contract") == "compact_prepass"
+        or parameters.get("run_order") == "before_gate_challenger"
+    )
+
+
+def _output_format_instruction(*, compact_prepass: bool) -> str:
+    if compact_prepass:
+        return "\n".join(
+            [
+                "Compact Devil's Advocate prepass output contract:",
+                "This is not the full UI report. It feeds Gate Challenger Layer 4 with concise red-team signals.",
+                "Return valid JSON only. Keep every reader-facing field in the requested output language.",
+                "native_markdown must be at most 1200 characters: title plus 5-8 concise bullets only.",
+                "Do not include a Markdown role-comments table, full IC transcript, or repeated source excerpts.",
+                "preflight_summary: return 1-3 short bullets.",
+                "brutal_truth: return 1 compact paragraph, at most 500 characters.",
+                "detected_contradictions: return at most 3 items; body at most 320 characters; citations at most 2 short wiki paths or slugs.",
+                "role_comments: return exactly 4 voters and exactly 1 comment per voter.",
+                "role_comments[].rationale must be at most 180 characters.",
+                "role_comments[].comments[] must contain exactly anchor_text, body, comment_type, severity.",
+                "anchor_text must be a short source quote copied from Parsed document text, ideally 6-14 words.",
+                "anchor_text must not be a paraphrase, section label, topic label, broad summary, or model inference.",
+                "body must be a single concise IC-comment sentence, at most 260 characters.",
+                "severity for role comments must be one of critical, important, minor.",
+                "tough_questions: return exactly 3 questions, each at most 180 characters.",
+                "actionable_jtbds: return exactly 3 items, each at most 180 characters.",
+                "ic_decision arrays conditions, heuristics_fired, patterns_fired, precedents_anchored must contain at most 3 compact strings each.",
+                "consulted_wiki_pages and source_citations must contain at most 5 compact path strings each.",
+                "retrieval must contain only compact metadata lists. Do not copy evidence packet text into output.",
+                "Real-name handling for this service runtime:",
+                "Do not stop or return a pre-flight-only answer because of real names in the input document.",
+                "Record anonymization as a pre-flight anomaly, replace real names with fictional neutral placeholders, and continue.",
+                "Never copy or cite real names from the document in native_markdown or JSON fields.",
+            ]
+        )
+    return "\n".join(
+        [
+            "Mandatory native IC voting output format:",
+            "Return JSON only, but encode the exact visible Devil's Advocate answer in native_markdown.",
+            "native_markdown must be written in the requested output language.",
+            "native_markdown must follow ic-voting-prompt.md / wiki-ic/meta/output-format.md order:",
+            "1. Title line: 🔴 Devil's Advocate — <IC/stage/domain/document>",
+            "2. Pre-flight summary",
+            "3. The Brutal Truth",
+            "4. Detected Contradictions & Missing Proofs",
+            "5. Role comments / voter synthesis for MP, CPO, TechDir, VertDir using role_comments",
+            "6. The \"Tough Co-CEO\" Questions",
+            "7. Actionable JTBDs",
+            "8. === IC Decision === block with vote tally, rationale, conditions, heuristics, patterns, precedents, next IC.",
+            "Real-name handling for this service runtime:",
+            "Do not stop or return a pre-flight-only answer because of real names in the input document.",
+            "Record anonymization as a pre-flight anomaly, replace real names with fictional neutral placeholders, "
+            "and continue the Devil's Advocate critique.",
+            "Never copy or cite real names from the document in native_markdown or JSON fields.",
+            "Role comments table requirement:",
+            "native_markdown Role comments section must include a Markdown pipe table with exactly this header:",
+            "| Role | Vote | Decision | Anchor quote | Comment | Type | Severity |",
+            "|---|---|---|---|---|---|---|",
+            "Each table row must mirror one role_comments[].comments[] item.",
+            "role_comments must preserve the original ic-voting-prompt.md subagent contract:",
+            "role_comments[].comments[] must contain exactly anchor_text, body, comment_type, severity.",
+            "role_comments[].comments[] must contain at least one item for each voter.",
+            "anchor_text must be a short source quote copied from Parsed document text, ideally 6-18 words.",
+            "anchor_text must not be a paraphrase, section label, topic label, broad summary, or model inference.",
+            "Before returning JSON, verify every anchor_text is findable in Parsed document text after only whitespace "
+            "normalization; if not, replace it with a shorter quote from the same source paragraph.",
+            "Prefer anchor_text quotes that avoid real names. If the only decision-relevant quote contains a real name, "
+            "replace only that name with the same fictional placeholder used above and keep the rest of the quote verbatim.",
+            "The Anchor quote column in native_markdown must exactly equal the matching role_comments[].comments[].anchor_text.",
+            "body must be clean IC-comment prose, no wiki links, no anonym slugs, no persona labels.",
+            "severity for role comments must be one of critical, important, minor.",
+            "Do not use anchor/comment aliases for role_comments[].comments[]; use anchor_text/body.",
+            "The required JSON fields must mirror native_markdown: preflight_summary, brutal_truth, "
+            "detected_contradictions, role_comments, tough_questions, actionable_jtbds, ic_decision, retrieval.",
+            "Do not return the old compact anchored_comments/trailer-only shape as the primary answer.",
+        ]
+    )
+
+
+def _compact_prepass_response_schema(response_schema: dict) -> dict:
+    schema = deepcopy(response_schema)
+    if not isinstance(schema, dict):
+        return response_schema
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return schema
+
+    _set_description(
+        properties,
+        "native_markdown",
+        "Compact prepass summary, at most 1200 characters. Do not include the full visible DA report or role table.",
+    )
+    _set_description(properties, "brutal_truth", "One compact paragraph, at most 500 characters.")
+    _set_array_limit(properties, "detected_contradictions", max_items=3)
+    _set_array_limit(properties, "role_comments", min_items=4, max_items=4)
+    _set_array_limit(properties, "tough_questions", min_items=3, max_items=3)
+    _set_array_limit(properties, "actionable_jtbds", min_items=3, max_items=3)
+    _set_array_limit(properties, "consulted_wiki_pages", max_items=5)
+    _set_array_limit(properties, "source_citations", max_items=5)
+    return schema
+
+
+def _set_description(properties: dict, key: str, description: str) -> None:
+    value = properties.get(key)
+    if isinstance(value, dict):
+        value["description"] = description
+
+
+def _set_array_limit(properties: dict, key: str, *, min_items: int | None = None, max_items: int | None = None) -> None:
+    value = properties.get(key)
+    if not isinstance(value, dict):
+        return
+    if min_items is not None:
+        value["minItems"] = min_items
+    if max_items is not None:
+        value["maxItems"] = max_items
 
 
 def _run_mode_instruction(has_main_context: bool) -> str:

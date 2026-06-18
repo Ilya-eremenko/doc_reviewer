@@ -133,6 +133,7 @@ def test_run_analysis_snapshots_devils_advocate_source_and_retrieval_before_gate
         assert predicted_run.run_parameters["skill_source_snapshot"]["id"] == source_snapshot_id
         assert predicted_run.run_parameters["retrieval_snapshot"]["id"] == retrieval_snapshot_id
         assert predicted_run.run_parameters["run_order"] == "before_gate_challenger"
+        assert predicted_run.run_parameters["devils_advocate_output_contract"] == "compact_prepass"
         dossier_path = tmp_path / "storage" / "retrieval-snapshots" / retrieval_snapshot_id / "dossier.json"
         dossier = json.loads(dossier_path.read_text(encoding="utf-8"))
         assert "wiki-ic/cases/ic-2025-292.md" in dossier["selected_paths"]
@@ -147,6 +148,10 @@ def test_run_analysis_snapshots_devils_advocate_source_and_retrieval_before_gate
         assert "marketplace budget incrementality control group holdout" in evidence_packet_text
         assert "real MP comment: how much is incremental?" in evidence_packet_text
         assert "real IC decision: rework until KPI gate is closed" in evidence_packet_text
+        rendered_prompt = Path(predicted_run.run_parameters["rendered_prompt_artifact_path"]).read_text(encoding="utf-8")
+        assert "Compact Devil's Advocate prepass output contract" in rendered_prompt
+        assert "native_markdown must be at most 1200 characters" in rendered_prompt
+        assert "| Role | Vote | Decision | Anchor quote | Comment | Type | Severity |" not in rendered_prompt
         assert analysis.run_parameters["gate_challenger_layer_4_context"]["brutal_truth"] == "Fatal flaw."
         assert enqueued == []
     finally:

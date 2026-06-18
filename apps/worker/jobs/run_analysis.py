@@ -293,6 +293,7 @@ def _predicted_comment_run_parameters(*, analysis: Analysis, document: Document,
         "max_output_tokens": _predicted_comments_max_output_tokens(analysis.run_parameters),
         "skill_source_snapshot": skill_source_snapshot(skill),
         "run_order": "before_gate_challenger",
+        "devils_advocate_output_contract": "compact_prepass",
     }
     mock_result = analysis.run_parameters.get("predicted_comments_mock_provider_result")
     if mock_result is not None:

@@ -5,7 +5,9 @@ import {
   analysisShortSummary,
   buildDocumentCommentAnchors,
   buildLayeredGateChecks,
+  devilsAdvocateMarkdownFromRun,
   devilsAdvocateRoleComments,
+  predictedRunDisplayError,
   splitDevilsAdvocateMarkdown,
   stripAssessmentHeading,
 } from "./analysisDisplay";
@@ -103,6 +105,36 @@ describe("analysis display helpers", () => {
         severity: "critical",
       },
     ]);
+  });
+
+  it("extracts native markdown from truncated Devil's Advocate provider JSON", () => {
+    const rawOutput = JSON.stringify({
+      choices: [
+        {
+          message: {
+            content:
+              '{"run_mode":"full_ic_voting","native_markdown":"The Brutal Truth\\n\\nFatal flaw.\\n\\nActionable JTBDs\\n\\n1. Add proof.","role_comments":[{"unfinished":"',
+          },
+          finish_reason: "length",
+        },
+      ],
+    });
+
+    expect(
+      devilsAdvocateMarkdownFromRun({
+        structured_output: null,
+        raw_output: rawOutput,
+      }),
+    ).toBe("The Brutal Truth\n\nFatal flaw.\n\nActionable JTBDs\n\n1. Add proof.");
+  });
+
+  it("shows a readable message for truncated Devil's Advocate JSON errors", () => {
+    expect(
+      predictedRunDisplayError({
+        status: "failed",
+        error_message: "Unterminated string starting at: line 1 column 50056 (char 50055)",
+      }),
+    ).toBe("Provider cut off the Devil's Advocate response before valid JSON was completed. Partial output is shown below when available.");
   });
 
   it("matches repeated Devil's Advocate anchors to parsed document text", () => {
