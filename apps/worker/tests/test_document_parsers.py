@@ -1,10 +1,15 @@
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document as DocxDocument
 
 from parsers import docling_parser
 from parsers import parse_file, parse_file_to_document
 from parsers.artifact import ParsedDocument, ParserInfo, ParseQuality, build_blocks_from_output
+
+
+DOCX_MAIN_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+DOTX_MAIN_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"
 
 
 def test_parse_txt_decodes_utf8_with_replacement(tmp_path):
@@ -107,6 +112,7 @@ def test_parse_dotx_uses_docx_parser(tmp_path):
     document = DocxDocument()
     document.add_paragraph("Gate 2 travel benchmark original")
     document.save(path)
+    _rewrite_main_content_type(path, from_value=DOCX_MAIN_CONTENT_TYPE, to_value=DOTX_MAIN_CONTENT_TYPE)
 
     parsed = parse_file(path)
 
@@ -199,3 +205,14 @@ def _pdf_with_text_pages(page_texts: list[str]) -> bytes:
         ).encode("ascii")
     )
     return bytes(pdf)
+
+
+def _rewrite_main_content_type(path: Path, *, from_value: str, to_value: str) -> None:
+    temp_path = path.with_suffix(".tmp")
+    with ZipFile(path, "r") as source, ZipFile(temp_path, "w", ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "[Content_Types].xml":
+                data = data.replace(from_value.encode("utf-8"), to_value.encode("utf-8"))
+            target.writestr(item, data)
+    temp_path.replace(path)

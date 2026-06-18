@@ -1,4 +1,6 @@
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document
 from docx.oxml.table import CT_Tbl
@@ -9,12 +11,16 @@ from docx.text.paragraph import Paragraph
 from parsers.artifact import ParsedDocument, ParserInfo, ParseQuality, build_blocks_from_output, package_version
 
 
+DOCX_MAIN_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+DOTX_MAIN_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"
+
+
 def parse_docx(path: Path) -> str:
     return parse_docx_document(path).plain_text
 
 
 def parse_docx_document(path: Path) -> ParsedDocument:
-    document = Document(path)
+    document = _load_word_document(path)
     block_inputs: list[dict[str, object]] = []
     table_count = 0
 
@@ -110,3 +116,30 @@ def _table_markdown(rows: list[list[str]]) -> str:
 
 def _escape_table_cell(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", "<br>")
+
+
+def _load_word_document(path: Path):
+    try:
+        return Document(path)
+    except ValueError as exc:
+        if path.suffix.lower() != ".dotx" or DOTX_MAIN_CONTENT_TYPE not in str(exc):
+            raise
+
+    temp_path = _docx_compatible_copy(path)
+    try:
+        return Document(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _docx_compatible_copy(path: Path) -> Path:
+    with NamedTemporaryFile(delete=False, suffix=".docx") as temp_file:
+        temp_path = Path(temp_file.name)
+
+    with ZipFile(path, "r") as source, ZipFile(temp_path, "w", ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename == "[Content_Types].xml":
+                data = data.replace(DOTX_MAIN_CONTENT_TYPE.encode("utf-8"), DOCX_MAIN_CONTENT_TYPE.encode("utf-8"))
+            target.writestr(item, data)
+    return temp_path

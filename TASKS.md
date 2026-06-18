@@ -21,6 +21,74 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Audit latest production Gate Challenger layer delivery: analysis
+  `9feae0ff-ca4c-4256-aa64-a170636b2f05` is a staged Gate 3 summary run with
+  `details_status=not_requested`, `7` compact Layer 1 index items, and `17`
+  compact Layer 2 index items. Its prompt snapshot included the selected
+  `gate-3-rubric.md` and all `80/80` Gate 3 atomic Layer 2 questions, so the
+  summary prompt did not lose the rubric at load time. No production
+  `analysis_detail_runs` exist yet, so full detailed Layer 1 / Layer 2 output
+  has not been exercised in production; the detail schema/prompt and grouped UI
+  do not currently enforce or test exact original-rubric question completeness.
+- [x] Implement admin feedback dashboard: add exact nullable feedback rating,
+  preserve legacy usefulness-only feedback, return filtered admin feedback
+  summary, expose Feedback in the admin top navigation, and rebuild
+  `/admin/feedback` around improvement signals and run-level feedback details.
+  Verified full API tests, targeted API feedback/admin tests, full frontend
+  tests, Compose config, diff whitespace, local web/API container rebuild,
+  local Alembic upgrade to `202606180001`, API `/health`, and web `/login`.
+  Committed `e9a66e2`, fast-forward merged to `main`, pushed to origin, synced
+  clean release tree to `178.250.159.250`, rebuilt production API/worker/web,
+  applied production Alembic upgrade to `202606180001`, restarted edge, and
+  verified production container status, Alembic current, server-local
+  `/api/health`, `/login`, `/admin/feedback`, unauthenticated
+  `/api/admin/feedback` auth failure, and fresh service logs.
+- [x] Recover Devil's Advocate role comments from truncated provider output:
+  production analysis `9feae0ff-ca4c-4256-aa64-a170636b2f05` has a failed
+  DA prepass with `structured_output = null`, but the raw provider message
+  contains a complete `role_comments` array before the JSON truncation point.
+  The analysis page now falls back to parsing that completed array from
+  admin-visible raw output, so Document comments and the DA role comments table
+  can render even when later JSON fields were cut off.
+- [x] Improve failed Devil's Advocate truncation display on analysis pages:
+  frontend now maps `Unterminated string starting at...` DA failures to a
+  readable provider-truncation message, and admin-visible raw provider output
+  can recover `native_markdown` from a truncated JSON string so the Devil's
+  Advocate block still renders like other analyses when the markdown field was
+  completed before truncation. Verified focused analysis display test, full
+  frontend tests, production frontend build, and full worker tests locally.
+- [x] Compact Devil's Advocate prepass output for Gate Challenger Layer 4:
+  worker-created DA prepass runs now mark
+  `devils_advocate_output_contract=compact_prepass`, and the DA renderer uses
+  that flag to request a concise JSON contract instead of a full UI report:
+  short `native_markdown`, at most 3 contradictions, exactly one role comment
+  per voter, 3 tough questions, 3 JTBDs, compact citations, and no Markdown
+  role-comments table. Full DA report behavior remains available for runs that
+  are not `run_order=before_gate_challenger`. Verified focused RED/GREEN
+  coverage and full worker tests with `.venv/bin/python -m pytest
+  apps/worker/tests -q` (`72 passed`, one existing passlib warning).
+- [x] Diagnose production analysis
+  `9feae0ff-ca4c-4256-aa64-a170636b2f05` JSON failure: main Gate
+  Challenger run completed successfully, but the linked Devil's Advocate
+  prepass `1c289e8d-61cf-4966-b2b6-24f03915fedf` failed parsing provider
+  output. OpenRouter/Anthropic returned `finish_reason=length` with exactly
+  `completion_tokens=20000`; the assistant content length was `50061`
+  characters and ended mid-JSON, producing Python `JSONDecodeError:
+  Unterminated string starting at line 1 column 50056`. The document parse was
+  completed (`goods-loans-progress-review.docx`, parsed text about 56k
+  characters), and the DA prompt artifact was about 157k bytes / 66,952 prompt
+  tokens, so the root cause is DA prepass output truncation at the configured
+  `max_output_tokens=20000`, not a frontend rendering issue.
+- [x] Assemble production timeout repro bundle for analysis
+  `6c7ac1d8-83ce-48e1-87c2-2dd676b7415f`: copied saved main Responses API
+  prompt, Devil's Advocate prepass Chat Completions prompt, source `Gate_3.pdf`,
+  schemas, metadata, and a stdlib Python repro script under ignored
+  `repro/admllm-timeout-6c7ac1d8/`, plus
+  `repro/admllm-timeout-6c7ac1d8.tar.gz`. Verified prompt/PDF hashes against
+  production and dry-ran both request payload builders. Since `analyses` do not
+  persist provider `base_url`, recovered the run-time
+  `https://admllm.data-light.ru/v1` value from the 2026-06-15 provider-key
+  audit log; the key was later replaced with OpenRouter on 2026-06-18.
 - [x] Implement Gate2 benchmark etalon flow in branch
   `codex/gate2-etalon-benchmark-layers`: added admin import of Gate2
   originals and Layer 1 / Layer 2 CSV etalons into project
@@ -36,6 +104,12 @@ Primary plan index:
   container status, public `/api/health`, public `/login`, unauthenticated
   Gate2 import returns auth failure instead of not-found, bootstrap admin
   `login` then `/auth/me`, and fresh API/worker/edge logs with no new `502`.
+  Follow-up production enablement synced `benchmark/` into the mounted Gate
+  Challenger source, cleaned macOS metadata files, reseeded `benchmark_judge`
+  to the Gate2 v2 prompt, imported 4 active Gate2 benchmark etalons/originals
+  (`genai`, `pws`, `travel`, `trx-se`), fixed `.dotx` template parsing in the
+  worker, rebuilt production worker with prod compose env, and verified all 4
+  imported originals are parsed successfully.
 - [x] Diagnose and restore production auth/API `502 Bad Gateway`: root cause
   was nginx edge holding a stale resolved Docker upstream after the API
   container was rebuilt. Edge still proxied `/api/*` to old API IP
