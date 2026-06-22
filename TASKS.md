@@ -21,6 +21,14 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Compact analysis launch controls in production: moved model selection,
+  output language, and `Start analysis` into a button-like toolbar directly
+  under `Analysis history`, removing the standalone `Analysis setup` block from
+  the document hero. Verified focused document-detail test, full frontend tests
+  (`101 passed`), local production web build, pushed commit `80433ee` to
+  `main`, synchronized the release tree to `178.250.159.250`, rebuilt
+  production web, recreated edge, and verified production container status plus
+  server-local `/api/health` and `/login` through nginx edge.
 - [x] Rework document detail actions and deploy to production: moved
   `Download raw` / `Reparse` / `Delete` to the document title level and moved
   `Model`, `Output language`, and `Start analysis` into an explicit
