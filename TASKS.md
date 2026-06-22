@@ -21,6 +21,14 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Rework document detail actions and deploy to production: moved
+  `Download raw` / `Reparse` / `Delete` to the document title level and moved
+  `Model`, `Output language`, and `Start analysis` into an explicit
+  `Analysis setup` block. Verified full frontend tests (`101 passed`), local
+  production web build, pushed commit `5fa3b99` to `main`, synchronized the
+  release tree to `178.250.159.250`, rebuilt production web, recreated edge,
+  and verified production container status plus server-local `/api/health` and
+  `/login` through nginx edge.
 - [x] Fix Devil's Advocate JSON parsing for literal control characters:
   production analysis `74e1c7f8-7699-416c-8be0-15b8e4f5aa8a` completed the
   main Gate Challenger run, but the linked DA prepass failed because provider
