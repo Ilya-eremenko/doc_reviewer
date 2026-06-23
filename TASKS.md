@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Sharpen Gate Challenger `assessment_markdown` tone requirements:
+  `gate2_challenger_renderer` now asks both summary and full main-analysis
+  prompts for CEO/CPO IC language, a short Brutal Truth-style opening, and
+  proven / not proven / cannot approve yet framing while preserving facts,
+  verdicts, evidence, required fields, and Layer 1 / Layer 2 contracts.
+  Verified with `.venv/bin/python -m pytest apps/worker/tests/test_skill_renderers.py -q`
+  (`13 passed`) and `.venv/bin/python -m pytest
+  apps/worker/tests/test_run_analysis_job.py -q` (`8 passed`, one existing
+  passlib deprecation warning).
 - [x] Fix analysis detail permissions for document-visible analyses: direct
   `GET /analyses/{analysis_id}` now authorizes through the linked active
   document, so a non-admin user who can view the analyzed document can open

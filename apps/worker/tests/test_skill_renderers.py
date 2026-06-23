@@ -78,6 +78,46 @@ def test_gate2_challenger_renderer_can_require_english_output():
     assert "Document assessment" in prompt
 
 
+def test_gate2_challenger_renderer_requires_ceo_cpo_assessment_tone_for_summary_and_full_schemas():
+    document = SimpleNamespace(
+        title="Gate 2 defense",
+        parsed_text="The initiative claims strong MVP traction but omits cohort evidence.",
+        manual_document_type=None,
+        detected_document_type="gate_2",
+    )
+    skill = SimpleNamespace(
+        name="gate2_challenger_main_analysis",
+        version="baseline",
+        prompt_text="Run a five-pass Gate 2 review with Layer 1 and Layer 2 findings.",
+        source_uri="/Users/example/Gate2/skills/gate2-challenger/SKILL.md",
+        source_entrypoint="SKILL.md",
+        source_revision="abc123",
+        source_fingerprint="fingerprint",
+    )
+
+    for schema_title in ("MainAnalysisSummaryResult", "MainAnalysisResult"):
+        ru_prompt = render_gate2_challenger_prompt(
+            document=document,
+            skill=skill,
+            response_schema={"title": schema_title, "type": "object"},
+        )
+        en_prompt = render_gate2_challenger_prompt(
+            document=document,
+            skill=skill,
+            response_schema={"title": schema_title, "type": "object"},
+            output_language="en",
+        )
+
+        for prompt in (ru_prompt, en_prompt):
+            assert "CEO/CPO IC language" in prompt
+            assert "Brutal Truth" in prompt
+            assert "what is proven / what is not proven / what cannot be approved yet" in prompt
+            assert "Do not change facts, verdicts, evidence, promoted issues, required fields" in prompt
+
+        assert "starting exactly with 'Оценка документа'" in ru_prompt
+        assert "starting exactly with 'Document assessment'" in en_prompt
+
+
 def test_gate2_challenger_renderer_includes_devils_advocate_layer_4_context():
     document = SimpleNamespace(
         title="Gate 2 defense",

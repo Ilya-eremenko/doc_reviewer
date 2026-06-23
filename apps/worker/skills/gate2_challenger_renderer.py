@@ -115,16 +115,34 @@ def _output_requirements(*, response_schema: dict, output_language: str) -> str:
 
 def _assessment_markdown_requirement(output_language: str) -> str:
     if output_language == "en":
-        return (
+        base_requirement = (
             "1. assessment_markdown: full English summary block starting exactly with 'Document assessment'. "
             "Use the TRX-SE style: recommendation, context, why the decision is this, evidence bullets, "
             "IC recommendation, what can/cannot be approved, improvements, and final conclusion."
         )
+        return "\n".join([base_requirement, _assessment_markdown_tone_requirement()])
 
-    return (
+    base_requirement = (
         "1. assessment_markdown: full Russian summary block starting exactly with 'Оценка документа'. "
         "Use the TRX-SE style: recommendation, context, why the decision is this, evidence bullets, "
         "IC recommendation, what can/cannot be approved, improvements, and final итог."
+    )
+    return "\n".join([base_requirement, _assessment_markdown_tone_requirement()])
+
+
+def _assessment_markdown_tone_requirement() -> str:
+    return "\n".join(
+        [
+            "Tone-of-voice for assessment_markdown only:",
+            "- Write in CEO/CPO IC language: direct, decision-first, focused on business trade-off.",
+            "- Do not change facts, verdicts, evidence, promoted issues, required fields, or required sections.",
+            "- After the required exact start, add a short Brutal Truth-style opening: 1-3 sharp sentences "
+            "about the core trade-off and why the document is unsafe to approve as written.",
+            "- Prefer the frame: what is proven / what is not proven / what cannot be approved yet.",
+            "- Explain issues through decision consequences, not rubric labels.",
+            "- Avoid opaque methodology terms unless translated into concrete business meaning.",
+            "- Do not change Layer 1 / Layer 2 markdown requirements.",
+        ]
     )
 
 

@@ -443,6 +443,9 @@ def test_run_analysis_runs_devils_advocate_before_gate_and_passes_layer_4_contex
         assert "strengthen or supplement Gate Challenger" in rendered_prompt
         assert "Layer 4 synthesis - must-review Devil's Advocate signals" in rendered_prompt
         assert "Subsidy-dependent economics" in rendered_prompt
+        assert "CEO/CPO IC language" in rendered_prompt
+        assert "Brutal Truth" in rendered_prompt
+        assert "what is proven / what is not proven / what cannot be approved yet" in rendered_prompt
     finally:
         get_settings.cache_clear()
         _close_session(db)
