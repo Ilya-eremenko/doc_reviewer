@@ -29,7 +29,10 @@ Primary plan index:
   Verified with `.venv/bin/python -m pytest apps/worker/tests/test_skill_renderers.py -q`
   (`13 passed`) and `.venv/bin/python -m pytest
   apps/worker/tests/test_run_analysis_job.py -q` (`8 passed`, one existing
-  passlib deprecation warning).
+  passlib deprecation warning). Pushed commit `232e243` to `main`, synced the
+  worker renderer to `178.250.159.250`, rebuilt production `worker`, and
+  verified the new container imports the tone block plus server-local and edge
+  `/health`.
 - [x] Fix analysis detail permissions for document-visible analyses: direct
   `GET /analyses/{analysis_id}` now authorizes through the linked active
   document, so a non-admin user who can view the analyzed document can open
