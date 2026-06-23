@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.authz.policies import can_read_analysis
+from app.authz.policies import can_delete_analysis, can_read_analysis
 from app.core.config import default_skill_source_snapshot_mode, get_settings
 from app.models.base import utc_now
 from app.models.analysis import Analysis, AnalysisDetailRun, PredictedCommentRun
@@ -159,7 +159,14 @@ def _attach_source_snapshot(
 
 def get_analysis_for_actor(*, db: Session, actor: User, analysis_id: UUID) -> Analysis:
     analysis = db.get(Analysis, analysis_id)
-    if analysis is None or analysis.deleted_at is not None or not can_read_analysis(actor, analysis):
+    if analysis is None or analysis.deleted_at is not None:
+        raise AnalysisNotFoundError("Analysis not found")
+    document = db.get(Document, analysis.document_id)
+    if (
+        document is None
+        or document.status != EntityStatus.ACTIVE.value
+        or not can_read_analysis(actor, analysis, document)
+    ):
         raise AnalysisNotFoundError("Analysis not found")
     return analysis
 
@@ -175,7 +182,9 @@ def list_document_analyses_for_actor(*, db: Session, actor: User, document_id: U
 
 
 def delete_analysis_for_actor(*, db: Session, actor: User, analysis_id: UUID) -> None:
-    analysis = get_analysis_for_actor(db=db, actor=actor, analysis_id=analysis_id)
+    analysis = db.get(Analysis, analysis_id)
+    if analysis is None or analysis.deleted_at is not None or not can_delete_analysis(actor, analysis):
+        raise AnalysisNotFoundError("Analysis not found")
     analysis.deleted_at = utc_now()
     record_audit(
         db=db,

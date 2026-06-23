@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.models.analysis import Analysis, AnalysisDetailRun, PredictedCommentRun
 from app.models.document import Document
@@ -396,6 +396,37 @@ def test_analysis_detail_hides_raw_output_from_non_admin(client, db_session):
     assert response.json()["raw_output"] is None
 
 
+def test_document_owner_can_open_analysis_created_by_admin_for_their_document(client, db_session):
+    owner = create_user(db_session, "owner", "secret")
+    admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    skill = seed_baseline_skills(db_session)[0]
+    document_id = _create_completed_document_row(db_session, owner)
+    analysis = Analysis(
+        document_id=document_id,
+        user_id=admin.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="need_evidence",
+        summary="Needs evidence",
+        structured_output={"verdict": "need_evidence", "summary": "Needs evidence", "findings": [], "checks": []},
+        raw_output="raw secret output",
+        run_parameters={},
+    )
+    db_session.add(analysis)
+    db_session.commit()
+    login(client, "owner", "secret")
+
+    response = client.get(f"/analyses/{analysis.id}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(analysis.id)
+    assert response.json()["document_id"] == str(document_id)
+    assert response.json()["raw_output"] is None
+
+
 def test_delete_analysis_hides_owned_analysis_from_detail_and_document_list(client, db_session):
     user = create_user(db_session, "author", "secret")
     skill = seed_baseline_skills(db_session)[0]
@@ -427,6 +458,36 @@ def test_delete_analysis_hides_owned_analysis_from_detail_and_document_list(clie
     list_response = client.get(f"/documents/{document_id}/analyses")
     assert list_response.status_code == 200
     assert list_response.json()["analyses"] == []
+
+
+def test_document_owner_cannot_delete_analysis_created_by_admin(client, db_session):
+    owner = create_user(db_session, "owner", "secret")
+    admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
+    skill = seed_baseline_skills(db_session)[0]
+    document_id = _create_completed_document_row(db_session, owner)
+    analysis = Analysis(
+        document_id=document_id,
+        user_id=admin.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="need_evidence",
+        summary="Needs evidence",
+        structured_output={"verdict": "need_evidence", "summary": "Needs evidence", "findings": [], "checks": []},
+        raw_output="raw secret output",
+        run_parameters={},
+    )
+    db_session.add(analysis)
+    db_session.commit()
+    login(client, "owner", "secret")
+
+    response = client.delete(f"/analyses/{analysis.id}")
+
+    assert response.status_code == 404
+    db_session.refresh(analysis)
+    assert analysis.deleted_at is None
 
 
 def test_analysis_detail_includes_predicted_comment_run_without_raw_for_non_admin(client, db_session):
@@ -684,4 +745,22 @@ def _create_completed_document(client, db_session, user):
     document.parsed_text = "Gate 2 MVP metrics"
     document.detected_document_type = DocumentType.GATE_2.value
     db_session.commit()
+    return document.id
+
+
+def _create_completed_document_row(db_session, user):
+    document = Document(
+        owner_id=user.id,
+        title="Gate document",
+        original_filename="gate.txt",
+        mime_type="text/plain",
+        file_size_bytes=18,
+        file_hash_sha256=f"sha256-{uuid4()}",
+        storage_path="/tmp/gate.txt",
+        parse_status=DocumentParseStatus.COMPLETED.value,
+        parsed_text="Gate 2 MVP metrics",
+        detected_document_type=DocumentType.GATE_2.value,
+    )
+    db_session.add(document)
+    db_session.flush()
     return document.id

@@ -29,7 +29,12 @@ def can_read_document_raw(actor: Any, document: Any, etalon: Any | None = None) 
     return bool(etalon and getattr(etalon, "raw_file_visible_to_all", False))
 
 
-def can_read_analysis(actor: Any, analysis: Any) -> bool:
+def can_read_analysis(actor: Any, analysis: Any, document: Any) -> bool:
+    del analysis
+    return can_read_document(actor, document)
+
+
+def can_delete_analysis(actor: Any, analysis: Any) -> bool:
     return _is_admin(actor) or _id(getattr(actor, "id")) == _id(getattr(analysis, "user_id"))
 
 

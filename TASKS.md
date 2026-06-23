@@ -21,6 +21,20 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Fix analysis detail permissions for document-visible analyses: direct
+  `GET /analyses/{analysis_id}` now authorizes through the linked active
+  document, so a non-admin user who can view the analyzed document can open
+  analyses inside it even when the run was created by an admin. Analysis delete
+  remains run-owner/admin scoped. Verified the RED regression and relevant API
+  suite with `STORAGE_ROOT=/private/tmp/gate-challenger-api-test-storage
+  .venv/bin/python -m pytest -p no:cacheprovider
+  apps/api/tests/test_analyses_api.py apps/api/tests/test_feedback.py
+  apps/api/tests/test_documents_upload.py apps/api/tests/test_authz_policies.py
+  -q` (`40 passed`) and full API tests (`141 passed`). Synced changed files
+  to `178.250.159.250`, rebuilt production `api`, verified container status,
+  server-local `/health` and edge `/api/health`, and confirmed production
+  access for analysis `7ee2684b-8e44-44c7-9c4d-15b1e27a479c` with its
+  document owner actor.
 - [x] Compact analysis launch controls in production: moved model selection,
   output language, and `Start analysis` into a button-like toolbar directly
   under `Analysis history`, removing the standalone `Analysis setup` block from

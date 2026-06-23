@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from app.authz.policies import (
+    can_delete_analysis,
     can_manage_benchmarks,
     can_manage_skills,
     can_manage_users,
@@ -45,16 +46,22 @@ def test_raw_document_access_respects_owner_admin_and_public_etalon():
     assert can_read_document_raw(other, document, public_etalon)
 
 
-def test_analysis_and_raw_output_access_are_owner_scoped_for_users():
+def test_analysis_read_access_follows_document_access_and_delete_access_stays_run_scoped():
     owner_id = uuid4()
+    runner_id = uuid4()
     owner = actor(Role.USER, owner_id)
+    runner = actor(Role.USER, runner_id)
     other = actor(Role.USER)
     admin = actor(Role.ADMIN)
-    analysis = SimpleNamespace(user_id=owner_id)
+    document = SimpleNamespace(owner_id=owner_id)
+    analysis = SimpleNamespace(user_id=runner_id)
 
-    assert can_read_analysis(owner, analysis)
-    assert not can_read_analysis(other, analysis)
-    assert can_read_analysis(admin, analysis)
+    assert can_read_analysis(owner, analysis, document)
+    assert not can_read_analysis(other, analysis, document)
+    assert can_read_analysis(admin, analysis, document)
+    assert not can_delete_analysis(owner, analysis)
+    assert can_delete_analysis(runner, analysis)
+    assert can_delete_analysis(admin, analysis)
     assert can_read_raw_output(admin, analysis)
     assert not can_read_raw_output(owner, analysis)
 
