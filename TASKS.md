@@ -29,7 +29,10 @@ Primary plan index:
   `.venv/bin/python -m pytest apps/api/tests/test_health.py -q` (`4 passed`,
   one existing Starlette/httpx deprecation warning). Deployed to
   `178.250.159.250`, rebuilt production `api`, recreated `edge`, and verified
-  server-local plus edge `/health` and PNA preflight for `/auth/login`.
+  server-local plus edge `/health` and PNA preflight for `/auth/login`. Follow-up
+  after Chrome still rejected insecure `http://iseremenko.ru` as local address
+  space: nginx now redirects `iseremenko.ru` to the public IP origin
+  `http://178.250.159.250`, pending proper public DNS plus HTTPS for the domain.
 - [x] Sharpen Gate Challenger `assessment_markdown` tone requirements:
   `gate2_challenger_renderer` now asks both summary and full main-analysis
   prompts for CEO/CPO IC language, a short Brutal Truth-style opening, and
