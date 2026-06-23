@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Fix production login Private Network Access preflight: Chrome sent
+  `Access-Control-Request-Private-Network: true` for
+  `/doc-challanger/api/auth/login`, and FastAPI CORS returned
+  `400 Disallowed CORS private-network`. API CORS now allows private-network
+  preflights for configured origins. Verified with
+  `.venv/bin/python -m pytest apps/api/tests/test_health.py -q` (`4 passed`,
+  one existing Starlette/httpx deprecation warning). Deployed to
+  `178.250.159.250`, rebuilt production `api`, recreated `edge`, and verified
+  server-local plus edge `/health` and PNA preflight for `/auth/login`.
 - [x] Sharpen Gate Challenger `assessment_markdown` tone requirements:
   `gate2_challenger_renderer` now asks both summary and full main-analysis
   prompts for CEO/CPO IC language, a short Brutal Truth-style opening, and
