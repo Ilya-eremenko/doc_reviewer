@@ -26,7 +26,9 @@ Primary plan index:
   tables, escaped pipes, and `<br>` line breaks while keeping Devil's Advocate
   anchor highlights clickable and sorted by document order. Verified focused
   analysis display/page tests with bundled Node (`36 passed`) and
-  `npm --prefix apps/web run build`.
+  `npm --prefix apps/web run build`. Deployed to `178.250.159.250`, rebuilt
+  production web, recreated edge, verified public document/analysis routes,
+  and reparsed all 3 completed production DOCX documents.
 - [x] Render parser-produced HTML formatting in parsed document previews:
   `MarkdownPreview` now recognizes safe parser HTML blocks and inline tags
   (`table`, `p`, `strong`, `u`, `a`, lists) instead of showing raw tags, while
