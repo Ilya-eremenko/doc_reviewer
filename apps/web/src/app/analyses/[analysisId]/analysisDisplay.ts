@@ -81,6 +81,8 @@ export type DocumentCommentAnchor = {
 export type DocumentCommentSegment = {
   id: string;
   text: string;
+  start: number;
+  end: number;
   anchorId: string | null;
   commentCount: number;
   tone: DocumentCommentTone;
@@ -501,6 +503,8 @@ export function buildDocumentCommentAnchors(
       segments.push({
         id: `text-${segments.length + 1}`,
         text: text.slice(cursor, group.match.start),
+        start: cursor,
+        end: group.match.start,
         anchorId: null,
         commentCount: 0,
         tone: "neutral",
@@ -519,6 +523,8 @@ export function buildDocumentCommentAnchors(
     segments.push({
       id: `segment-${id}`,
       text: text.slice(group.match.start, group.match.end),
+      start: group.match.start,
+      end: group.match.end,
       anchorId: id,
       commentCount: group.comments.length,
       tone,
@@ -530,6 +536,8 @@ export function buildDocumentCommentAnchors(
     segments.push({
       id: `text-${segments.length + 1}`,
       text: text.slice(cursor),
+      start: cursor,
+      end: text.length,
       anchorId: null,
       commentCount: 0,
       tone: "neutral",

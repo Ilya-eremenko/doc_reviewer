@@ -56,6 +56,25 @@ describe("analysis result page", () => {
     expect(pageSource).not.toContain("All severity");
   });
 
+  it("renders parsed document markdown in Document comments instead of raw pre-wrapped text", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    const documentCommentsSource = pageSource.slice(
+      pageSource.indexOf("function DocumentCommentsPanel"),
+      pageSource.indexOf("function RoleAvatarIcon"),
+    );
+    const documentTextStyles = pageSource.slice(
+      pageSource.indexOf(".analysis-document-text {"),
+      pageSource.indexOf(".analysis-document-anchor {"),
+    );
+
+    expect(documentCommentsSource).toContain("function DocumentMarkdownText");
+    expect(documentCommentsSource).toContain("function DocumentMarkdownTable");
+    expect(documentCommentsSource).toContain("renderDocumentSegmentText");
+    expect(documentTextStyles).toContain(".analysis-document-table-scroll");
+    expect(documentTextStyles).toContain(".analysis-document-heading");
+    expect(documentTextStyles).not.toContain("white-space: pre-wrap");
+  });
+
   it("moves detailed checks and the full Devil's Advocate display into Full Output", () => {
     const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
     const mainPanelSource = pageSource.slice(

@@ -268,16 +268,19 @@ describe("analysis display helpers", () => {
       },
     ];
 
-    const result = buildDocumentCommentAnchors(
-      "The proposal asks to Approve an additional RUB 14M in CY'26 for the B2C New Cars test before PMF is proven.",
-      comments,
-    );
+    const documentText =
+      "The proposal asks to Approve an additional RUB 14M in CY'26 for the B2C New Cars test before PMF is proven.";
+    const result = buildDocumentCommentAnchors(documentText, comments);
+    const anchorStart = documentText.indexOf("Approve an additional RUB 14M");
+    const anchorEnd = anchorStart + "Approve an additional RUB 14M in CY'26 for the B2C New Cars test".length;
 
     expect(result.anchors).toHaveLength(1);
     expect(result.unmatchedComments).toEqual([]);
-    expect(result.segments.find((segment) => segment.anchorId === "anchor-1")?.text).toBe(
-      "Approve an additional RUB 14M in CY'26 for the B2C New Cars test",
-    );
+    expect(result.segments.find((segment) => segment.anchorId === "anchor-1")).toMatchObject({
+      text: "Approve an additional RUB 14M in CY'26 for the B2C New Cars test",
+      start: anchorStart,
+      end: anchorEnd,
+    });
   });
 
   it("anchors an over-broad model quote to the strongest exact token window in parsed text", () => {

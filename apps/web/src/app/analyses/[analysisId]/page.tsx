@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
@@ -31,6 +31,7 @@ import {
   predictedRunDisplayError,
   providerMessageContentFromRaw,
   type DocumentCommentAnchor,
+  type DocumentCommentSegment,
   type LayeredGateCheck,
   type LayeredGateLayer2Check,
   type DevilsAdvocateRoleComment,
@@ -783,6 +784,44 @@ function DocumentCommentsPanel({
     });
   }
 
+  function renderDocumentSegment(segment: DocumentCommentSegment, key: string, text = segment.text): ReactNode {
+    if (!text) {
+      return null;
+    }
+    const content = renderDocumentSegmentText(text);
+
+    if (!segment.anchorId) {
+      return <span key={key}>{content}</span>;
+    }
+
+    return (
+      <span
+        aria-pressed={activeAnchorId === segment.anchorId}
+        className={
+          activeAnchorId === segment.anchorId
+            ? `analysis-document-anchor analysis-document-anchor--${segment.tone} analysis-document-anchor--active`
+            : `analysis-document-anchor analysis-document-anchor--${segment.tone}`
+        }
+        data-count={segment.commentCount}
+        key={key}
+        ref={(element) => {
+          anchorRefs.current[segment.anchorId || ""] = element;
+        }}
+        role="button"
+        tabIndex={0}
+        onClick={() => selectAnchor(segment.anchorId, "document")}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectAnchor(segment.anchorId, "document");
+          }
+        }}
+      >
+        {content}
+      </span>
+    );
+  }
+
   if (!run) {
     return (
       <section className="analysis-card stack">
@@ -802,38 +841,7 @@ function DocumentCommentsPanel({
         {parsedTextError ? <div className="analysis-alert">{parsedTextError}</div> : null}
         {!parsedText && !parsedTextError ? <p className="analysis-muted">Loading parsed document text...</p> : null}
         {parsedText ? (
-          <div className="analysis-document-text">
-            {documentComments.segments.map((segment) =>
-              segment.anchorId ? (
-                <span
-                  aria-pressed={activeAnchorId === segment.anchorId}
-                  className={
-                    activeAnchorId === segment.anchorId
-                      ? `analysis-document-anchor analysis-document-anchor--${segment.tone} analysis-document-anchor--active`
-                      : `analysis-document-anchor analysis-document-anchor--${segment.tone}`
-                  }
-                  data-count={segment.commentCount}
-                  key={segment.id}
-                  ref={(element) => {
-                    anchorRefs.current[segment.anchorId || ""] = element;
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => selectAnchor(segment.anchorId, "document")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      selectAnchor(segment.anchorId, "document");
-                    }
-                  }}
-                >
-                  {segment.text}
-                </span>
-              ) : (
-                <span key={segment.id}>{segment.text}</span>
-              ),
-            )}
-          </div>
+          <DocumentMarkdownText segments={documentComments.segments} renderSegment={renderDocumentSegment} />
         ) : null}
       </article>
 
@@ -903,6 +911,334 @@ function DocumentCommentsPanel({
       </aside>
     </section>
   );
+}
+
+type DocumentSegmentRenderer = (segment: DocumentCommentSegment, key: string, text?: string) => ReactNode;
+
+type DocumentMarkdownLine = {
+  text: string;
+  start: number;
+  end: number;
+};
+
+type DocumentMarkdownTableCell = {
+  text: string;
+  start: number;
+  end: number;
+};
+
+function DocumentMarkdownText({
+  segments,
+  renderSegment,
+}: {
+  segments: DocumentCommentSegment[];
+  renderSegment: DocumentSegmentRenderer;
+}) {
+  const source = segments.map((segment) => segment.text).join("");
+  const lines = splitDocumentMarkdownLines(source);
+  const blocks: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.text.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    const headingMatch = /^(\s*)(#{1,6})(\s+)(.+)$/.exec(line.text);
+    if (headingMatch) {
+      const level = headingMatch[2].length;
+      const contentStart = line.start + headingMatch[1].length + headingMatch[2].length + headingMatch[3].length;
+      blocks.push(
+        <DocumentHeading level={level} key={`heading-${index}`}>
+          {renderDocumentRange(segments, contentStart, line.end, renderSegment, `heading-${index}`)}
+        </DocumentHeading>,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (isDocumentMarkdownTableRow(line.text) && index + 1 < lines.length && isDocumentMarkdownTableSeparator(lines[index + 1].text)) {
+      const headers = splitDocumentMarkdownTableRow(line);
+      const rows: DocumentMarkdownTableCell[][] = [];
+      index += 2;
+      while (index < lines.length && isDocumentMarkdownTableRow(lines[index].text)) {
+        rows.push(splitDocumentMarkdownTableRow(lines[index]));
+        index += 1;
+      }
+      blocks.push(
+        <DocumentMarkdownTable
+          headers={headers}
+          key={`table-${index}`}
+          renderSegment={renderSegment}
+          rows={rows}
+          segments={segments}
+        />,
+      );
+      continue;
+    }
+
+    const unorderedMatch = /^(\s*)[-*+]\s+(.+)$/.exec(line.text);
+    if (unorderedMatch) {
+      const items: Array<{ line: DocumentMarkdownLine; contentStart: number }> = [];
+      while (index < lines.length) {
+        const match = /^(\s*)[-*+]\s+(.+)$/.exec(lines[index].text);
+        if (!match) {
+          break;
+        }
+        items.push({
+          line: lines[index],
+          contentStart: lines[index].start + match[1].length + 2,
+        });
+        index += 1;
+      }
+      blocks.push(
+        <ul className="analysis-document-list" key={`ul-${index}`}>
+          {items.map((item, itemIndex) => (
+            <li key={`ul-${itemIndex}-${item.line.start}`}>
+              {renderDocumentRange(segments, item.contentStart, item.line.end, renderSegment, `ul-${itemIndex}`)}
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    const orderedMatch = /^(\s*)(\d+)[.)]\s+(.+)$/.exec(line.text);
+    if (orderedMatch) {
+      const items: Array<{ line: DocumentMarkdownLine; contentStart: number }> = [];
+      const start = Number.parseInt(orderedMatch[2], 10);
+      while (index < lines.length) {
+        const match = /^(\s*)(\d+)[.)]\s+(.+)$/.exec(lines[index].text);
+        if (!match) {
+          break;
+        }
+        items.push({
+          line: lines[index],
+          contentStart: lines[index].start + match[1].length + match[2].length + 2,
+        });
+        index += 1;
+      }
+      blocks.push(
+        <ol className="analysis-document-list" key={`ol-${index}`} start={start === 1 ? undefined : start}>
+          {items.map((item, itemIndex) => (
+            <li key={`ol-${itemIndex}-${item.line.start}`}>
+              {renderDocumentRange(segments, item.contentStart, item.line.end, renderSegment, `ol-${itemIndex}`)}
+            </li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const paragraphLines: DocumentMarkdownLine[] = [];
+    while (index < lines.length && lines[index].text.trim() && !isDocumentMarkdownBlockStart(lines, index)) {
+      paragraphLines.push(lines[index]);
+      index += 1;
+    }
+    if (!paragraphLines.length) {
+      paragraphLines.push(line);
+      index += 1;
+    }
+    blocks.push(
+      <p className="analysis-document-paragraph" key={`paragraph-${index}`}>
+        {paragraphLines.map((paragraphLine, lineIndex) => (
+          <span key={`paragraph-line-${paragraphLine.start}`}>
+            {lineIndex > 0 ? <br /> : null}
+            {renderDocumentRange(segments, paragraphLine.start, paragraphLine.end, renderSegment, `paragraph-${lineIndex}`)}
+          </span>
+        ))}
+      </p>,
+    );
+  }
+
+  return <div className="analysis-document-text analysis-document-markdown">{blocks}</div>;
+}
+
+function DocumentHeading({ children, level }: { children: ReactNode; level: number }) {
+  const className = `analysis-document-heading analysis-document-heading-${level}`;
+  switch (level) {
+    case 1:
+      return <h1 className={className}>{children}</h1>;
+    case 2:
+      return <h2 className={className}>{children}</h2>;
+    case 3:
+      return <h3 className={className}>{children}</h3>;
+    case 4:
+      return <h4 className={className}>{children}</h4>;
+    case 5:
+      return <h5 className={className}>{children}</h5>;
+    default:
+      return <h6 className={className}>{children}</h6>;
+  }
+}
+
+function DocumentMarkdownTable({
+  headers,
+  rows,
+  segments,
+  renderSegment,
+}: {
+  headers: DocumentMarkdownTableCell[];
+  rows: DocumentMarkdownTableCell[][];
+  segments: DocumentCommentSegment[];
+  renderSegment: DocumentSegmentRenderer;
+}) {
+  const columnKinds = headers.map((header) => documentMarkdownTableColumnKind(header.text));
+
+  return (
+    <div className="analysis-document-table-scroll">
+      <table className="analysis-document-table">
+        <thead>
+          <tr>
+            {headers.map((header, index) => (
+              <th className={`analysis-document-col--${columnKinds[index]}`} key={`header-${index}-${header.start}`}>
+                {renderDocumentRange(segments, header.start, header.end, renderSegment, `table-header-${index}`)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {headers.map((_, cellIndex) => {
+                const cell = row[cellIndex] || { text: "", start: 0, end: 0 };
+                return (
+                  <td className={`analysis-document-col--${columnKinds[cellIndex]}`} key={`cell-${rowIndex}-${cellIndex}`}>
+                    {cell.end > cell.start
+                      ? renderDocumentRange(segments, cell.start, cell.end, renderSegment, `table-cell-${rowIndex}-${cellIndex}`)
+                      : null}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function splitDocumentMarkdownLines(source: string): DocumentMarkdownLine[] {
+  const lines: DocumentMarkdownLine[] = [];
+  let start = 0;
+  for (const text of source.split("\n")) {
+    const end = start + text.length;
+    lines.push({ text, start, end });
+    start = end + 1;
+  }
+  return lines;
+}
+
+function isDocumentMarkdownBlockStart(lines: DocumentMarkdownLine[], index: number): boolean {
+  const line = lines[index];
+  const trimmed = line.text.trim();
+  return (
+    /^#{1,6}\s+/.test(trimmed) ||
+    /^[-*+]\s+/.test(trimmed) ||
+    /^\d+[.)]\s+/.test(trimmed) ||
+    (isDocumentMarkdownTableRow(line.text) && index + 1 < lines.length && isDocumentMarkdownTableSeparator(lines[index + 1].text))
+  );
+}
+
+function isDocumentMarkdownTableRow(line: string): boolean {
+  return splitDocumentMarkdownTableRow({ text: line, start: 0, end: line.length }).length > 1;
+}
+
+function isDocumentMarkdownTableSeparator(line: string): boolean {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line.trim());
+}
+
+function splitDocumentMarkdownTableRow(line: DocumentMarkdownLine): DocumentMarkdownTableCell[] {
+  const cells: DocumentMarkdownTableCell[] = [];
+  let localStart = 0;
+  let localEnd = line.text.length;
+  while (localStart < localEnd && /\s/.test(line.text[localStart])) {
+    localStart += 1;
+  }
+  while (localEnd > localStart && /\s/.test(line.text[localEnd - 1])) {
+    localEnd -= 1;
+  }
+  if (line.text[localStart] === "|") {
+    localStart += 1;
+  }
+  if (line.text[localEnd - 1] === "|") {
+    localEnd -= 1;
+  }
+
+  let cellStart = localStart;
+  for (let offset = localStart; offset < localEnd; offset += 1) {
+    if (line.text[offset] === "|" && line.text[offset - 1] !== "\\") {
+      cells.push(trimDocumentMarkdownTableCell(line, cellStart, offset));
+      cellStart = offset + 1;
+    }
+  }
+  cells.push(trimDocumentMarkdownTableCell(line, cellStart, localEnd));
+  return cells;
+}
+
+function trimDocumentMarkdownTableCell(line: DocumentMarkdownLine, localStart: number, localEnd: number): DocumentMarkdownTableCell {
+  let start = localStart;
+  let end = localEnd;
+  while (start < end && /\s/.test(line.text[start])) {
+    start += 1;
+  }
+  while (end > start && /\s/.test(line.text[end - 1])) {
+    end -= 1;
+  }
+  return {
+    text: line.text.slice(start, end),
+    start: line.start + start,
+    end: line.start + end,
+  };
+}
+
+function renderDocumentRange(
+  segments: DocumentCommentSegment[],
+  start: number,
+  end: number,
+  renderSegment: DocumentSegmentRenderer,
+  keyPrefix: string,
+): ReactNode[] {
+  return segments
+    .filter((segment) => segment.end > start && segment.start < end)
+    .map((segment) => {
+      const segmentStart = Math.max(start, segment.start);
+      const segmentEnd = Math.min(end, segment.end);
+      const text = segment.text.slice(segmentStart - segment.start, segmentEnd - segment.start);
+      return renderSegment(segment, `${keyPrefix}-${segment.id}-${segmentStart}`, text);
+    });
+}
+
+function renderDocumentSegmentText(text: string): ReactNode[] {
+  return text
+    .replace(/\\([|])/g, "$1")
+    .split(/(<br\s*\/?>)/gi)
+    .map((part, index) => (/^<br\s*\/?>$/i.test(part) ? <br key={`br-${index}`} /> : part));
+}
+
+function documentMarkdownTableColumnKind(header: string): "index" | "token" | "anchor" | "text" {
+  const normalized = header.trim().toLowerCase().replace(/[^a-z0-9#]+/g, "_");
+
+  if (normalized === "#" || normalized === "no" || normalized === "n" || normalized === "id") {
+    return "index";
+  }
+  if (
+    normalized.includes("type") ||
+    normalized.includes("status") ||
+    normalized.includes("severity") ||
+    normalized.includes("verdict") ||
+    normalized.includes("risk")
+  ) {
+    return "token";
+  }
+  if (normalized.includes("anchor") || normalized.includes("source") || normalized.includes("citation")) {
+    return "anchor";
+  }
+  return "text";
 }
 
 function RoleAvatarIcon() {
@@ -3277,7 +3613,121 @@ const paperAnalysisOverrides = `
   font-size: 15px;
   line-height: 1.72;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+}
+
+.analysis-document-markdown {
+  display: grid;
+  gap: 14px;
+}
+
+.analysis-document-markdown > :first-child {
+  margin-top: 0;
+}
+
+.analysis-document-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.analysis-document-heading {
+  margin: 8px 0 2px;
+  color: #111827;
+  font-weight: 850;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.analysis-document-heading-1 {
+  font-size: 24px;
+}
+
+.analysis-document-heading-2 {
+  font-size: 21px;
+}
+
+.analysis-document-heading-3 {
+  font-size: 18px;
+}
+
+.analysis-document-heading-4,
+.analysis-document-heading-5,
+.analysis-document-heading-6 {
+  font-size: 16px;
+}
+
+.analysis-document-paragraph {
+  margin: 0;
+}
+
+.analysis-document-list {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.analysis-document-list li {
+  margin: 4px 0;
+}
+
+.analysis-document-table-scroll {
+  max-width: 100%;
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e5eaf0;
+  border-radius: 8px;
+  background: #ffffff;
+  -webkit-overflow-scrolling: touch;
+}
+
+.analysis-document-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analysis-document-table th,
+.analysis-document-table td {
+  border-bottom: 1px solid #edf1f5;
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.analysis-document-table th {
+  background: #fbfcfd;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.analysis-document-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.analysis-document-col--index {
+  width: 48px;
+  min-width: 48px;
+  max-width: 64px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.analysis-document-col--token {
+  min-width: 112px;
+  max-width: 156px;
+}
+
+.analysis-document-col--anchor {
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.analysis-document-col--text {
+  min-width: 320px;
+  max-width: 620px;
 }
 
 .analysis-document-anchor {
