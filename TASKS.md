@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Port DOCX structured markdown extraction from Doc_challanger into the
+  worker parser: `.docx` / `.dotx` now use a deterministic OOXML zip parser
+  that preserves heading styles, numbered lists, table markdown, escaped pipes,
+  `<br>` line breaks, hyperlinks from relationships, gridSpan placeholders, and
+  ignores deleted/moveFrom/instrText Word nodes. DOCX `parsed_text` now stores
+  the structured markdown contract, while PDF remains Docling-first. Verified
+  `.venv/bin/python -m pytest apps/worker/tests/test_document_parsers.py -q`
+  (`12 passed`), `.venv/bin/python -m pytest
+  apps/worker/tests/test_parse_document_job.py -q` (`2 passed`, one existing
+  passlib/argon2 deprecation warning), and `.venv/bin/python -m pytest
+  apps/worker/tests -q` (`77 passed`, same warning).
 - [x] Render DOCX-derived markdown inside analysis `Document comments`: the
   analysis document/comment view now preserves headings, lists, markdown
   tables, escaped pipes, and `<br>` line breaks while keeping Devil's Advocate

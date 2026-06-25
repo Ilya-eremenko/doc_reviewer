@@ -22,11 +22,6 @@ def parse_file_to_document(path: Path | str) -> ParsedDocument:
     if extension in {".txt", ".md"}:
         return parse_text_document(document_path)
     if extension == ".docx":
-        if docling_parser.is_docling_available():
-            try:
-                return docling_parser.parse_docling_document(document_path)
-            except docling_parser.DoclingParserUnavailableError:
-                pass
         return parse_docx_document(document_path)
     if extension == ".dotx":
         return parse_docx_document(document_path)

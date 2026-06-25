@@ -82,8 +82,8 @@ def test_parse_docx_extracts_paragraphs_and_tables(tmp_path, monkeypatch):
     parsed = parse_file(path)
 
     assert "Gate 2 investment defense" in parsed
-    assert "Metric\tValue" in parsed
-    assert "Traction\tGrowing" in parsed
+    assert "| Metric | Value |" in parsed
+    assert "| Traction | Growing |" in parsed
 
 
 def test_parse_docx_returns_markdown_tables_and_quality(tmp_path, monkeypatch):
@@ -100,11 +100,64 @@ def test_parse_docx_returns_markdown_tables_and_quality(tmp_path, monkeypatch):
 
     parsed = parse_file_to_document(path)
 
-    assert parsed.parser.name == "python-docx"
+    assert parsed.parser.name == "ooxml-docx"
     assert parsed.quality.table_count == 1
     assert [block.type for block in parsed.blocks] == ["heading", "table"]
     assert "| Metric | Value |" in parsed.markdown
     assert "| Traction | Growing |" in parsed.markdown
+
+
+def test_parse_docx_preserves_structured_markdown_from_word_xml(tmp_path, monkeypatch):
+    monkeypatch.setattr(docling_parser, "is_docling_available", lambda: False)
+    path = tmp_path / "structured.docx"
+    _write_structured_docx(path)
+
+    parsed = parse_file_to_document(path)
+
+    expected_markdown = [
+        "# Proposal",
+        "1. First metric",
+        "2. Second metric<br>with continuation",
+        "| Metric | Value |",
+        "| --- | --- |",
+        "| Baseline | 10% \\| 20% |",
+        "| Evidence | [external source](https://example.com/report) |",
+        "| Spanning note |  |",
+    ]
+    for expected in expected_markdown:
+        assert expected in parsed.plain_text
+        assert expected in parsed.markdown
+    assert parsed.plain_text == parsed.markdown
+    assert parsed.quality.table_count == 1
+
+
+def test_parse_docx_ignores_word_revision_and_field_nodes(tmp_path, monkeypatch):
+    monkeypatch.setattr(docling_parser, "is_docling_available", lambda: False)
+    path = tmp_path / "structured.docx"
+    _write_structured_docx(path)
+
+    parsed = parse_file(path)
+
+    assert "Visible paragraph" in parsed
+    assert "deleted text" not in parsed
+    assert "moved text" not in parsed
+    assert "PAGE" not in parsed
+
+
+def test_parse_docx_uses_builtin_parser_when_docling_available(tmp_path, monkeypatch):
+    path = tmp_path / "structured.docx"
+    _write_structured_docx(path)
+
+    def fail_if_docling_is_used(path: Path) -> ParsedDocument:
+        raise AssertionError("DOCX should use the deterministic OOXML parser before Docling")
+
+    monkeypatch.setattr(docling_parser, "is_docling_available", lambda: True)
+    monkeypatch.setattr(docling_parser, "parse_docling_document", fail_if_docling_is_used)
+
+    parsed = parse_file_to_document(path)
+
+    assert "# Proposal" in parsed.plain_text
+    assert parsed.parser.options["source"] == "zipfile.ElementTree"
 
 
 def test_parse_dotx_uses_docx_parser(tmp_path):
@@ -205,6 +258,96 @@ def _pdf_with_text_pages(page_texts: list[str]) -> bytes:
         ).encode("ascii")
     )
     return bytes(pdf)
+
+
+def _write_structured_docx(path: Path) -> None:
+    content_types_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
+</Types>
+"""
+    root_rels_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>
+"""
+    document_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <w:body>
+    <w:p>
+      <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+      <w:r><w:t>Proposal</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr>
+      <w:r><w:t>First metric</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="7"/></w:numPr></w:pPr>
+      <w:r><w:t>Second metric</w:t><w:br/><w:t>with continuation</w:t></w:r>
+    </w:p>
+    <w:p>
+      <w:r><w:t>Visible paragraph</w:t></w:r>
+      <w:del><w:r><w:t>deleted text</w:t></w:r></w:del>
+      <w:moveFrom><w:r><w:t>moved text</w:t></w:r></w:moveFrom>
+      <w:r><w:instrText>PAGE</w:instrText></w:r>
+    </w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Metric</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Value</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Baseline</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>10% | 20%</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>Evidence</w:t></w:r></w:p></w:tc>
+        <w:tc>
+          <w:p>
+            <w:hyperlink r:id="rId5"><w:r><w:t>external source</w:t></w:r></w:hyperlink>
+          </w:p>
+        </w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc>
+          <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+          <w:p><w:r><w:t>Spanning note</w:t></w:r></w:p>
+        </w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>
+"""
+    styles_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>
+</w:styles>
+"""
+    numbering_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="3">
+    <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="7"><w:abstractNumId w:val="3"/></w:num>
+</w:numbering>
+"""
+    relationships_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/report" TargetMode="External"/>
+</Relationships>
+"""
+    with ZipFile(path, "w", ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", content_types_xml)
+        archive.writestr("_rels/.rels", root_rels_xml)
+        archive.writestr("word/document.xml", document_xml)
+        archive.writestr("word/styles.xml", styles_xml)
+        archive.writestr("word/numbering.xml", numbering_xml)
+        archive.writestr("word/_rels/document.xml.rels", relationships_xml)
 
 
 def _rewrite_main_content_type(path: Path, *, from_value: str, to_value: str) -> None:
