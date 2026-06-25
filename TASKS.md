@@ -31,7 +31,11 @@ Primary plan index:
   (`12 passed`), `.venv/bin/python -m pytest
   apps/worker/tests/test_parse_document_job.py -q` (`2 passed`, one existing
   passlib/argon2 deprecation warning), and `.venv/bin/python -m pytest
-  apps/worker/tests -q` (`77 passed`, same warning).
+  apps/worker/tests -q` (`77 passed`, same warning). Committed as `15ca6c5`,
+  pushed to `main`, synced a clean release tree to `178.250.159.250`, rebuilt
+  production `worker`, and verified production container status, worker logs,
+  worker parser import, server-local `/health`, and edge
+  `/doc-challanger/api/health`.
 - [x] Render DOCX-derived markdown inside analysis `Document comments`: the
   analysis document/comment view now preserves headings, lists, markdown
   tables, escaped pipes, and `<br>` line breaks while keeping Devil's Advocate
