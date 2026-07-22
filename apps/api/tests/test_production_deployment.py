@@ -1,7 +1,13 @@
+import os
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(
+    os.environ.get(
+        "PRODUCTION_DEPLOY_REPO_ROOT",
+        str(Path(__file__).resolve().parents[3]),
+    )
+)
 
 
 def test_production_compose_uses_release_tagged_application_images() -> None:
