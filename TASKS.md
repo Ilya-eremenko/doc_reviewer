@@ -30,9 +30,11 @@ Primary plan index:
   invalidates an earlier clean marker, marker creation races receive a bounded
   retry, and pending checks are retried from the verification workflow's
   completion event instead of a long watcher. Write permissions are scoped per
-  job, the workflow verifies the exact Codex GitHub App identity, and production
-  dispatches use a concurrency group separate from PR verification. Activation
-  is pending PR merge and successful GitHub Actions completion.
+  job; immediately before merge, the workflow revalidates that no newer Codex
+  findings or PR reopen event supersedes the clean result. The workflow verifies
+  the exact Codex GitHub App identity, and production dispatches use a
+  concurrency group separate from PR verification. Activation is pending PR
+  merge and successful GitHub Actions completion.
 - [x] Automate production releases after verified merges to `main`: added a
   GitHub Actions verification/deploy workflow, release-tagged production images,
   a root-owned server deployer with a restricted SSH entrypoint, immutable

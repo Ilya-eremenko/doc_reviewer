@@ -326,9 +326,97 @@ jobs:
               ;;
           esac
 
+      - name: Revalidate the latest Codex result
+        id: latest_review
+        if: steps.verification.outputs.passed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.clean_head.outputs.pr_number }}
+          REVIEWED_HEAD_SHA: ${{ steps.clean_head.outputs.reviewed_head_sha }}
+        run: |
+          revalidate_latest_codex_result() {
+            comments_json="$(
+              gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" --paginate --slurp
+            )"
+            reviews_json="$(
+              gh api "repos/$GH_REPO/pulls/$PR_NUMBER/reviews" --paginate --slurp
+            )"
+            events_json="$(
+              gh api "repos/$GH_REPO/issues/$PR_NUMBER/events" --paginate --slurp
+            )"
+
+            latest_clean_at="$(
+              printf '%s\n' "$comments_json" \
+                | jq -r --arg head "$REVIEWED_HEAD_SHA" '
+                    add
+                    | map(select(
+                        .user.login == "chatgpt-codex-connector[bot]" and
+                        .user.id == 199175422 and
+                        .user.type == "Bot" and
+                        (.body | startswith("Codex Review: Didn\u0027t find any major issues.")) and
+                        (.body | test("\\*\\*Reviewed commit:\\*\\* `[0-9a-f]{7,40}`"))
+                      ))
+                    | map(. + {
+                        reviewed_prefix: (
+                          .body
+                          | capture("\\*\\*Reviewed commit:\\*\\* `(?<sha>[0-9a-f]{7,40})`")
+                          | .sha
+                        )
+                      })
+                    | map(select(.reviewed_prefix as $prefix | $head | startswith($prefix)))
+                    | map(.created_at)
+                    | max // empty
+                  '
+            )"
+
+            latest_findings_at="$(
+              printf '%s\n' "$reviews_json" \
+                | jq -r --arg head "$REVIEWED_HEAD_SHA" '
+                    add
+                    | map(select(
+                        .user.login == "chatgpt-codex-connector[bot]" and
+                        .user.id == 199175422 and
+                        .user.type == "Bot" and
+                        .commit_id == $head
+                      ))
+                    | map(.submitted_at)
+                    | max // empty
+                  '
+            )"
+
+            latest_reopen_at="$(
+              printf '%s\n' "$events_json" \
+                | jq -r 'add | map(select(.event == "reopened")) | map(.created_at) | max // empty'
+            )"
+
+            if [ -z "$latest_clean_at" ]; then
+              echo "No trusted clean Codex result exists for the current head."
+              return 1
+            fi
+
+            if [ -n "$latest_findings_at" ] && \
+              [[ "$latest_clean_at" < "$latest_findings_at" || "$latest_clean_at" == "$latest_findings_at" ]]; then
+              echo "A newer Codex review contains findings."
+              return 1
+            fi
+
+            if [ -n "$latest_reopen_at" ] && \
+              [[ "$latest_clean_at" < "$latest_reopen_at" || "$latest_clean_at" == "$latest_reopen_at" ]]; then
+              echo "The pull request was reopened after its clean Codex review."
+              return 1
+            fi
+          }
+
+          sleep 15
+          revalidate_latest_codex_result
+          sleep 5
+          revalidate_latest_codex_result
+          echo "authorized=true" >> "$GITHUB_OUTPUT"
+
       - name: Merge the exact commit reviewed by Codex
         id: merge
-        if: steps.verification.outputs.passed == 'true'
+        if: steps.latest_review.outputs.authorized == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -362,7 +450,7 @@ jobs:
           echo "merge_commit_sha=$merge_commit_sha" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch production deployment for the merged commit
-        if: steps.verification.outputs.passed == 'true'
+        if: steps.latest_review.outputs.authorized == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

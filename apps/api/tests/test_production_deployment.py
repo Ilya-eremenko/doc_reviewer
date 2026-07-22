@@ -63,6 +63,12 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert "checks: read" in workflow
     assert "--json name,bucket" in workflow
     assert "workflow_run will retry" in workflow
+    assert "revalidate_latest_codex_result" in workflow
+    assert 'repos/$GH_REPO/pulls/$PR_NUMBER/reviews' in workflow
+    assert 'repos/$GH_REPO/issues/$PR_NUMBER/events' in workflow
+    assert 'A newer Codex review contains findings.' in workflow
+    assert 'The pull request was reopened after its clean Codex review.' in workflow
+    assert "steps.latest_review.outputs.authorized == 'true'" in workflow
     assert 'if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]' in workflow
     assert '--match-head-commit "$REVIEWED_HEAD_SHA"' in workflow
     assert "--squash" in workflow
