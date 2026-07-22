@@ -38,13 +38,14 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
         REPO_ROOT / ".github/workflows/codex-auto-merge.yml"
     ).read_text()
 
-    assert "pull_request_review:\n    types:\n      - submitted" in workflow
-    assert "github.event.review.user.login == 'chatgpt-codex-connector[bot]'" in workflow
-    assert "github.event.review.user.id == 199175422" in workflow
-    assert "github.event.review.user.type == 'Bot'" in workflow
-    assert "github.event.review.commit_id == github.event.pull_request.head.sha" in workflow
-    assert "/reviews/$REVIEW_ID/comments?per_page=100" in workflow
-    assert 'if [ "$comment_count" -ne 0 ]' in workflow
+    assert "issue_comment:\n    types:\n      - created" in workflow
+    assert "github.event.issue.pull_request != null" in workflow
+    assert "github.event.comment.user.login == 'chatgpt-codex-connector[bot]'" in workflow
+    assert "github.event.comment.user.id == 199175422" in workflow
+    assert "github.event.comment.user.type == 'Bot'" in workflow
+    assert "Codex Review: Didn't find any major issues." in workflow
+    assert "reviewed_head_prefix" in workflow
+    assert '"$reviewed_head_prefix"*' in workflow
     assert 'grep -Fxq "Verify release"' in workflow
     assert "--required --watch" in workflow
     assert 'if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]' in workflow
@@ -53,6 +54,7 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert "actions: write" in workflow
     assert "gh workflow run deploy-production.yml" in workflow
     assert '-f release_sha="$MERGE_COMMIT_SHA"' in workflow
+    assert "pull_request_review" not in workflow
     assert "pull_request_target" not in workflow
 
 

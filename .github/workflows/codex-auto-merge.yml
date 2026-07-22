@@ -1,9 +1,9 @@
 name: Merge after clean Codex review
 
 on:
-  pull_request_review:
+  issue_comment:
     types:
-      - submitted
+      - created
 
 permissions:
   actions: write
@@ -14,11 +14,10 @@ jobs:
   merge-clean-codex-review:
     name: Merge clean Codex-reviewed PR
     if: >-
-      github.event.review.user.login == 'chatgpt-codex-connector[bot]' &&
-      github.event.review.user.id == 199175422 &&
-      github.event.review.user.type == 'Bot' &&
-      github.event.review.commit_id == github.event.pull_request.head.sha &&
-      github.event.pull_request.draft == false
+      github.event.issue.pull_request != null &&
+      github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+      github.event.comment.user.id == 199175422 &&
+      github.event.comment.user.type == 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -27,38 +26,59 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEW_ID: ${{ github.event.review.id }}
-          REVIEW_STATE: ${{ github.event.review.state }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          CODEX_REVIEW_BODY: ${{ github.event.comment.body }}
         run: |
-          if [ "$REVIEW_STATE" = "changes_requested" ]; then
-            echo "Codex requested changes; the pull request will not be merged."
-            echo "clean=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          case "$CODEX_REVIEW_BODY" in
+            "Codex Review: Didn't find any major issues."*) ;;
+            *)
+              echo "The Codex comment is not a clean review result."
+              echo "clean=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
 
-          comment_count="$(
-            gh api \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "repos/$GH_REPO/pulls/$PR_NUMBER/reviews/$REVIEW_ID/comments?per_page=100" \
-              --jq 'length'
+          reviewed_head_prefix="$(
+            printf '%s\n' "$CODEX_REVIEW_BODY" \
+              | sed -nE 's/^\*\*Reviewed commit:\*\* `([0-9a-f]{7,40})`$/\1/p' \
+              | head -n 1
           )"
 
-          if [ "$comment_count" -ne 0 ]; then
-            echo "Codex left $comment_count inline review comment(s); the pull request will not be merged."
+          if [ -z "$reviewed_head_prefix" ]; then
+            echo "The clean Codex comment does not identify its reviewed commit."
+            exit 1
+          fi
+
+          current_head_sha="$(
+            gh pr view "$PR_NUMBER" \
+              --repo "$GH_REPO" \
+              --json headRefOid,isDraft \
+              --jq 'select(.isDraft == false) | .headRefOid'
+          )"
+
+          if [ -z "$current_head_sha" ]; then
+            echo "The pull request is draft or has no readable head commit."
             echo "clean=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          case "$current_head_sha" in
+            "$reviewed_head_prefix"*) ;;
+            *)
+              echo "The pull request changed after the clean Codex review."
+              exit 1
+              ;;
+          esac
+
           echo "clean=true" >> "$GITHUB_OUTPUT"
+          echo "reviewed_head_sha=$current_head_sha" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the required release verification
         if: steps.codex_review.outputs.clean == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           release_check_found=false
           for _ in $(seq 1 12); do
@@ -82,8 +102,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEWED_HEAD_SHA: ${{ github.event.review.commit_id }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REVIEWED_HEAD_SHA: ${{ steps.codex_review.outputs.reviewed_head_sha }}
         run: |
           current_head_sha="$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')"
 
