@@ -91,10 +91,53 @@ jobs:
             "Codex Review: Didn't find any major issues."*) ;;
             *)
               echo "The Codex comment is not a clean review result."
-              current_head_sha="$(
-                gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid'
+              blocked_head_prefix="$(
+                printf '%s\n' "$CODEX_REVIEW_BODY" \
+                  | sed -nE 's/^\*\*Reviewed commit:\*\* `([0-9a-f]{7,40})`$/\1/p' \
+                  | head -n 1
               )"
-              stale_marker="<!-- codex-clean-head:$current_head_sha -->"
+
+              if [ -z "$blocked_head_prefix" ]; then
+                echo "The non-clean Codex comment does not identify its reviewed commit."
+                echo "clean=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+
+              blocked_heads=()
+              for _ in $(seq 1 12); do
+                readarray -t recorded_heads < <(
+                  gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+                    --paginate \
+                    --jq '.[] | select(
+                      .user.login == "github-actions[bot]" and
+                      .user.id == 41898282 and
+                      .user.type == "Bot" and
+                      (.body | test("^<!-- codex-review-head:[0-9a-f]{40} -->$"))
+                    ) | .body' \
+                    | sed -nE 's/^<!-- codex-review-head:([0-9a-f]{40}) -->$/\1/p' \
+                    | sort -u
+                )
+
+                blocked_heads=()
+                for recorded_head in "${recorded_heads[@]}"; do
+                  case "$recorded_head" in
+                    "$blocked_head_prefix"*) blocked_heads+=("$recorded_head") ;;
+                  esac
+                done
+
+                if [ "${#blocked_heads[@]}" -ne 0 ]; then
+                  break
+                fi
+                sleep 5
+              done
+
+              if [ "${#blocked_heads[@]}" -ne 1 ]; then
+                echo "The abbreviated blocked SHA does not map to one trusted full head SHA."
+                exit 1
+              fi
+
+              blocked_head_sha="${blocked_heads[0]}"
+              stale_marker="<!-- codex-clean-head:$blocked_head_sha -->"
               readarray -t stale_marker_ids < <(
                 gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
                   --paginate \
@@ -370,6 +413,44 @@ jobs:
                   '
             )"
 
+            trusted_clean_marker_count="$(
+              printf '%s\n' "$comments_json" \
+                | jq -r --arg marker "<!-- codex-clean-head:$REVIEWED_HEAD_SHA -->" '
+                    add
+                    | map(select(
+                        .user.login == "github-actions[bot]" and
+                        .user.id == 41898282 and
+                        .user.type == "Bot" and
+                        .body == $marker
+                      ))
+                    | length
+                  '
+            )"
+
+            latest_non_clean_comment_at="$(
+              printf '%s\n' "$comments_json" \
+                | jq -r --arg head "$REVIEWED_HEAD_SHA" '
+                    add
+                    | map(select(
+                        .user.login == "chatgpt-codex-connector[bot]" and
+                        .user.id == 199175422 and
+                        .user.type == "Bot" and
+                        (.body | startswith("Codex Review: Didn\u0027t find any major issues.") | not) and
+                        (.body | test("\\*\\*Reviewed commit:\\*\\* `[0-9a-f]{7,40}`"))
+                      ))
+                    | map(. + {
+                        reviewed_prefix: (
+                          .body
+                          | capture("\\*\\*Reviewed commit:\\*\\* `(?<sha>[0-9a-f]{7,40})`")
+                          | .sha
+                        )
+                      })
+                    | map(select(.reviewed_prefix as $prefix | $head | startswith($prefix)))
+                    | map(.created_at)
+                    | max // empty
+                  '
+            )"
+
             latest_findings_at="$(
               printf '%s\n' "$reviews_json" \
                 | jq -r --arg head "$REVIEWED_HEAD_SHA" '
@@ -385,6 +466,11 @@ jobs:
                   '
             )"
 
+            if [ -n "$latest_non_clean_comment_at" ] && \
+              { [ -z "$latest_findings_at" ] || [[ "$latest_findings_at" < "$latest_non_clean_comment_at" ]]; }; then
+              latest_findings_at="$latest_non_clean_comment_at"
+            fi
+
             latest_reopen_at="$(
               printf '%s\n' "$events_json" \
                 | jq -r 'add | map(select(.event == "reopened")) | map(.created_at) | max // empty'
@@ -392,6 +478,11 @@ jobs:
 
             if [ -z "$latest_clean_at" ]; then
               echo "No trusted clean Codex result exists for the current head."
+              return 1
+            fi
+
+            if [ "$trusted_clean_marker_count" -lt 1 ]; then
+              echo "The clean Codex authorization marker was invalidated."
               return 1
             fi
 

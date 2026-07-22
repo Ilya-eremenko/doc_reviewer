@@ -67,6 +67,11 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert 'repos/$GH_REPO/pulls/$PR_NUMBER/reviews' in workflow
     assert 'repos/$GH_REPO/issues/$PR_NUMBER/events' in workflow
     assert 'A newer Codex review contains findings.' in workflow
+    assert 'blocked_head_prefix' in workflow
+    assert 'stale_marker="<!-- codex-clean-head:$blocked_head_sha -->"' in workflow
+    assert 'trusted_clean_marker_count' in workflow
+    assert 'latest_non_clean_comment_at' in workflow
+    assert 'The clean Codex authorization marker was invalidated.' in workflow
     assert 'The pull request was reopened after its clean Codex review.' in workflow
     assert "steps.latest_review.outputs.authorized == 'true'" in workflow
     assert 'if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]' in workflow

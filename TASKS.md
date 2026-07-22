@@ -31,8 +31,10 @@ Primary plan index:
   retry, and pending checks are retried from the verification workflow's
   completion event instead of a long watcher. Write permissions are scoped per
   job; immediately before merge, the workflow revalidates that no newer Codex
-  findings or PR reopen event supersedes the clean result. The workflow verifies
-  the exact Codex GitHub App identity, and production dispatches use a
+  review/comment findings or PR reopen event supersedes the clean result and
+  that its trusted authorization marker still exists. Non-clean comments
+  invalidate only their own uniquely resolved full commit SHA. The workflow
+  verifies the exact Codex GitHub App identity, and production dispatches use a
   concurrency group separate from PR verification. Activation is pending PR
   merge and successful GitHub Actions completion.
 - [x] Automate production releases after verified merges to `main`: added a
