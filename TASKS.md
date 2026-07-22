@@ -34,9 +34,11 @@ Primary plan index:
   review/comment findings or PR reopen event supersedes the clean result and
   that its trusted authorization marker still exists. Non-clean comments
   invalidate only their own uniquely resolved full commit SHA. The workflow
-  verifies the exact Codex GitHub App identity, and production dispatches use a
-  concurrency group separate from PR verification. Activation is pending PR
-  merge and successful GitHub Actions completion.
+  verifies the exact Codex GitHub App identity, performs its last revalidation
+  in the same step as the guarded merge, and durably queues deployment before
+  merging; the deployment workflow reconciles the resulting merge commit and
+  uses a concurrency group separate from PR verification. Activation is pending
+  PR merge and successful GitHub Actions completion.
 - [x] Automate production releases after verified merges to `main`: added a
   GitHub Actions verification/deploy workflow, release-tagged production images,
   a root-owned server deployer with a restricted SSH entrypoint, immutable

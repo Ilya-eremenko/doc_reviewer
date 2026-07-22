@@ -23,14 +23,18 @@ def test_production_workflow_deploys_only_verified_main_sha() -> None:
 
     assert "push:\n    branches:\n      - main" in workflow
     assert "pull_request:\n    branches:\n      - main" in workflow
-    assert "needs: verify" in workflow
+    assert "needs:\n      - resolve-release\n      - verify" in workflow
     assert "if: github.ref == 'refs/heads/main'" in workflow
     assert "format('gate-challenger-pr-{0}', github.event.pull_request.number)" in workflow
     assert "|| 'gate-challenger-production'" in workflow
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
     assert "release_sha:" in workflow
-    assert "ref: ${{ inputs.release_sha || github.sha }}" in workflow
-    assert "RELEASE_SHA: ${{ inputs.release_sha || github.sha }}" in workflow
+    assert "pull_request_number:" in workflow
+    assert "reviewed_head_sha:" in workflow
+    assert "resolve-release:" in workflow
+    assert "The pull request did not merge within the reconciliation window." in workflow
+    assert "ref: ${{ needs.resolve-release.outputs.release_sha }}" in workflow
+    assert "RELEASE_SHA: ${{ needs.resolve-release.outputs.release_sha }}" in workflow
     assert '"deploy $RELEASE_SHA"' in workflow
     assert "environment:\n      name: production" in workflow
 
@@ -73,13 +77,14 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert 'latest_non_clean_comment_at' in workflow
     assert 'The clean Codex authorization marker was invalidated.' in workflow
     assert 'The pull request was reopened after its clean Codex review.' in workflow
-    assert "steps.latest_review.outputs.authorized == 'true'" in workflow
+    assert "Revalidate, schedule deployment, and merge" in workflow
     assert 'if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]' in workflow
     assert '--match-head-commit "$REVIEWED_HEAD_SHA"' in workflow
     assert "--squash" in workflow
     assert "actions: write" in workflow
     assert "gh workflow run deploy-production.yml" in workflow
-    assert '-f release_sha="$MERGE_COMMIT_SHA"' in workflow
+    assert '-f pull_request_number="$PR_NUMBER"' in workflow
+    assert '-f reviewed_head_sha="$REVIEWED_HEAD_SHA"' in workflow
 
 
 def test_server_deployer_enforces_traceable_release_safety() -> None:
