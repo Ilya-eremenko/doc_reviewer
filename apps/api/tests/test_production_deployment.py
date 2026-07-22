@@ -26,7 +26,10 @@ def test_production_workflow_deploys_only_verified_main_sha() -> None:
     assert "needs: verify" in workflow
     assert "if: github.ref == 'refs/heads/main'" in workflow
     assert "cancel-in-progress: false" in workflow
-    assert '"deploy $GITHUB_SHA"' in workflow
+    assert "release_sha:" in workflow
+    assert "ref: ${{ inputs.release_sha || github.sha }}" in workflow
+    assert "RELEASE_SHA: ${{ inputs.release_sha || github.sha }}" in workflow
+    assert '"deploy $RELEASE_SHA"' in workflow
     assert "environment:\n      name: production" in workflow
 
 
@@ -36,7 +39,9 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     ).read_text()
 
     assert "pull_request_review:\n    types:\n      - submitted" in workflow
-    assert "startsWith(github.event.review.user.login" in workflow
+    assert "github.event.review.user.login == 'chatgpt-codex-connector[bot]'" in workflow
+    assert "github.event.review.user.id == 199175422" in workflow
+    assert "github.event.review.user.type == 'Bot'" in workflow
     assert "github.event.review.commit_id == github.event.pull_request.head.sha" in workflow
     assert "/reviews/$REVIEW_ID/comments?per_page=100" in workflow
     assert 'if [ "$comment_count" -ne 0 ]' in workflow
@@ -45,6 +50,9 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert 'if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]' in workflow
     assert '--match-head-commit "$REVIEWED_HEAD_SHA"' in workflow
     assert "--squash" in workflow
+    assert "actions: write" in workflow
+    assert "gh workflow run deploy-production.yml" in workflow
+    assert '-f release_sha="$MERGE_COMMIT_SHA"' in workflow
     assert "pull_request_target" not in workflow
 
 
