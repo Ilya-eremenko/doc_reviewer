@@ -21,6 +21,12 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Automate clean Codex-reviewed PR merges: enabled repository-wide
+  automatic and exhaustive Codex reviews on every PR update, and added a
+  least-privilege workflow that waits for the required `Verify release` check
+  and squash-merges only a clean Codex-reviewed head commit, with a final SHA
+  guard against post-review pushes. Activation is pending PR merge and
+  successful GitHub Actions completion.
 - [x] Automate production releases after verified merges to `main`: added a
   GitHub Actions verification/deploy workflow, release-tagged production images,
   a root-owned server deployer with a restricted SSH entrypoint, immutable

@@ -1,0 +1,94 @@
+name: Merge after clean Codex review
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-clean-codex-review:
+    name: Merge clean Codex-reviewed PR
+    if: >-
+      startsWith(github.event.review.user.login, 'chatgpt-codex-connector') &&
+      github.event.review.commit_id == github.event.pull_request.head.sha &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Confirm that Codex left no blocking findings
+        id: codex_review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_ID: ${{ github.event.review.id }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+        run: |
+          if [ "$REVIEW_STATE" = "changes_requested" ]; then
+            echo "Codex requested changes; the pull request will not be merged."
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          comment_count="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/$GH_REPO/pulls/$PR_NUMBER/reviews/$REVIEW_ID/comments?per_page=100" \
+              --jq 'length'
+          )"
+
+          if [ "$comment_count" -ne 0 ]; then
+            echo "Codex left $comment_count inline review comment(s); the pull request will not be merged."
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "clean=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the required release verification
+        if: steps.codex_review.outputs.clean == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          release_check_found=false
+          for _ in $(seq 1 12); do
+            if gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --json name --jq '.[].name' | grep -Fxq "Verify release"; then
+              release_check_found=true
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$release_check_found" != "true" ]; then
+            echo "Required check 'Verify release' is not configured for this pull request."
+            exit 1
+          fi
+
+          gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 10 --fail-fast
+
+      - name: Merge the exact commit reviewed by Codex
+        if: steps.codex_review.outputs.clean == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEWED_HEAD_SHA: ${{ github.event.review.commit_id }}
+        run: |
+          current_head_sha="$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')"
+
+          if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]; then
+            echo "The pull request changed after Codex review; waiting for a fresh review."
+            exit 1
+          fi
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GH_REPO" \
+            --squash \
+            --match-head-commit "$REVIEWED_HEAD_SHA"
