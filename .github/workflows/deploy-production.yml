@@ -39,7 +39,10 @@ jobs:
       - name: Run web tests and production build
         run: |
           docker build --target builder --tag gate-challenger-web-ci --file apps/web/Dockerfile.prod apps/web
-          docker run --rm gate-challenger-web-ci npm run test
+          docker run --rm \
+            --env PRODUCTION_DEPLOY_REPO_ROOT=/workspace \
+            --volume "$PWD:/workspace:ro" \
+            gate-challenger-web-ci npm run test
 
       - name: Validate production Compose configuration
         env:
