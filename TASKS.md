@@ -26,11 +26,13 @@ Primary plan index:
   least-privilege workflow that records every full PR head SHA as trusted
   metadata, resolves Codex's abbreviated clean-review SHA only when it maps to
   exactly one recorded head, and squash-merges only that unchanged commit after
-  the required `Verify release` check passes. Pending checks are retried from
-  the verification workflow's completion event instead of a bounded watcher;
-  the workflow verifies the exact Codex GitHub App identity and explicitly
-  dispatches production deployment for the resulting merge SHA. Activation is
-  pending PR merge and successful GitHub Actions completion.
+  the required `Verify release` check passes. A later Codex review with findings
+  invalidates an earlier clean marker, marker creation races receive a bounded
+  retry, and pending checks are retried from the verification workflow's
+  completion event instead of a long watcher. Write permissions are scoped per
+  job, the workflow verifies the exact Codex GitHub App identity, and production
+  dispatches use a concurrency group separate from PR verification. Activation
+  is pending PR merge and successful GitHub Actions completion.
 - [x] Automate production releases after verified merges to `main`: added a
   GitHub Actions verification/deploy workflow, release-tagged production images,
   a root-owned server deployer with a restricted SSH entrypoint, immutable

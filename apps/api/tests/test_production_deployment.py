@@ -25,7 +25,9 @@ def test_production_workflow_deploys_only_verified_main_sha() -> None:
     assert "pull_request:\n    branches:\n      - main" in workflow
     assert "needs: verify" in workflow
     assert "if: github.ref == 'refs/heads/main'" in workflow
-    assert "cancel-in-progress: false" in workflow
+    assert "format('gate-challenger-pr-{0}', github.event.pull_request.number)" in workflow
+    assert "|| 'gate-challenger-production'" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
     assert "release_sha:" in workflow
     assert "ref: ${{ inputs.release_sha || github.sha }}" in workflow
     assert "RELEASE_SHA: ${{ inputs.release_sha || github.sha }}" in workflow
@@ -40,6 +42,7 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
 
     assert "pull_request_target:" in workflow
     assert "issue_comment:\n    types:\n      - created" in workflow
+    assert "pull_request_review:\n    types:\n      - submitted" in workflow
     assert "workflow_run:" in workflow
     assert "github.event.pull_request.head.sha" in workflow
     assert "<!-- codex-review-head:$REVIEW_HEAD_SHA -->" in workflow
@@ -52,6 +55,11 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert '"$reviewed_head_prefix"*) matching_heads+=' in workflow
     assert '"${#matching_heads[@]}" -ne 1' in workflow
     assert "<!-- codex-clean-head:$reviewed_head_sha -->" in workflow
+    assert "invalidate-non-clean-review:" in workflow
+    assert "github.event.review.commit_id" in workflow
+    assert "needs.capture-clean-review.outputs.clean == 'true'" in workflow
+    assert "for _ in $(seq 1 12)" in workflow
+    assert "permissions: {}" in workflow
     assert "checks: read" in workflow
     assert "--json name,bucket" in workflow
     assert "workflow_run will retry" in workflow
@@ -61,7 +69,6 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert "actions: write" in workflow
     assert "gh workflow run deploy-production.yml" in workflow
     assert '-f release_sha="$MERGE_COMMIT_SHA"' in workflow
-    assert "pull_request_review" not in workflow
 
 
 def test_server_deployer_enforces_traceable_release_safety() -> None:

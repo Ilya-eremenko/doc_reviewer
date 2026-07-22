@@ -18,8 +18,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: gate-challenger-production
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('gate-challenger-pr-{0}', github.event.pull_request.number) || 'gate-challenger-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
