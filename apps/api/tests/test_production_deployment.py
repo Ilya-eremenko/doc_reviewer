@@ -38,16 +38,23 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
         REPO_ROOT / ".github/workflows/codex-auto-merge.yml"
     ).read_text()
 
+    assert "pull_request_target:" in workflow
     assert "issue_comment:\n    types:\n      - created" in workflow
+    assert "workflow_run:" in workflow
+    assert "github.event.pull_request.head.sha" in workflow
+    assert "<!-- codex-review-head:$REVIEW_HEAD_SHA -->" in workflow
     assert "github.event.issue.pull_request != null" in workflow
     assert "github.event.comment.user.login == 'chatgpt-codex-connector[bot]'" in workflow
     assert "github.event.comment.user.id == 199175422" in workflow
     assert "github.event.comment.user.type == 'Bot'" in workflow
     assert "Codex Review: Didn't find any major issues." in workflow
     assert "reviewed_head_prefix" in workflow
-    assert '"$reviewed_head_prefix"*' in workflow
-    assert 'grep -Fxq "Verify release"' in workflow
-    assert "--required --watch" in workflow
+    assert '"$reviewed_head_prefix"*) matching_heads+=' in workflow
+    assert '"${#matching_heads[@]}" -ne 1' in workflow
+    assert "<!-- codex-clean-head:$reviewed_head_sha -->" in workflow
+    assert "checks: read" in workflow
+    assert "--json name,bucket" in workflow
+    assert "workflow_run will retry" in workflow
     assert 'if [ "$current_head_sha" != "$REVIEWED_HEAD_SHA" ]' in workflow
     assert '--match-head-commit "$REVIEWED_HEAD_SHA"' in workflow
     assert "--squash" in workflow
@@ -55,7 +62,6 @@ def test_codex_review_workflow_merges_only_clean_verified_head() -> None:
     assert "gh workflow run deploy-production.yml" in workflow
     assert '-f release_sha="$MERGE_COMMIT_SHA"' in workflow
     assert "pull_request_review" not in workflow
-    assert "pull_request_target" not in workflow
 
 
 def test_server_deployer_enforces_traceable_release_safety() -> None:

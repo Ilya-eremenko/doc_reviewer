@@ -1,28 +1,80 @@
 name: Merge after clean Codex review
 
 on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
   issue_comment:
     types:
       - created
+  workflow_run:
+    workflows:
+      - Verify and deploy production
+    types:
+      - completed
 
 permissions:
   actions: write
+  checks: read
   contents: write
   pull-requests: write
 
 jobs:
-  merge-clean-codex-review:
-    name: Merge clean Codex-reviewed PR
+  record-review-head:
+    name: Record the exact review target
     if: >-
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record the full PR head SHA in trusted metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! printf '%s\n' "$REVIEW_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "GitHub did not provide a full PR head SHA."
+            exit 1
+          fi
+
+          marker="<!-- codex-review-head:$REVIEW_HEAD_SHA -->"
+          existing_marker="$(
+            gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+              --paginate \
+              --jq ".[] | select(
+                .user.login == \"github-actions[bot]\" and
+                .user.id == 41898282 and
+                .user.type == \"Bot\" and
+                .body == \"$marker\"
+              ) | .id" \
+              | head -n 1
+          )"
+
+          if [ -z "$existing_marker" ]; then
+            gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+              --method POST \
+              -f body="$marker" \
+              >/dev/null
+          fi
+
+  capture-clean-review:
+    name: Bind the clean review to an exact SHA
+    if: >-
+      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request != null &&
       github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
       github.event.comment.user.id == 199175422 &&
       github.event.comment.user.type == 'Bot'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 5
     steps:
-      - name: Confirm that Codex left no blocking findings
-        id: codex_review
+      - name: Resolve the abbreviated Codex SHA through trusted head records
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -33,7 +85,6 @@ jobs:
             "Codex Review: Didn't find any major issues."*) ;;
             *)
               echo "The Codex comment is not a clean review result."
-              echo "clean=false" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
@@ -49,6 +100,32 @@ jobs:
             exit 1
           fi
 
+          readarray -t recorded_heads < <(
+            gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+              --paginate \
+              --jq '.[] | select(
+                .user.login == "github-actions[bot]" and
+                .user.id == 41898282 and
+                .user.type == "Bot" and
+                (.body | test("^<!-- codex-review-head:[0-9a-f]{40} -->$"))
+              ) | .body' \
+              | sed -nE 's/^<!-- codex-review-head:([0-9a-f]{40}) -->$/\1/p' \
+              | sort -u
+          )
+
+          matching_heads=()
+          for recorded_head in "${recorded_heads[@]}"; do
+            case "$recorded_head" in
+              "$reviewed_head_prefix"*) matching_heads+=("$recorded_head") ;;
+            esac
+          done
+
+          if [ "${#matching_heads[@]}" -ne 1 ]; then
+            echo "The abbreviated Codex SHA does not map to one trusted full head SHA."
+            exit 1
+          fi
+
+          reviewed_head_sha="${matching_heads[0]}"
           current_head_sha="$(
             gh pr view "$PR_NUMBER" \
               --repo "$GH_REPO" \
@@ -56,54 +133,128 @@ jobs:
               --jq 'select(.isDraft == false) | .headRefOid'
           )"
 
-          if [ -z "$current_head_sha" ]; then
-            echo "The pull request is draft or has no readable head commit."
-            echo "clean=false" >> "$GITHUB_OUTPUT"
+          if [ "$current_head_sha" != "$reviewed_head_sha" ]; then
+            echo "The pull request changed after the clean Codex review."
+            exit 1
+          fi
+
+          clean_marker="<!-- codex-clean-head:$reviewed_head_sha -->"
+          gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+            --method POST \
+            -f body="$clean_marker" \
+            >/dev/null
+
+  merge-clean-codex-review:
+    name: Merge clean Codex-reviewed PR
+    needs:
+      - capture-clean-review
+    if: >-
+      always() &&
+      (
+        needs.capture-clean-review.result == 'success' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.event == 'pull_request' &&
+          github.event.workflow_run.conclusion == 'success'
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Find an exact clean-reviewed current head
+        id: clean_head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMENT_PR_NUMBER: ${{ github.event.issue.number }}
+          WORKFLOW_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          pr_number="${COMMENT_PR_NUMBER:-$WORKFLOW_PR_NUMBER}"
+          if ! printf '%s\n' "$pr_number" | grep -Eq '^[0-9]+$'; then
+            echo "No pull request is associated with this event."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          case "$current_head_sha" in
-            "$reviewed_head_prefix"*) ;;
+          current_head_sha="$(
+            gh pr view "$pr_number" \
+              --repo "$GH_REPO" \
+              --json headRefOid,isDraft,state \
+              --jq 'select(.isDraft == false and .state == "OPEN") | .headRefOid'
+          )"
+
+          if [ -z "$current_head_sha" ]; then
+            echo "The pull request is draft, closed, or has no readable head."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          clean_marker="<!-- codex-clean-head:$current_head_sha -->"
+          trusted_clean_marker="$(
+            gh api "repos/$GH_REPO/issues/$pr_number/comments" \
+              --paginate \
+              --jq ".[] | select(
+                .user.login == \"github-actions[bot]\" and
+                .user.id == 41898282 and
+                .user.type == \"Bot\" and
+                .body == \"$clean_marker\"
+              ) | .id" \
+              | head -n 1
+          )"
+
+          if [ -z "$trusted_clean_marker" ]; then
+            echo "The current head has no trusted clean-review record."
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "reviewed_head_sha=$current_head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Require successful release verification
+        id: verification
+        if: steps.clean_head.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.clean_head.outputs.pr_number }}
+        run: |
+          checks_json="$(
+            gh pr checks "$PR_NUMBER" \
+              --repo "$GH_REPO" \
+              --required \
+              --json name,bucket \
+              2>/dev/null || true
+          )"
+
+          verify_bucket="$(
+            printf '%s\n' "$checks_json" \
+              | jq -r '[.[] | select(.name == "Verify release")][-1].bucket // "missing"'
+          )"
+
+          case "$verify_bucket" in
+            pass)
+              echo "passed=true" >> "$GITHUB_OUTPUT"
+              ;;
+            pending)
+              echo "Release verification is still pending; workflow_run will retry."
+              echo "passed=false" >> "$GITHUB_OUTPUT"
+              ;;
             *)
-              echo "The pull request changed after the clean Codex review."
+              echo "Required check 'Verify release' is missing or unsuccessful: $verify_bucket"
               exit 1
               ;;
           esac
 
-          echo "clean=true" >> "$GITHUB_OUTPUT"
-          echo "reviewed_head_sha=$current_head_sha" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for the required release verification
-        if: steps.codex_review.outputs.clean == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          release_check_found=false
-          for _ in $(seq 1 12); do
-            if gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --json name --jq '.[].name' | grep -Fxq "Verify release"; then
-              release_check_found=true
-              break
-            fi
-            sleep 5
-          done
-
-          if [ "$release_check_found" != "true" ]; then
-            echo "Required check 'Verify release' is not configured for this pull request."
-            exit 1
-          fi
-
-          gh pr checks "$PR_NUMBER" --repo "$GH_REPO" --required --watch --interval 10 --fail-fast
-
       - name: Merge the exact commit reviewed by Codex
         id: merge
-        if: steps.codex_review.outputs.clean == 'true'
+        if: steps.verification.outputs.passed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-          REVIEWED_HEAD_SHA: ${{ steps.codex_review.outputs.reviewed_head_sha }}
+          PR_NUMBER: ${{ steps.clean_head.outputs.pr_number }}
+          REVIEWED_HEAD_SHA: ${{ steps.clean_head.outputs.reviewed_head_sha }}
         run: |
           current_head_sha="$(gh pr view "$PR_NUMBER" --repo "$GH_REPO" --json headRefOid --jq '.headRefOid')"
 
@@ -132,7 +283,7 @@ jobs:
           echo "merge_commit_sha=$merge_commit_sha" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch production deployment for the merged commit
-        if: steps.codex_review.outputs.clean == 'true'
+        if: steps.verification.outputs.passed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
