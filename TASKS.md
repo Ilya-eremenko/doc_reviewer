@@ -34,8 +34,12 @@ Primary plan index:
   `git diff --check`, full API (`196 passed`) and worker (`155 passed`) suites,
   full web tests (`139 passed`), production web build, production Alembic head,
   internal/public health responses, public login `200`, and unchanged running
-  containers. Activation and the first workflow-driven release are pending PR
-  merge and successful GitHub Actions completion.
+  containers. Enabled repository-wide automatic and exhaustive Codex reviews
+  on every PR update, and added a least-privilege workflow that waits for the
+  required `Verify release` check and squash-merges only a clean Codex-reviewed
+  head commit, with a final SHA guard against post-review pushes. Activation,
+  the required `Verify release` status check, and the first workflow-driven
+  release are pending PR merge and successful GitHub Actions completion.
 - [x] Release merged PR #3 plus the integrated local runtime updates to
   production: pushed `main` through `06ad76b`, exported Gate Challenger source
   `bfe1ee2`, backed up the previous deployment under
