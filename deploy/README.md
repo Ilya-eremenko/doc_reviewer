@@ -34,14 +34,21 @@ can continue to run against the migrated schema during an application rollback.
 /opt/gate-challenger/releases/<commit>
 /opt/gate-challenger/shared/infra.env         # root-readable production config
 /opt/gate-challenger/current                  # active release symlink
-/opt/gate-challenger/external                 # independently versioned skills
+/opt/gate-challenger/external                 # legacy read-only skill mounts
+/var/lib/gate-challenger/storage/external     # managed production skill checkouts
 /opt/gate-challenger/backups                  # source backups and DB dumps
 ```
 
-The external Gate Challenger, Devil's Advocate, and IC Agentic Review sources
-are deliberately not updated by the application workflow. Their revisions are
-managed separately so analysis runs continue to snapshot explicit skill source
-versions.
+The production Gate Challenger source is managed during the baseline skill
+refresh. By default the API container checks out
+`https://github.com/Feercopy/Gate2-challenger-skill.git` at `main` into the
+shared storage volume and seeds that checkout as the active `gate-challenger`
+source. Override `GATE_CHALLENGER_MANAGED_REPO_URL` or
+`GATE_CHALLENGER_MANAGED_REF` only when intentionally switching source.
+
+Devil's Advocate and IC Agentic Review sources remain externally mounted and
+independently versioned so analysis runs continue to snapshot explicit skill
+source versions.
 
 ## GitHub environment
 

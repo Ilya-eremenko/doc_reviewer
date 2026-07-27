@@ -1,4 +1,5 @@
 import hashlib
+import subprocess
 
 from app.models.user import User
 from app.models.skill_source import SkillSource
@@ -75,6 +76,41 @@ def test_seed_baseline_skills_creates_external_source_registry(db_session):
     assert sources["ic-agentic-review"].entrypoint == ".claude/commands/invest-analysis.md"
     assert ".claude/agents/ic-financial-auditor.md" in sources["ic-agentic-review"].required_paths
     assert "scripts/invest/run_pipeline.py" in sources["ic-agentic-review"].required_paths
+
+
+def test_seed_baseline_skills_can_manage_gate_challenger_checkout(db_session, tmp_path, monkeypatch):
+    source_repo = tmp_path / "gate-source-repo"
+    skill_file = source_repo / "skills/gate-challenger/SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("Managed Gate Challenger prompt.", encoding="utf-8")
+    (source_repo / "skills/gate-challenger/references").mkdir()
+    _run_git(source_repo, "init", "-b", "main")
+    _run_git(source_repo, "config", "user.email", "test@example.com")
+    _run_git(source_repo, "config", "user.name", "Test")
+    _run_git(source_repo, "add", "skills")
+    _run_git(source_repo, "commit", "-m", "initial")
+
+    checkout_path = tmp_path / "managed-checkout"
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_SOURCE_PATH", checkout_path, raising=False)
+    monkeypatch.setattr(
+        skill_seeds,
+        "GATE_CHALLENGER_SKILL_PATH",
+        checkout_path / skill_seeds.GATE_CHALLENGER_ENTRYPOINT,
+        raising=False,
+    )
+    monkeypatch.setattr(skill_seeds, "GATE2_BENCHMARK_DIR", checkout_path / "benchmark", raising=False)
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_MANAGED_REPO_URL", str(source_repo), raising=False)
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_MANAGED_REF", "main", raising=False)
+
+    skills = skill_seeds.seed_baseline_skills(db_session)
+
+    gate_skill = next(skill for skill in skills if skill.name == "gate2_challenger_main_analysis")
+    gate_source = db_session.query(SkillSource).filter_by(slug="gate-challenger").one()
+    assert gate_source.local_path == str(checkout_path)
+    assert gate_source.repo_url == str(source_repo)
+    assert gate_source.default_ref == "main"
+    assert gate_skill.prompt_text == "Managed Gate Challenger prompt."
+    assert (checkout_path / "skills/gate-challenger/SKILL.md").is_file()
 
 
 def test_seeded_ic_agentic_review_skill_matches_source_contract(db_session):
@@ -162,3 +198,7 @@ def test_seeded_result_rationale_synthesis_skill_is_inline_and_result_scoped(db_
         DocumentType.STREAM_REVIEW_2_PLUS.value,
         DocumentType.GATE_3.value,
     ]
+
+
+def _run_git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)

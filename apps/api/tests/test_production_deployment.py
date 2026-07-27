@@ -18,6 +18,18 @@ def test_production_compose_uses_release_tagged_application_images() -> None:
     assert "image: ${GATE_WEB_IMAGE:-infra-web}" in compose
 
 
+def test_production_compose_uses_managed_gate_challenger_fork() -> None:
+    compose = (REPO_ROOT / "infra/docker-compose.prod.yml").read_text()
+
+    assert "GATE_CHALLENGER_SOURCE_PATH: /var/lib/gate-challenger/storage/external/gate-challenger" in compose
+    assert (
+        "GATE_CHALLENGER_MANAGED_REPO_URL: "
+        "${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Feercopy/Gate2-challenger-skill.git}"
+        in compose
+    )
+    assert "GATE_CHALLENGER_MANAGED_REF: ${GATE_CHALLENGER_MANAGED_REF:-main}" in compose
+
+
 def test_production_workflow_deploys_only_verified_main_sha() -> None:
     workflow = (REPO_ROOT / ".github/workflows/deploy-production.yml").read_text()
 

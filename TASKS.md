@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Switch production Gate Challenger source to `Feercopy/Gate2-challenger-skill`:
+  direct SSH switching on `178.250.159.250` is unavailable from this machine
+  because the required `~/.ssh/my-server-codex` identity is missing, so the
+  production path is being switched through the verified deploy workflow.
+  Added opt-in managed Gate Challenger checkout support to baseline skill
+  seeding, set production compose defaults to clone
+  `https://github.com/Feercopy/Gate2-challenger-skill.git` at `main` into the
+  shared storage volume, and added regression coverage for both seed behavior
+  and production compose configuration.
 - [x] Diagnose local provider auth failures after checklist rollout:
   recent failed analyses used `openai_compatible` with stale model
   `claude-opus-4-7` and received gateway `503 auth_unavailable` because the

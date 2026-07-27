@@ -14,6 +14,8 @@ from app.schemas.enums import GATE_CHALLENGER_DOCUMENT_TYPES, DocumentType, Enti
 GATE_CHALLENGER_SOURCE_PATH = Path(
     os.getenv("GATE_CHALLENGER_SOURCE_PATH", "/Users/iseremenko/Projects/Gate2-challenger")
 )
+GATE_CHALLENGER_MANAGED_REPO_URL = os.getenv("GATE_CHALLENGER_MANAGED_REPO_URL")
+GATE_CHALLENGER_MANAGED_REF = os.getenv("GATE_CHALLENGER_MANAGED_REF", "main")
 GATE2_BENCHMARK_DIR = Path(
     os.getenv("GATE2_BENCHMARK_DIR", str(GATE_CHALLENGER_SOURCE_PATH / "benchmark"))
 )
@@ -126,6 +128,53 @@ def _git_revision(path: Path) -> str | None:
     return result.stdout.strip()
 
 
+def _git(path: Path, *args: str, timeout: int = 120) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(path), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    return result.stdout
+
+
+def _ensure_git_checkout(path: Path, repo_url: str, ref: str) -> None:
+    path = path.expanduser()
+    if path.exists() and not path.is_dir():
+        raise RuntimeError(f"managed Gate Challenger source path is not a directory: {path}")
+    if path.exists() and any(path.iterdir()) and not (path / ".git").exists():
+        raise RuntimeError(f"managed Gate Challenger source path is not a git checkout: {path}")
+
+    if not (path / ".git").exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "clone", repo_url, str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    status = _git(path, "status", "--porcelain").strip()
+    if status:
+        raise RuntimeError(f"managed Gate Challenger source has local modifications: {path}")
+
+    _git(path, "remote", "set-url", "origin", repo_url)
+    _git(path, "fetch", "--prune", "origin", ref, timeout=180)
+    _git(path, "checkout", "-B", ref, "FETCH_HEAD")
+
+
+def _refresh_managed_gate_challenger_source() -> None:
+    if not GATE_CHALLENGER_MANAGED_REPO_URL:
+        return
+    _ensure_git_checkout(
+        GATE_CHALLENGER_SOURCE_PATH,
+        GATE_CHALLENGER_MANAGED_REPO_URL,
+        GATE_CHALLENGER_MANAGED_REF,
+    )
+
+
 def _read_prompt(path: Path, fallback: str) -> str:
     return path.read_text() if path.exists() and path.is_file() else fallback
 
@@ -180,6 +229,8 @@ def _upsert_skill_source(db: Session, values: dict) -> SkillSource:
 
 
 def seed_baseline_skills(db: Session) -> list[Skill]:
+    _refresh_managed_gate_challenger_source()
+
     gate_challenger_fingerprint = _fingerprint_path(GATE_CHALLENGER_SKILL_PATH)
     devils_fingerprint = _fingerprint_path(DEVILS_ADVOCATE_PATH)
     ic_agentic_review_fingerprint = _fingerprint_path(IC_AGENTIC_REVIEW_PATH)
@@ -193,8 +244,8 @@ def seed_baseline_skills(db: Session) -> list[Skill]:
             "display_name": "Gate Challenger",
             "source_kind": "local_git_repo",
             "local_path": str(GATE_CHALLENGER_SOURCE_PATH),
-            "repo_url": None,
-            "default_ref": "main",
+            "repo_url": GATE_CHALLENGER_MANAGED_REPO_URL,
+            "default_ref": GATE_CHALLENGER_MANAGED_REF,
             "entrypoint": GATE_CHALLENGER_ENTRYPOINT,
             "required_paths": GATE_CHALLENGER_REQUIRED_PATHS,
             "update_policy": "require_latest",
