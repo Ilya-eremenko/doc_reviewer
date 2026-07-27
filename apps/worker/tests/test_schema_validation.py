@@ -220,6 +220,7 @@ def test_parse_and_validate_json_output_enforces_stage_checklist_for_document_ty
         structured_text=json.dumps(_main_analysis_result_payload()),
         schema_path="contracts/schemas/main-analysis-result.schema.json",
         document_type="gate_2",
+        enforce_stage_checklist=True,
     )
 
     assert [item["id"] for item in payload["stage_checklist"]] == [
@@ -239,6 +240,7 @@ def test_parse_and_validate_json_output_rejects_partial_stage_checklist_for_docu
             structured_text=json.dumps(payload),
             schema_path="contracts/schemas/main-analysis-result.schema.json",
             document_type="gate_2",
+            enforce_stage_checklist=True,
         )
     except ValueError as exc:
         assert "stage_checklist must match the selected document type exactly" in str(exc)
@@ -246,6 +248,19 @@ def test_parse_and_validate_json_output_rejects_partial_stage_checklist_for_docu
         return
 
     raise AssertionError("stage-specific checklist validator accepted a partial checklist")
+
+
+def test_parse_and_validate_json_output_allows_custom_skill_schema_without_gate_checklist_enforcement():
+    payload = _main_analysis_result_payload()
+    payload["stage_checklist"] = payload["stage_checklist"][:1]
+
+    parsed = schema_validation.parse_and_validate_json_output(
+        structured_text=json.dumps(payload),
+        schema_path="contracts/schemas/main-analysis-result.schema.json",
+        document_type="gate_2",
+    )
+
+    assert [item["id"] for item in parsed["stage_checklist"]] == ["gate2_hypothesis_results"]
 
 
 def _main_analysis_result_payload() -> dict:

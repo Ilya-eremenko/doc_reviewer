@@ -141,6 +141,7 @@ def run_analysis(
             structured_text=result.structured_text,
             schema_path=schema_path,
             document_type=(analysis.run_parameters or {}).get("document_type"),
+            enforce_stage_checklist=skill.name == "gate2_challenger_main_analysis",
         )
 
         completed_run_parameters = analysis.run_parameters

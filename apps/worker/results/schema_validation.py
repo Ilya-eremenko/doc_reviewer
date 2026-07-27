@@ -29,12 +29,18 @@ GATE_CHALLENGER_RESULT_SCHEMAS = {
 }
 
 
-def parse_and_validate_json_output(*, structured_text: str, schema_path: str, document_type: str | None = None) -> dict:
+def parse_and_validate_json_output(
+    *,
+    structured_text: str,
+    schema_path: str,
+    document_type: str | None = None,
+    enforce_stage_checklist: bool = False,
+) -> dict:
     payload = parse_json_output(structured_text)
     schema = json.loads(_resolve_schema_path(schema_path).read_text(encoding="utf-8"))
     payload = _normalize_payload_for_schema(payload=payload, schema=schema, schema_path=schema_path)
     validate(instance=payload, schema=schema)
-    if Path(schema_path).name in GATE_CHALLENGER_RESULT_SCHEMAS:
+    if enforce_stage_checklist and Path(schema_path).name in GATE_CHALLENGER_RESULT_SCHEMAS:
         validate_stage_checklist_for_document_type(payload, document_type=document_type)
     return payload
 

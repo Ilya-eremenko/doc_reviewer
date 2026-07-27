@@ -43,6 +43,13 @@ Primary plan index:
   Gate Challenger contract as skill version `stage-checklist-v1`.
   Re-verified API contract/seed/deploy tests after these follow-up fixes
   (`40 passed`).
+  Final review-gate follow-up scopes strict checklist validation to the
+  Gate Challenger skill (custom main-analysis skills using the shared schema
+  remain schema-only) and switches the production managed source path to a
+  ref-specific checkout directory to avoid in-place live checkout mutation.
+  Verified that final follow-up with focused API seed/deploy tests (`17 passed`)
+  and worker schema/analysis/benchmark tests (`28 passed` with writable
+  `STORAGE_ROOT`).
 - [x] Diagnose local provider auth failures after checklist rollout:
   recent failed analyses used `openai_compatible` with stale model
   `claude-opus-4-7` and received gateway `503 auth_unavailable` because the

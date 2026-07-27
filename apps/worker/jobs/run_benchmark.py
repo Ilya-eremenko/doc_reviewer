@@ -213,6 +213,7 @@ def _run_provider(
         structured_text=result.structured_text,
         schema_path=skill.result_schema_path,
         document_type=run_parameters.get("document_type"),
+        enforce_stage_checklist=skill.name == "gate2_challenger_main_analysis",
     )
 
 

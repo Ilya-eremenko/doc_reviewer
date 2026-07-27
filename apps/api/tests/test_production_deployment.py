@@ -21,7 +21,11 @@ def test_production_compose_uses_release_tagged_application_images() -> None:
 def test_production_compose_uses_managed_gate_challenger_fork() -> None:
     compose = (REPO_ROOT / "infra/docker-compose.prod.yml").read_text()
 
-    assert "GATE_CHALLENGER_SOURCE_PATH: /var/lib/gate-challenger/storage/external/gate-challenger" in compose
+    assert (
+        "GATE_CHALLENGER_SOURCE_PATH: "
+        "/var/lib/gate-challenger/storage/external/gate-challenger-29e2e12265eba1517c4881d48055320687a0c871"
+        in compose
+    )
     assert (
         "GATE_CHALLENGER_MANAGED_REPO_URL: "
         "${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Feercopy/Gate2-challenger-skill.git}"
