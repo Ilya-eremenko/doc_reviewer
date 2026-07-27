@@ -27,7 +27,11 @@ def test_production_compose_uses_managed_gate_challenger_fork() -> None:
         "${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Feercopy/Gate2-challenger-skill.git}"
         in compose
     )
-    assert "GATE_CHALLENGER_MANAGED_REF: ${GATE_CHALLENGER_MANAGED_REF:-main}" in compose
+    assert (
+        "GATE_CHALLENGER_MANAGED_REF: "
+        "${GATE_CHALLENGER_MANAGED_REF:-29e2e12265eba1517c4881d48055320687a0c871}"
+        in compose
+    )
 
 
 def test_production_workflow_deploys_only_verified_main_sha() -> None:

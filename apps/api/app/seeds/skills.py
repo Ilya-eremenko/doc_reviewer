@@ -14,8 +14,10 @@ from app.schemas.enums import GATE_CHALLENGER_DOCUMENT_TYPES, DocumentType, Enti
 GATE_CHALLENGER_SOURCE_PATH = Path(
     os.getenv("GATE_CHALLENGER_SOURCE_PATH", "/Users/iseremenko/Projects/Gate2-challenger")
 )
+DEFAULT_GATE_CHALLENGER_MANAGED_REF = "29e2e12265eba1517c4881d48055320687a0c871"
+GATE_CHALLENGER_SKILL_VERSION = os.getenv("GATE_CHALLENGER_SKILL_VERSION", "stage-checklist-v1")
 GATE_CHALLENGER_MANAGED_REPO_URL = os.getenv("GATE_CHALLENGER_MANAGED_REPO_URL")
-GATE_CHALLENGER_MANAGED_REF = os.getenv("GATE_CHALLENGER_MANAGED_REF", "main")
+GATE_CHALLENGER_MANAGED_REF = os.getenv("GATE_CHALLENGER_MANAGED_REF", DEFAULT_GATE_CHALLENGER_MANAGED_REF)
 GATE2_BENCHMARK_DIR = Path(
     os.getenv("GATE2_BENCHMARK_DIR", str(GATE_CHALLENGER_SOURCE_PATH / "benchmark"))
 )
@@ -161,8 +163,25 @@ def _ensure_git_checkout(path: Path, repo_url: str, ref: str) -> None:
         raise RuntimeError(f"managed Gate Challenger source has local modifications: {path}")
 
     _git(path, "remote", "set-url", "origin", repo_url)
-    _git(path, "fetch", "--prune", "origin", ref, timeout=180)
-    _git(path, "checkout", "-B", ref, "FETCH_HEAD")
+    _git(path, "fetch", "--prune", "origin", timeout=180)
+    if _is_commit_sha(ref):
+        _git(path, "checkout", "--detach", ref)
+    else:
+        _git(path, "checkout", "-B", ref, f"origin/{ref}")
+
+
+def _is_commit_sha(value: str) -> bool:
+    return len(value) == 40 and all(char in "0123456789abcdefABCDEF" for char in value)
+
+
+def _validate_required_source_paths(source_path: Path, required_paths: list[str]) -> None:
+    root = source_path.expanduser().resolve()
+    for relative_path in required_paths:
+        candidate = (root / relative_path).resolve()
+        if not candidate.is_relative_to(root):
+            raise RuntimeError(f"managed Gate Challenger required path escapes source root: {relative_path}")
+        if not candidate.exists():
+            raise RuntimeError(f"managed Gate Challenger required path is missing: {relative_path}")
 
 
 def _refresh_managed_gate_challenger_source() -> None:
@@ -173,6 +192,7 @@ def _refresh_managed_gate_challenger_source() -> None:
         GATE_CHALLENGER_MANAGED_REPO_URL,
         GATE_CHALLENGER_MANAGED_REF,
     )
+    _validate_required_source_paths(GATE_CHALLENGER_SOURCE_PATH, GATE_CHALLENGER_REQUIRED_PATHS)
 
 
 def _read_prompt(path: Path, fallback: str) -> str:
@@ -245,7 +265,7 @@ def seed_baseline_skills(db: Session) -> list[Skill]:
             "source_kind": "local_git_repo",
             "local_path": str(GATE_CHALLENGER_SOURCE_PATH),
             "repo_url": GATE_CHALLENGER_MANAGED_REPO_URL,
-            "default_ref": GATE_CHALLENGER_MANAGED_REF,
+            "default_ref": GATE_CHALLENGER_MANAGED_REF if GATE_CHALLENGER_MANAGED_REPO_URL else "main",
             "entrypoint": GATE_CHALLENGER_ENTRYPOINT,
             "required_paths": GATE_CHALLENGER_REQUIRED_PATHS,
             "update_policy": "require_latest",
@@ -287,7 +307,7 @@ def seed_baseline_skills(db: Session) -> list[Skill]:
         {
             "name": "gate2_challenger_main_analysis",
             "description": "Gate Challenger main analysis skill snapshot source.",
-            "version": "baseline",
+            "version": GATE_CHALLENGER_SKILL_VERSION,
             "skill_type": SkillType.MAIN_ANALYSIS.value,
             "supported_document_types": gate_challenger_document_types,
             "source_type": SkillSourceType.LOCAL_SKILL_REPO.value,

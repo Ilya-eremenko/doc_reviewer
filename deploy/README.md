@@ -41,9 +41,10 @@ can continue to run against the migrated schema during an application rollback.
 
 The production Gate Challenger source is managed during the baseline skill
 refresh. By default the API container checks out
-`https://github.com/Feercopy/Gate2-challenger-skill.git` at `main` into the
-shared storage volume and seeds that checkout as the active `gate-challenger`
-source. Override `GATE_CHALLENGER_MANAGED_REPO_URL` or
+`https://github.com/Feercopy/Gate2-challenger-skill.git` at commit
+`29e2e12265eba1517c4881d48055320687a0c871` into the shared storage volume and
+seeds that checkout as the active `gate-challenger` source. Override
+`GATE_CHALLENGER_MANAGED_REPO_URL` or
 `GATE_CHALLENGER_MANAGED_REF` only when intentionally switching source.
 
 Devil's Advocate and IC Agentic Review sources remain externally mounted and

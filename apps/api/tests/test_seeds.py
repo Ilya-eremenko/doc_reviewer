@@ -1,6 +1,8 @@
 import hashlib
 import subprocess
 
+import pytest
+
 from app.models.user import User
 from app.models.skill_source import SkillSource
 from app.schemas.enums import DocumentType, Role, SkillSourceType, SkillType, UserStatus
@@ -50,6 +52,7 @@ def test_seeded_gate_challenger_skill_matches_supported_document_types(db_sessio
 
     assert main_skill.source_uri.endswith("/skills/gate-challenger/SKILL.md")
     assert main_skill.skill_source_id is not None
+    assert main_skill.version == "stage-checklist-v1"
     assert main_skill.supported_document_types == [
         DocumentType.GATE_2.value,
         DocumentType.STREAM_REVIEW_1.value,
@@ -83,7 +86,9 @@ def test_seed_baseline_skills_can_manage_gate_challenger_checkout(db_session, tm
     skill_file = source_repo / "skills/gate-challenger/SKILL.md"
     skill_file.parent.mkdir(parents=True)
     skill_file.write_text("Managed Gate Challenger prompt.", encoding="utf-8")
-    (source_repo / "skills/gate-challenger/references").mkdir()
+    reference_file = source_repo / "skills/gate-challenger/references/common-output-contract.md"
+    reference_file.parent.mkdir()
+    reference_file.write_text("Reference contract.", encoding="utf-8")
     _run_git(source_repo, "init", "-b", "main")
     _run_git(source_repo, "config", "user.email", "test@example.com")
     _run_git(source_repo, "config", "user.name", "Test")
@@ -111,6 +116,37 @@ def test_seed_baseline_skills_can_manage_gate_challenger_checkout(db_session, tm
     assert gate_source.default_ref == "main"
     assert gate_skill.prompt_text == "Managed Gate Challenger prompt."
     assert (checkout_path / "skills/gate-challenger/SKILL.md").is_file()
+
+
+def test_seed_baseline_skills_rejects_managed_gate_source_missing_required_paths(
+    db_session,
+    tmp_path,
+    monkeypatch,
+):
+    source_repo = tmp_path / "broken-gate-source-repo"
+    skill_file = source_repo / "skills/gate-challenger/SKILL.md"
+    skill_file.parent.mkdir(parents=True)
+    skill_file.write_text("Managed Gate Challenger prompt.", encoding="utf-8")
+    _run_git(source_repo, "init", "-b", "main")
+    _run_git(source_repo, "config", "user.email", "test@example.com")
+    _run_git(source_repo, "config", "user.name", "Test")
+    _run_git(source_repo, "add", "skills")
+    _run_git(source_repo, "commit", "-m", "initial")
+
+    checkout_path = tmp_path / "managed-checkout"
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_SOURCE_PATH", checkout_path, raising=False)
+    monkeypatch.setattr(
+        skill_seeds,
+        "GATE_CHALLENGER_SKILL_PATH",
+        checkout_path / skill_seeds.GATE_CHALLENGER_ENTRYPOINT,
+        raising=False,
+    )
+    monkeypatch.setattr(skill_seeds, "GATE2_BENCHMARK_DIR", checkout_path / "benchmark", raising=False)
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_MANAGED_REPO_URL", str(source_repo), raising=False)
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_MANAGED_REF", "main", raising=False)
+
+    with pytest.raises(RuntimeError, match="managed Gate Challenger required path is missing"):
+        skill_seeds.seed_baseline_skills(db_session)
 
 
 def test_seeded_ic_agentic_review_skill_matches_source_contract(db_session):

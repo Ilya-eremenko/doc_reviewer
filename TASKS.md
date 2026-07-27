@@ -37,6 +37,12 @@ Primary plan index:
   Local focused verification: API contract/seed/deploy tests (`39 passed`),
   worker renderer/schema/analysis/benchmark tests (`42 passed`), web Summary
   tests (`47 passed`), Compose config checks, and `git diff --check`.
+  Follow-up review fixes pin production to fork commit
+  `29e2e12265eba1517c4881d48055320687a0c871`, fail-fast validate managed
+  Gate Challenger entrypoint/reference paths during seeding, and seed the new
+  Gate Challenger contract as skill version `stage-checklist-v1`.
+  Re-verified API contract/seed/deploy tests after these follow-up fixes
+  (`40 passed`).
 - [x] Diagnose local provider auth failures after checklist rollout:
   recent failed analyses used `openai_compatible` with stale model
   `claude-opus-4-7` and received gateway `503 auth_unavailable` because the
