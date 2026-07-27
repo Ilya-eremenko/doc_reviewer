@@ -4,6 +4,7 @@ from typing import Any
 from skills.layer_4_synthesis import format_layer_4_synthesis_markdown
 from skills.output_language import normalize_output_language, output_language_instruction
 from skills.snapshot_loader import SkillSourceSnapshotMaterial
+from skills.stage_checklists import stage_checklist_items
 
 _COMMON_REFERENCE_FILES = {
     "common-adversarial-rubric.md",
@@ -19,29 +20,6 @@ _STAGE_REFERENCE_FILES = {
     "gate_3": "gate-3-rubric.md",
 }
 _KNOWN_STAGE_REFERENCE_FILES = set(_STAGE_REFERENCE_FILES.values())
-_STAGE_CHECKLIST_ITEMS = {
-    "gate_2": [
-        ("gate2_hypothesis_results", "Результаты проверки гипотез из Gate 1"),
-        ("gate2_mvp_or_target_product", "Описание MVP/целевого продукта"),
-        ("gate2_mockups_or_user_flow", "Mockups или видео пользовательского flow"),
-        ("gate2_gate3_commitments", "Commitments к Gate 3: сроки, expected performance, метрики"),
-    ],
-    "gate_3": [
-        ("gate3_working_mvp", "Работающий MVP"),
-        ("gate3_performance_vs_gate2_plan", "Performance/results по сравнению с планом Gate 2"),
-        ("gate3_pmf_criteria", "Критерии product-market fit для следующего review"),
-    ],
-    "stream_review_1": [
-        ("stream_review_1_confirmed_problem", "Подтвержденная проблематика"),
-        ("stream_review_1_solution_validation", "Подтверждение решения через количественники, прототипы или фейкдоры"),
-        ("stream_review_1_half_year_plan_with_metrics", "План работ на полгода, включая метрики"),
-    ],
-    "stream_review_2_plus": [
-        ("stream_review_2_plus_plan_fact_last_half_year", "План-факт за прошедшие полгода по запускам и метрикам"),
-        ("stream_review_2_plus_next_half_year_plan", "План на следующие полгода по запускам и метрикам"),
-    ],
-}
-
 
 def render_gate2_challenger_prompt(
     *,
@@ -51,8 +29,11 @@ def render_gate2_challenger_prompt(
     source_snapshot: SkillSourceSnapshotMaterial | None = None,
     output_language: str | None = None,
     layer_4_context: dict | None = None,
+    document_type: str | None = None,
 ) -> str:
-    document_type = getattr(document, "manual_document_type", None) or getattr(document, "detected_document_type", "unknown")
+    document_type = document_type or getattr(document, "manual_document_type", None) or getattr(
+        document, "detected_document_type", "unknown"
+    )
     skill_prompt = _skill_prompt_text(skill=skill, source_snapshot=source_snapshot)
     reference_context = _reference_context(source_snapshot, document_type=document_type)
     normalized_output_language = normalize_output_language(output_language)
@@ -109,7 +90,7 @@ def _output_requirements(*, response_schema: dict, output_language: str, documen
             [
                 "Return JSON only, but the first visible reader-facing answer must be compact.",
                 _assessment_markdown_requirement(output_language),
-                _stage_checklist_requirement(document_type),
+                _stage_checklist_requirement(document_type, output_language=output_language),
                 "3. layer_1_index: compact evidence-backed index of decision-critical Layer 1 issues. "
                 "Each item must include id, severity, issue, and evidence_anchor only.",
                 "Before finalizing layer_1_index, apply the external skill's root-cause registry and atomization pass: "
@@ -131,7 +112,7 @@ def _output_requirements(*, response_schema: dict, output_language: str, documen
         [
             "Return JSON only, but the visible reader-facing answer must be encoded in these required fields:",
             _assessment_markdown_requirement(output_language),
-            _stage_checklist_requirement(document_type),
+            _stage_checklist_requirement(document_type, output_language=output_language),
             "3. layer_1_markdown: reader-facing Layer 1 block after the summary, in strict Gate Challenger format. "
             "Each Layer 1 item must expose only issue, evidence, and severity; do not add Title, Impact, or Recommendation subblocks.",
             "Before finalizing Layer 1, apply the external skill's root-cause registry and atomization pass: "
@@ -151,8 +132,8 @@ def _output_requirements(*, response_schema: dict, output_language: str, documen
     )
 
 
-def _stage_checklist_requirement(document_type: str | None) -> str:
-    items = _STAGE_CHECKLIST_ITEMS.get(str(document_type or ""))
+def _stage_checklist_requirement(document_type: str | None, *, output_language: str) -> str:
+    items = stage_checklist_items(document_type, output_language=output_language)
     if not items:
         return (
             "2. stage_checklist: include a compact red/green checklist for the detected document type. "

@@ -83,6 +83,40 @@ def test_gate2_challenger_renderer_can_require_english_output():
     assert "Output language requirement" in prompt
     assert "Write all reader-facing fields in English only" in prompt
     assert "Document assessment" in prompt
+    assert "Gate 1 hypothesis validation results" in prompt
+    assert "MVP or target product description" in prompt
+    assert "Результаты проверки гипотез из Gate 1" not in prompt
+
+
+def test_prompt_renderer_uses_run_parameter_document_type_for_gate_checklist():
+    document = SimpleNamespace(
+        title="Gate override defense",
+        parsed_text="The stored type is Gate 2, but this run overrides it to Gate 3.",
+        manual_document_type=None,
+        detected_document_type="gate_2",
+    )
+    skill = SimpleNamespace(
+        name="gate2_challenger_main_analysis",
+        version="baseline",
+        prompt_text="Run a Gate Challenger review.",
+        source_uri="/Users/example/Gate2/skills/gate2-challenger/SKILL.md",
+        source_entrypoint="SKILL.md",
+        source_revision="abc123",
+        source_fingerprint="fingerprint",
+        skill_source_id=None,
+        runtime_mode="inline",
+    )
+
+    prompt = render_prompt(
+        document=document,
+        skill=skill,
+        response_schema={"title": "MainAnalysisResult", "type": "object"},
+        run_parameters={"document_type": "gate_3"},
+    )
+
+    assert "Document type: gate_3" in prompt
+    assert "gate3_working_mvp" in prompt
+    assert "gate2_hypothesis_results" not in prompt
 
 
 def test_gate2_challenger_renderer_requires_ceo_cpo_assessment_tone_for_summary_and_full_schemas():

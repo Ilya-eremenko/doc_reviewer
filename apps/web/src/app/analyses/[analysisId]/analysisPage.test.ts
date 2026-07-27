@@ -402,9 +402,13 @@ describe("analysis result page", () => {
       resultPanelSource.indexOf("<MarkdownPreview markdown={productMarkdown}"),
     );
     expect(stageChecklistSource).toContain('aria-label="Stage checklist"');
+    expect(stageChecklistSource).toContain('aria-label={`${statusLabel}: ${item.label}`}');
+    expect(stageChecklistSource).toContain('className="analysis-stage-checklist__status"');
     expect(stageChecklistSource).toContain("analysis-stage-checklist__item--${item.status}");
     expect(pageSource).toContain(".analysis-stage-checklist__item--green .analysis-stage-checklist__marker");
     expect(pageSource).toContain(".analysis-stage-checklist__item--red .analysis-stage-checklist__marker");
+    expect(pageSource).toContain(".analysis-stage-checklist__item--green .analysis-stage-checklist__status");
+    expect(pageSource).toContain(".analysis-stage-checklist__item--red .analysis-stage-checklist__status");
   });
 
   it("styles Summary report disclosure controls and financial brief as requested", () => {

@@ -29,7 +29,14 @@ Primary plan index:
   seeding, set production compose defaults to clone
   `https://github.com/Feercopy/Gate2-challenger-skill.git` at `main` into the
   shared storage volume, and added regression coverage for both seed behavior
-  and production compose configuration.
+  and production compose configuration. Addressed Codex PR review findings by
+  enforcing exact stage checklist ids/count/order after schema validation,
+  routing prompts by the analysis run's effective document type, localizing
+  checklist labels for English output, keeping negative schema fixtures focused,
+  and exposing visible/accessibility-friendly red/green status text in Summary.
+  Local focused verification: API contract/seed/deploy tests (`39 passed`),
+  worker renderer/schema/analysis/benchmark tests (`42 passed`), web Summary
+  tests (`47 passed`), Compose config checks, and `git diff --check`.
 - [x] Diagnose local provider auth failures after checklist rollout:
   recent failed analyses used `openai_compatible` with stale model
   `claude-opus-4-7` and received gateway `503 auth_unavailable` because the

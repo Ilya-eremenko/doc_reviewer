@@ -160,7 +160,25 @@ def _main_analysis_json_with_benchmark_ids() -> str:
                     "label": "Результаты проверки гипотез из Gate 1",
                     "status": "red",
                     "evidence": "The mock document omits Gate 1 hypothesis results.",
-                }
+                },
+                {
+                    "id": "gate2_mvp_or_target_product",
+                    "label": "Описание MVP/целевого продукта",
+                    "status": "green",
+                    "evidence": "The mock document describes the target product.",
+                },
+                {
+                    "id": "gate2_mockups_or_user_flow",
+                    "label": "Mockups или видео пользовательского flow",
+                    "status": "red",
+                    "evidence": "The mock document omits user-flow mockups.",
+                },
+                {
+                    "id": "gate2_gate3_commitments",
+                    "label": "Commitments к Gate 3: сроки, expected performance, метрики",
+                    "status": "red",
+                    "evidence": "The mock document omits Gate 3 commitments.",
+                },
             ],
             "findings": [],
             "checks": [],

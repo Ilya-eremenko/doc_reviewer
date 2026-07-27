@@ -137,6 +137,11 @@ def _run_one_etalon(*, session: Session, benchmark: Benchmark, etalon_id: UUID, 
         return {"etalon_id": str(etalon.id), "status": "failed", "error": "document_parsed_text_missing"}
 
     try:
+        main_run_parameters = dict(benchmark.run_parameters or {})
+        main_run_parameters.setdefault(
+            "document_type",
+            document.manual_document_type or document.detected_document_type,
+        )
         actual_output = _run_provider(
             session=session,
             benchmark=benchmark,
@@ -145,10 +150,10 @@ def _run_one_etalon(*, session: Session, benchmark: Benchmark, etalon_id: UUID, 
                 document=document,
                 skill=main_skill,
                 response_schema=_load_schema(main_skill.result_schema_path),
-                run_parameters=benchmark.run_parameters,
+                run_parameters=main_run_parameters,
             ),
             schema_path=main_skill.result_schema_path,
-            run_parameters=benchmark.run_parameters,
+            run_parameters=main_run_parameters,
         )
         actual_layer_output = extract_benchmark_layers(actual_output)
         expected_output = _expected_output_for_etalon(benchmark=benchmark, etalon=etalon)
@@ -204,7 +209,11 @@ def _run_provider(
             run_parameters=run_parameters,
         )
     )
-    return parse_and_validate_json_output(structured_text=result.structured_text, schema_path=skill.result_schema_path)
+    return parse_and_validate_json_output(
+        structured_text=result.structured_text,
+        schema_path=skill.result_schema_path,
+        document_type=run_parameters.get("document_type"),
+    )
 
 
 def _get_provider_key(*, session: Session, benchmark: Benchmark, provider: Provider) -> ProviderKey | None:

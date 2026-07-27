@@ -828,15 +828,25 @@ function StageChecklist({ items }: { items: StageChecklistItem[] }) {
     <section className="analysis-stage-checklist" aria-label="Stage checklist">
       <h3>Обязательные элементы</h3>
       <ul>
-        {items.map((item) => (
-          <li className={`analysis-stage-checklist__item analysis-stage-checklist__item--${item.status}`} key={item.id}>
-            <span className="analysis-stage-checklist__marker" aria-hidden="true" />
-            <div>
-              <strong>{item.label}</strong>
-              <p>{item.evidence}</p>
-            </div>
-          </li>
-        ))}
+        {items.map((item) => {
+          const statusLabel = item.status === "green" ? "Есть" : "Нет";
+          return (
+            <li
+              aria-label={`${statusLabel}: ${item.label}`}
+              className={`analysis-stage-checklist__item analysis-stage-checklist__item--${item.status}`}
+              key={item.id}
+            >
+              <span className="analysis-stage-checklist__marker" aria-hidden="true" />
+              <div>
+                <div className="analysis-stage-checklist__heading">
+                  <strong>{item.label}</strong>
+                  <span className="analysis-stage-checklist__status">{statusLabel}</span>
+                </div>
+                <p>{item.evidence}</p>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -3069,6 +3079,34 @@ const analysisStyles = `
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.analysis-stage-checklist__heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.analysis-stage-checklist__status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #edf2f7;
+  color: #3f4856;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.analysis-stage-checklist__item--green .analysis-stage-checklist__status {
+  background: #dff7ed;
+  color: #047857;
+}
+
+.analysis-stage-checklist__item--red .analysis-stage-checklist__status {
+  background: #fde8e5;
+  color: #b42318;
 }
 
 .analysis-result-ic-output {
