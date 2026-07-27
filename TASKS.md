@@ -21,6 +21,52 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Diagnose local provider auth failures after checklist rollout:
+  recent failed analyses used `openai_compatible` with stale model
+  `claude-opus-4-7` and received gateway `503 auth_unavailable` because the
+  local provider gateway has no active Claude auth/session. A separate stale
+  `gpt-5.5` run failed as `unknown provider for model gpt-5.5`. Queried
+  `/v1/models` through the saved local gateway key without exposing the key.
+  A temporary local `openai_compatible` model allowlist/default change was
+  reverted at user request; provider settings are back to `gpt-5.5` with
+  `gpt-5.4`, `gpt-5.5`, `claude-sonnet-4-6`, and `claude-opus-4-7`.
+- [x] Add stage checklist traffic-light checks to Gate Challenger summaries:
+  `MainAnalysisResult` and `MainAnalysisSummaryResult` now require
+  `stage_checklist`, the worker prompt injects the selected document-type
+  checklist for Gate 2 / Gate 3 / Stream Review 1 / Stream Review 2+, the
+  Summary page renders the red/green checklist above Product Analysis, and the
+  local `Gate2-challenger-skill` checkout documents the same checklist contract.
+  Rebuilt/restarted local Docker `api`, `worker`, and `web`; verified schema
+  validation directly in the fresh API container, worker checklist mapping in
+  the fresh worker container, local site `127.0.0.1:3000` redirect to `/login`,
+  and focused web tests (`47 passed`). Python `pytest` is not installed in the
+  runtime images, so API/worker pytest suites were not runnable there.
+- [x] Capture current non-secret project context for future work:
+  architecture, active local runtime, GitHub remotes/access state, production
+  deployment workflow, external skill-source paths, and verification rules are
+  summarized in `docs/handoffs/2026-07-23-project-context-inventory.md`. The
+  local `.env`, provider keys, GitHub tokens, SSH keys, raw documents, and raw
+  provider outputs were intentionally not read or recorded.
+- [x] Restore GitHub CLI and upstream write access for future repository work:
+  reauthenticated `gh` as `Feercopy` through GitHub's device flow, confirmed
+  `Feercopy/doc_reviewer` has `ADMIN` permission, confirmed
+  `Ilya-eremenko/doc_reviewer` has `WRITE` permission, changed local `upstream`
+  push URL from `DISABLED` to SSH, and verified dry-run push to `upstream`
+  without creating a branch. No token, password, 2FA code, or SSH key material
+  was read or recorded.
+- [x] Verify local Docker web staging access: confirmed the running local site
+  uses container `gate-challenger-local-web-1`, image
+  `gate-challenger-local-web:latest`, compose project `gate-challenger-local`,
+  config file `infra/docker-compose.yml`, web build context `../apps/web`, and
+  Next.js dev server on `127.0.0.1:3000` redirecting to `/login`. Confirmed
+  Docker exec access to the container and recorded the non-secret details in
+  `docs/handoffs/2026-07-23-project-context-inventory.md`.
+- [x] Set the primary Gate Challenger skill repository context: from
+  2026-07-27 onward, treat `Feercopy/Gate2-challenger-skill` as the primary
+  Gate Challenger skill repo. Confirmed it is a fork of
+  `Ilya-eremenko/Gate2-challenger-skill`, current account `Feercopy` has
+  `ADMIN`, `main` is `bfe1ee2203928c0e8c06ebba6f5ed274dd5252cf`, and the exact
+  skill paths under `skills/gate-challenger/` match the service renderer.
 - [x] Fix production IC Review `invalid_json:Expecting value` after synthesis:
   production worker logs showed the RQ job finished normally while the business
   run persisted `failed`, matching a final synthesis response that stayed

@@ -19,6 +19,28 @@ _STAGE_REFERENCE_FILES = {
     "gate_3": "gate-3-rubric.md",
 }
 _KNOWN_STAGE_REFERENCE_FILES = set(_STAGE_REFERENCE_FILES.values())
+_STAGE_CHECKLIST_ITEMS = {
+    "gate_2": [
+        ("gate2_hypothesis_results", "Результаты проверки гипотез из Gate 1"),
+        ("gate2_mvp_or_target_product", "Описание MVP/целевого продукта"),
+        ("gate2_mockups_or_user_flow", "Mockups или видео пользовательского flow"),
+        ("gate2_gate3_commitments", "Commitments к Gate 3: сроки, expected performance, метрики"),
+    ],
+    "gate_3": [
+        ("gate3_working_mvp", "Работающий MVP"),
+        ("gate3_performance_vs_gate2_plan", "Performance/results по сравнению с планом Gate 2"),
+        ("gate3_pmf_criteria", "Критерии product-market fit для следующего review"),
+    ],
+    "stream_review_1": [
+        ("stream_review_1_confirmed_problem", "Подтвержденная проблематика"),
+        ("stream_review_1_solution_validation", "Подтверждение решения через количественники, прототипы или фейкдоры"),
+        ("stream_review_1_half_year_plan_with_metrics", "План работ на полгода, включая метрики"),
+    ],
+    "stream_review_2_plus": [
+        ("stream_review_2_plus_plan_fact_last_half_year", "План-факт за прошедшие полгода по запускам и метрикам"),
+        ("stream_review_2_plus_next_half_year_plan", "План на следующие полгода по запускам и метрикам"),
+    ],
+}
 
 
 def render_gate2_challenger_prompt(
@@ -64,7 +86,11 @@ def render_gate2_challenger_prompt(
     parts.extend(
         [
             "Mandatory output format:",
-            _output_requirements(response_schema=response_schema, output_language=normalized_output_language),
+            _output_requirements(
+                response_schema=response_schema,
+                output_language=normalized_output_language,
+                document_type=document_type,
+            ),
             f"Document title: {document.title}",
             f"Document type: {document_type}",
             "Return only JSON matching this schema:",
@@ -76,23 +102,24 @@ def render_gate2_challenger_prompt(
     return "\n\n".join(parts)
 
 
-def _output_requirements(*, response_schema: dict, output_language: str) -> str:
+def _output_requirements(*, response_schema: dict, output_language: str, document_type: str | None) -> str:
     title = response_schema.get("title")
     if title == "MainAnalysisSummaryResult":
         return "\n".join(
             [
                 "Return JSON only, but the first visible reader-facing answer must be compact.",
                 _assessment_markdown_requirement(output_language),
-                "2. layer_1_index: compact evidence-backed index of decision-critical Layer 1 issues. "
+                _stage_checklist_requirement(document_type),
+                "3. layer_1_index: compact evidence-backed index of decision-critical Layer 1 issues. "
                 "Each item must include id, severity, issue, and evidence_anchor only.",
                 "Before finalizing layer_1_index, apply the external skill's root-cause registry and atomization pass: "
                 "place each issue in its primary dimension-home, repeat it only for distinct local decision consequences, "
                 "and split only independent committee decision problems.",
-                "3. layer_2_index: compact index of atomic Layer 2 checks with id, parent_layer_1_id, "
+                "4. layer_2_index: compact index of atomic Layer 2 checks with id, parent_layer_1_id, "
                 "status, severity, question, answer, and short_evidence only.",
                 "Before finalizing layer_2_index, verify that every atomic question from the selected stage rubric is "
                 "represented exactly once, with unchanged question text and exactly one answer, evidence, and issue.",
-                "4. details_status must be exactly not_requested, details_run_id must be null, "
+                "5. details_status must be exactly not_requested, details_run_id must be null, "
                 "revision_required must be false, and revision_reason must be null.",
                 "Do the full Gate Challenger reasoning now, but do not output full detailed check blocks in this response.",
                 "Use Layer 4 expert analysis to strengthen or supplement Gate Challenger findings when it adds "
@@ -104,14 +131,15 @@ def _output_requirements(*, response_schema: dict, output_language: str) -> str:
         [
             "Return JSON only, but the visible reader-facing answer must be encoded in these required fields:",
             _assessment_markdown_requirement(output_language),
-            "2. layer_1_markdown: reader-facing Layer 1 block after the summary, in strict Gate Challenger format. "
+            _stage_checklist_requirement(document_type),
+            "3. layer_1_markdown: reader-facing Layer 1 block after the summary, in strict Gate Challenger format. "
             "Each Layer 1 item must expose only issue, evidence, and severity; do not add Title, Impact, or Recommendation subblocks.",
             "Before finalizing Layer 1, apply the external skill's root-cause registry and atomization pass: "
             "place each issue in its primary dimension-home, repeat it only for distinct local decision consequences, "
             "and split only independent committee decision problems.",
-            "3. layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence.",
-            "4. layer_2_markdown: reader-facing Layer 2 block after Layer 1, in strict Gate Challenger format.",
-            "5. layer_2: structured copy of every Layer 2 atomic check with id, parent_layer_1_id, status, "
+            "4. layer_1: structured copy of every Layer 1 item with id, severity, issue, evidence.",
+            "5. layer_2_markdown: reader-facing Layer 2 block after Layer 1, in strict Gate Challenger format.",
+            "6. layer_2: structured copy of every Layer 2 atomic check with id, parent_layer_1_id, status, "
             "severity, question, answer, evidence, issue. Layer 2 item must not include Risk or Recommendation fields.",
             "Before returning Layer 2, verify exact one-to-one equality with the selected stage rubric's atomic checks: "
             "same block boundaries, block order, question order, question text, and exactly one answer, evidence, and issue per question.",
@@ -121,6 +149,26 @@ def _output_requirements(*, response_schema: dict, output_language: str) -> str:
             "assessment_markdown, then layer_1_markdown, then layer_2_markdown.",
         ]
     )
+
+
+def _stage_checklist_requirement(document_type: str | None) -> str:
+    items = _STAGE_CHECKLIST_ITEMS.get(str(document_type or ""))
+    if not items:
+        return (
+            "2. stage_checklist: include a compact red/green checklist for the detected document type. "
+            "Use status green only when the uploaded document contains decision-grade evidence for the item; "
+            "use status red when the item is absent, only planned, or not substantiated. "
+            "Each item must include id, label, status, and evidence."
+        )
+
+    lines = [
+        "2. stage_checklist: include exactly these items for the selected document type, in this order.",
+        "Use status green only when the uploaded document contains decision-grade evidence for the item; "
+        "use status red when the item is absent, only planned, or not substantiated. "
+        "For evidence, cite the compact source proof or explain the missing proof in one sentence.",
+    ]
+    lines.extend(f"- id: {item_id}; label: {label}" for item_id, label in items)
+    return "\n".join(lines)
 
 
 def _assessment_markdown_requirement(output_language: str) -> str:

@@ -143,6 +143,14 @@ def _main_analysis_json() -> str:
             "verdict": "need_evidence",
             "summary": "Needs evidence.",
             "assessment_markdown": "Оценка документа\nРекомендация: Needs evidence.",
+            "stage_checklist": [
+                {
+                    "id": "gate2_hypothesis_results",
+                    "label": "Результаты проверки гипотез из Gate 1",
+                    "status": "red",
+                    "evidence": "The mock document omits Gate 1 hypothesis results.",
+                }
+            ],
             "findings": [],
             "checks": [],
             "layer_1_markdown": "Layer 1\nL1-001 — Weak traction.",

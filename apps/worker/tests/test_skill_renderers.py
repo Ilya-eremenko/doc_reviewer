@@ -39,6 +39,9 @@ def test_gate2_challenger_renderer_frames_external_skill_with_schema_and_documen
     assert "Return only JSON matching this schema" in prompt
     assert "MainAnalysisResult" in prompt
     assert "assessment_markdown" in prompt
+    assert "stage_checklist" in prompt
+    assert "Результаты проверки гипотез из Gate 1" in prompt
+    assert "Commitments к Gate 3" in prompt
     assert "Оценка документа" in prompt
     assert "layer_1_markdown" in prompt
     assert "do not add Title, Impact, or Recommendation subblocks" in prompt
@@ -117,6 +120,7 @@ def test_gate2_challenger_renderer_requires_ceo_cpo_assessment_tone_for_summary_
             assert "Brutal Truth" in prompt
             assert "what is proven / what is not proven / what cannot be approved yet" in prompt
             assert "Do not change facts, verdicts, evidence, promoted issues, required fields" in prompt
+            assert "Use status green only when the uploaded document contains decision-grade evidence" in prompt
 
         assert "starting exactly with 'Оценка документа'" in ru_prompt
         assert "starting exactly with 'Document assessment'" in en_prompt
