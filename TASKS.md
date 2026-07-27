@@ -46,10 +46,12 @@ Primary plan index:
   Final review-gate follow-up scopes strict checklist validation to the
   Gate Challenger skill (custom main-analysis skills using the shared schema
   remain schema-only) and switches the production managed source path to a
-  ref-specific checkout directory to avoid in-place live checkout mutation.
+  checkout directory derived from the effective managed ref to avoid in-place
+  live checkout mutation when the ref is overridden.
   Verified that final follow-up with focused API seed/deploy tests (`17 passed`)
   and worker schema/analysis/benchmark tests (`28 passed` with writable
-  `STORAGE_ROOT`).
+  `STORAGE_ROOT`). Verified the managed checkout path override with production
+  Compose config and focused production deployment tests (`6 passed`).
 - [x] Diagnose local provider auth failures after checklist rollout:
   recent failed analyses used `openai_compatible` with stale model
   `claude-opus-4-7` and received gateway `503 auth_unavailable` because the

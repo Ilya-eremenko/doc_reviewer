@@ -45,7 +45,7 @@ services:
       HERMES_ENABLED: ${HERMES_ENABLED:-false}
       HERMES_MODE: ${HERMES_MODE:-http}
       HERMES_HTTP_URL: ${HERMES_HTTP_URL:-http://127.0.0.1:8787}
-      GATE_CHALLENGER_SOURCE_PATH: /var/lib/gate-challenger/storage/external/gate-challenger-29e2e12265eba1517c4881d48055320687a0c871
+      GATE_CHALLENGER_SOURCE_PATH: ${GATE_CHALLENGER_SOURCE_PATH:-/var/lib/gate-challenger/storage/external/gate-challenger-${GATE_CHALLENGER_MANAGED_REF:-29e2e12265eba1517c4881d48055320687a0c871}}
       GATE_CHALLENGER_MANAGED_REPO_URL: ${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Feercopy/Gate2-challenger-skill.git}
       GATE_CHALLENGER_MANAGED_REF: ${GATE_CHALLENGER_MANAGED_REF:-29e2e12265eba1517c4881d48055320687a0c871}
       DEVILS_ADVOCATE_SOURCE_PATH: /external/devils-advocate
@@ -93,7 +93,7 @@ services:
       HERMES_ENABLED: ${HERMES_ENABLED:-false}
       HERMES_MODE: ${HERMES_MODE:-http}
       HERMES_HTTP_URL: ${HERMES_HTTP_URL:-http://127.0.0.1:8787}
-      GATE_CHALLENGER_SOURCE_PATH: /var/lib/gate-challenger/storage/external/gate-challenger-29e2e12265eba1517c4881d48055320687a0c871
+      GATE_CHALLENGER_SOURCE_PATH: ${GATE_CHALLENGER_SOURCE_PATH:-/var/lib/gate-challenger/storage/external/gate-challenger-${GATE_CHALLENGER_MANAGED_REF:-29e2e12265eba1517c4881d48055320687a0c871}}
       GATE_CHALLENGER_MANAGED_REPO_URL: ${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Feercopy/Gate2-challenger-skill.git}
       GATE_CHALLENGER_MANAGED_REF: ${GATE_CHALLENGER_MANAGED_REF:-29e2e12265eba1517c4881d48055320687a0c871}
       DEVILS_ADVOCATE_SOURCE_PATH: /external/devils-advocate

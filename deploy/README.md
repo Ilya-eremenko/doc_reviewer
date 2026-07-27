@@ -46,7 +46,9 @@ refresh. By default the API container checks out
 the shared storage volume and seeds that checkout as the active
 `gate-challenger` source. Override
 `GATE_CHALLENGER_MANAGED_REPO_URL` or
-`GATE_CHALLENGER_MANAGED_REF` only when intentionally switching source.
+`GATE_CHALLENGER_MANAGED_REF` only when intentionally switching source. The
+default checkout path is derived from the effective managed ref; if you override
+`GATE_CHALLENGER_SOURCE_PATH`, keep it ref-specific for the same reason.
 
 Devil's Advocate and IC Agentic Review sources remain externally mounted and
 independently versioned so analysis runs continue to snapshot explicit skill
