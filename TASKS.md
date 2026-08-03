@@ -23,14 +23,19 @@ Primary plan index:
 
 - [x] Add local-only document anonymization before review: added a worker-side
   parser post-processing layer that scrubs PII from parsed text, markdown,
-  blocks, and metadata before document type detection and queued analyses
-  consume the document. Upgraded the sanitizer to strict local PII rules adapted
+  blocks, metadata, model-visible document titles, and UI/API-visible original
+  filenames before queued analyses consume the document; document type detection
+  still uses the raw parsed text locally so Gate classification is not damaged
+  by masking. Upgraded the sanitizer to strict local PII rules adapted
   from the support-review sanitizer: names/FIO, Latin labeled names, emails,
   phones, bank details, addresses, IPs, links, and long opaque identifiers are
   masked with deterministic placeholders, existing masks are preserved, and
-  residual validation fails closed before model access. Enabled the flag only in
-  local Compose worker config, left production Compose without the flag,
-  verified focused worker/parser tests (`21 passed`), local/prod Compose config
+  residual validation fails closed before model access. Hardened follow-up
+  behavior by preserving common product terms such as Contact Rate, North Star
+  Metric, Unit Economics, Product Market Fit, and Avito Sales, adding typed
+  link/identifier placeholders, and formatting residual PII failures clearly.
+  Enabled the flag only in local Compose worker config, left production Compose
+  without the flag, verified focused worker/parser tests (`21 passed`), local/prod Compose config
   rendering, rebuilt/restarted local worker containers, and confirmed workers
   listen on `documents` plus `analysis, benchmark` with local API health `ok`.
   Production deployment is intentionally out of scope.

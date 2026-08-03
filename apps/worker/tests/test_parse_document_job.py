@@ -17,7 +17,8 @@ from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus, R
 from app.services.analyses import DOCUMENT_PARSE_DEPENDENCY_KEY
 from app.security.passwords import hash_password
 from app.storage.local import LocalDocumentStorage
-from jobs.parse_document import parse_document
+from jobs.parse_document import _format_parse_error, parse_document
+from parsers.anonymizer import PiiResidueError
 
 
 def test_parse_document_success_updates_database_and_writes_artifact(tmp_path):
@@ -83,6 +84,8 @@ def test_parse_document_anonymizes_personal_data_when_enabled(tmp_path, monkeypa
             ).encode("utf-8"),
             mime_type="text/markdown",
         )
+        document.title = "Иван Петров Gate 2"
+        db.commit()
 
         parse_document(str(document.id), db=db, storage=storage)
 
@@ -94,6 +97,10 @@ def test_parse_document_anonymizes_personal_data_when_enabled(tmp_path, monkeypa
         assert "Петров" not in document.parsed_text
         assert "ivan.petrov@example.com" not in document.parsed_text
         assert "+7 999 123-45-67" not in document.parsed_text
+        assert "Иван" not in document.title
+        assert "Петров" not in document.title
+        assert "[PERSON_001]" in document.title
+        assert document.original_filename == "anonymized-document.md"
         assert "[PERSON_001]" in document.parsed_text
         assert "[EMAIL_001]" in document.parsed_text
         assert "[PHONE_001]" in document.parsed_text
@@ -110,6 +117,12 @@ def test_parse_document_anonymizes_personal_data_when_enabled(tmp_path, monkeypa
         _close_session(db)
         monkeypatch.delenv("DOCUMENT_ANONYMIZATION_ENABLED", raising=False)
         get_settings.cache_clear()
+
+
+def test_parse_document_formats_pii_residue_errors_for_users():
+    error = _format_parse_error(PiiResidueError({"email": 1, "phone": 2}))
+
+    assert error == "PiiResidueError: personal_data_residue_detected residuals={'email': 1, 'phone': 2}"
 
 
 def test_parse_document_failure_marks_failed_and_preserves_raw_file(tmp_path):

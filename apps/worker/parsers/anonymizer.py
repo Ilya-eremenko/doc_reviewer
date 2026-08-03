@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+from urllib.parse import urlparse
 import ipaddress
 import json
 import re
@@ -34,7 +35,7 @@ _EMAIL = re.compile(r"(?<![\w.+-])[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63})+(?!
 _URL = re.compile(r"https?://[^\s<>\]]+", re.I)
 _IP_TOKEN = re.compile(
     r"(?<![\w:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f:.]{1,39}(?![\w:])|"
-    r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])",
+    r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?!\d|\.\d)",
     re.I,
 )
 _DIGIT_RUN = re.compile(r"(?<!\d)(?:\+?\d[\d ()\-]{7,28}\d)(?!\d)")
@@ -47,14 +48,15 @@ _NAME_LABEL = re.compile(
     r"фио|ф\.\s*и\.\s*о\.|имя|получатель|владелец|клиент|контактное\s+лицо|меня\s+зовут|"
     r"автор(?:\s+комментария)?|комментатор|подготовил|подготовила|создал|создала|ответственный|ревьюер"
     r")\s*[:—-]?\s*"
-    r"([А-ЯЁа-яё][а-яё-]{1,40}(?:\s+[А-ЯЁа-яё][а-яё-]{1,40}){0,2})"
+    r"([А-ЯЁа-яё][а-яё-]{1,40}(?:[ \t]+[А-ЯЁа-яё][а-яё-]{1,40}){0,2})"
 )
 _LATIN_NAME_LABEL = re.compile(
     r"(?i)\b(?:"
     r"author|comment author|commenter|prepared by|created by|owner|responsible|reviewer|contact person|client"
     r")\s*[:—-]?\s*"
-    r"([A-Z][a-z-]{1,40}(?:\s+[A-Z][a-z-]{1,40}){0,2})"
+    r"([A-Z][a-z-]{1,40}(?:[ \t]+[A-Z][a-z-]{1,40}){0,2})"
 )
+_COMMENT_BY_LATIN_NAME = re.compile(r"(?i)\bcomment\s+\d+\s+by\s+([A-Z][a-z-]{1,40}(?:[ \t]+[A-Z][a-z-]{1,40}){1,2})")
 _FULL_NAME = re.compile(
     r"(?<![А-Яа-яЁё-])([А-ЯЁ][а-яё-]{1,40}\s+[А-ЯЁ][а-яё-]{1,40}\s+[А-ЯЁ][а-яё-]{1,40})(?![А-Яа-яЁё-])"
 )
@@ -64,7 +66,6 @@ _PATRONYMIC_NAME = re.compile(
     r"(?:ович|евич|ич|овна|евна|ична))(?![А-Яа-яЁё-])"
 )
 _SIGNATURE_NAME = re.compile(r"(?im)(?:^|\n)\s*(?:с\s+уважением[,!]?\s*)?([А-ЯЁ][а-яё-]{1,40}\s+[А-ЯЁ][а-яё-]{1,40})\s*(?:$|\n)")
-_LATIN_FULL_NAME = re.compile(r"(?<![A-Za-z-])([A-Z][a-z-]{1,40}\s+[A-Z][a-z-]{1,40}(?:\s+[A-Z][a-z-]{1,40})?)(?![A-Za-z-])")
 _ADDRESS = re.compile(
     r"(?i)(?<!\w)(?:(?:россия|рф)\s*,?\s*)?(?:г(?:ород)?\.?\s*[А-ЯЁ][А-Яа-яЁё .-]{1,50},?\s*)?"
     r"(?:ул(?:ица)?\.?|просп(?:ект)?\.?|пр-т|пер(?:еулок)?\.?|шоссе|наб(?:ережная)?\.?|бульвар|б-р)\s+"
@@ -91,6 +92,19 @@ _NON_PERSON_TOKENS = {
     "stream",
     "strategy",
     "summary",
+    "contact",
+    "defense",
+    "economics",
+    "fit",
+    "investment",
+    "market",
+    "metric",
+    "north",
+    "product",
+    "rate",
+    "sales",
+    "star",
+    "unit",
     "гейт",
     "документ",
     "комментарий",
@@ -100,10 +114,34 @@ _NON_PERSON_TOKENS = {
 _NON_PERSON_PHRASES = {
     "gate challenger",
     "gate review",
+    "investment defense",
     "progress review",
     "stream review",
     "strategy review",
+    "avito sales",
+    "contact rate",
+    "customer experience",
+    "north star",
+    "north star metric",
+    "product market fit",
+    "unit economics",
 }
+_NAME_METADATA_KEYS = {
+    "author",
+    "comment_author",
+    "commenter",
+    "created_by",
+    "owner",
+    "prepared_by",
+    "responsible",
+    "reviewer",
+}
+_LATIN_PERSON_VALUE = re.compile(r"^[A-Z][a-z-]{1,40}(?:\s+[A-Z][a-z-]{1,40}){1,2}$")
+_CYRILLIC_PERSON_VALUE = re.compile(r"^[А-ЯЁ][а-яё-]{1,40}(?:\s+[А-ЯЁ][а-яё-]{1,40}){1,2}$")
+_TITLE_LATIN_NAME_PREFIX = re.compile(
+    r"(?<![A-Za-z-])([A-Z][a-z-]{1,40}(?:\s+[A-Z][a-z-]{1,40}){1,2})"
+    r"(?=\s*(?:[-_:]|Gate\b|Гейт\b|$))"
+)
 
 
 @dataclass(frozen=True)
@@ -223,19 +261,39 @@ class PersonalDataAnonymizer:
             return text
         spans = self._detect_spans_with_aliases(text)
         result = text
-        for span in reversed(spans):
-            value = result[span.start : span.end]
-            result = result[: span.start] + self._placeholder_for(span.kind, value) + result[span.end :]
+        result = self._anonymize_spans(result, spans)
         self._assert_no_residue(result)
         return result
 
-    def anonymize_value(self, value: Any) -> Any:
+    def anonymize_title(self, title: str) -> str:
+        if not title:
+            return title
+        spans = self._detect_spans_with_aliases(title)
+        protected = _protected_ranges(title)
+        for match in _TITLE_LATIN_NAME_PREFIX.finditer(title):
+            name = match.group(1)
+            if not _is_non_person_name(name) and not _is_protected(*match.span(1), protected):
+                spans.append(Span(match.start(1), match.end(1), "name", 58))
+        result = self._anonymize_spans(title, _accept_spans(spans))
+        self._assert_no_residue(result)
+        return result
+
+    def _anonymize_spans(self, text: str, spans: Iterable[Span]) -> str:
+        result = text
+        for span in reversed(spans):
+            value = result[span.start : span.end]
+            result = result[: span.start] + self._placeholder_for(span.kind, value) + result[span.end :]
+        return result
+
+    def anonymize_value(self, value: Any, current_key: str | None = None) -> Any:
         if isinstance(value, str):
+            if _is_name_metadata_key(current_key) and _looks_like_person_value(value):
+                return self._placeholder_for("name", value)
             return self.anonymize_text(value)
         if isinstance(value, list):
-            return [self.anonymize_value(item) for item in value]
+            return [self.anonymize_value(item, current_key=current_key) for item in value]
         if isinstance(value, dict):
-            return {key: self.anonymize_value(item) for key, item in value.items()}
+            return {key: self.anonymize_value(item, current_key=key) for key, item in value.items()}
         return value
 
     def report(self) -> AnonymizationReport:
@@ -262,15 +320,18 @@ class PersonalDataAnonymizer:
                     spans.append(Span(match.start(), match.end(), "name", 45))
         return _accept_spans(spans)
 
-    def _collect_name_aliases_from_value(self, value: Any) -> None:
+    def _collect_name_aliases_from_value(self, value: Any, current_key: str | None = None) -> None:
         if isinstance(value, str):
-            self._collect_name_aliases_from_text(value)
+            if _is_name_metadata_key(current_key) and _looks_like_person_value(value):
+                self._register_name_aliases(value)
+            else:
+                self._collect_name_aliases_from_text(value)
         elif isinstance(value, list):
             for item in value:
-                self._collect_name_aliases_from_value(item)
+                self._collect_name_aliases_from_value(item, current_key=current_key)
         elif isinstance(value, dict):
-            for item in value.values():
-                self._collect_name_aliases_from_value(item)
+            for key, item in value.items():
+                self._collect_name_aliases_from_value(item, current_key=key)
 
     def _collect_name_aliases_from_text(self, text: str) -> None:
         if not text:
@@ -305,10 +366,28 @@ class PersonalDataAnonymizer:
 
     def _placeholder_by_value(self, kind: str, value: str) -> str:
         normalized = " ".join(value.split()) if kind in {"name", "address"} else value
+        if kind == "link":
+            return self._placeholders[kind].setdefault(normalized, self._next_link_placeholder(value))
+        if kind == "identifier":
+            return self._placeholders[kind].setdefault(normalized, self._next_identifier_placeholder(value))
         return self._placeholders[kind].setdefault(normalized, self._next_placeholder(kind))
 
     def _next_placeholder(self, kind: str) -> str:
         return f"[{PLACEHOLDER_PREFIXES[kind]}_{len(set(self._placeholders[kind].values())) + 1:03d}]"
+
+    def _next_link_placeholder(self, value: str) -> str:
+        label = _link_label(value)
+        count = sum(1 for placeholder in set(self._placeholders["link"].values()) if placeholder.startswith(f"[LINK_{label}_"))
+        return f"[LINK_{label}_{count + 1:03d}]"
+
+    def _next_identifier_placeholder(self, value: str) -> str:
+        label = _identifier_label(value)
+        count = sum(
+            1
+            for placeholder in set(self._placeholders["identifier"].values())
+            if placeholder.startswith(f"[IDENTIFIER_{label}_")
+        )
+        return f"[IDENTIFIER_{label}_{count + 1:03d}]"
 
     def _assert_no_residue(self, text: str) -> None:
         residuals = residual_counts(text)
@@ -371,6 +450,9 @@ def detect_spans(text: str) -> list[Span]:
     for match in _LATIN_NAME_LABEL.finditer(text):
         if not _is_non_person_name(match.group(1)):
             add(match, "name", 60, 1)
+    for match in _COMMENT_BY_LATIN_NAME.finditer(text):
+        if not _is_non_person_name(match.group(1)):
+            add(match, "name", 60, 1)
     for match in _FULL_NAME.finditer(text):
         if not _is_non_person_name(match.group(1)):
             add(match, "name", 55, 1)
@@ -383,10 +465,6 @@ def detect_spans(text: str) -> list[Span]:
     for match in _SIGNATURE_NAME.finditer(text):
         if not _is_non_person_name(match.group(1)):
             add(match, "name", 50, 1)
-    for match in _LATIN_FULL_NAME.finditer(text):
-        if not _is_non_person_name(match.group(1)):
-            add(match, "name", 52, 1)
-
     # A complete opaque identifier wins over phone/card-looking substrings inside it.
     for match in _LONG_IDENTIFIER.finditer(text):
         add(match, "identifier", 120)
@@ -432,9 +510,9 @@ def residual_counts(text: str) -> dict[str, int]:
         ("bank_details", _BANK_LABEL),
         ("name", _NAME_LABEL),
         ("name", _LATIN_NAME_LABEL),
+        ("name", _COMMENT_BY_LATIN_NAME),
         ("name", _TWO_PART_NAME),
         ("name", _PATRONYMIC_NAME),
-        ("name", _LATIN_FULL_NAME),
         ("address", _ADDRESS),
         ("address", _POSTAL_ADDRESS),
         ("address", _CITY_ADDRESS),
@@ -463,11 +541,12 @@ def config_hash() -> str:
                     _BANK_LABEL,
                     _NAME_LABEL,
                     _LATIN_NAME_LABEL,
+                    _COMMENT_BY_LATIN_NAME,
+                    _TITLE_LATIN_NAME_PREFIX,
                     _FULL_NAME,
                     _TWO_PART_NAME,
                     _PATRONYMIC_NAME,
                     _SIGNATURE_NAME,
-                    _LATIN_FULL_NAME,
                     _ADDRESS,
                     _POSTAL_ADDRESS,
                     _ADDRESS_LABEL,
@@ -520,6 +599,40 @@ def _is_non_person_name(value: str) -> bool:
     cleaned = " ".join(value.split()).casefold()
     tokens = [token.casefold() for token in cleaned.split()]
     return cleaned in _NON_PERSON_PHRASES or any(token in _NON_PERSON_TOKENS for token in tokens)
+
+
+def _is_name_metadata_key(key: str | None) -> bool:
+    if not key:
+        return False
+    normalized = key.strip().casefold().replace("-", "_").replace(" ", "_")
+    return normalized in _NAME_METADATA_KEYS or normalized.endswith("_author")
+
+
+def _looks_like_person_value(value: str) -> bool:
+    cleaned = " ".join(value.split())
+    if _is_non_person_name(cleaned):
+        return False
+    return bool(_LATIN_PERSON_VALUE.match(cleaned) or _CYRILLIC_PERSON_VALUE.match(cleaned))
+
+
+def _link_label(value: str) -> str:
+    hostname = (urlparse(value).hostname or "").casefold()
+    if "figma" in hostname:
+        return "FIGMA"
+    if any(token in hostname for token in ("metabase", "superset", "tableau", "grafana", "dashboard")):
+        return "DASHBOARD"
+    if any(token in hostname for token in ("confluence", "wiki", "notion")):
+        return "DOC"
+    return "URL"
+
+
+def _identifier_label(value: str) -> str:
+    normalized = value.strip().casefold()
+    if normalized.startswith(("exp-", "experiment-", "ab-")):
+        return "EXPERIMENT"
+    if normalized.startswith(("usr-", "user-", "account-", "acct-")):
+        return "ACCOUNT"
+    return "OPAQUE"
 
 
 def _text_hash(text: str) -> str:

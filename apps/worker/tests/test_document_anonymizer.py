@@ -66,8 +66,8 @@ def test_anonymizer_scrubs_supported_pii_and_comment_author_metadata():
     assert "[BANK_DETAILS_001]" in anonymized.plain_text
     assert "[ADDRESS_001]" in anonymized.plain_text
     assert "[IP_001]" in anonymized.plain_text
-    assert "[LINK_001]" in anonymized.plain_text
-    assert "[IDENTIFIER_001]" in anonymized.plain_text
+    assert "[LINK_URL_001]" in anonymized.plain_text
+    assert "[IDENTIFIER_ACCOUNT_001]" in anonymized.plain_text
     assert anonymized.blocks[1].metadata["comment_author"] == "[PERSON_002]"
     assert anonymized.blocks[1].metadata["comment_email"] == "[EMAIL_002]"
     assert "personal_data_anonymized" in anonymized.quality.warnings
@@ -99,15 +99,53 @@ def test_anonymizer_preserves_existing_masks_and_masks_latin_labeled_names():
 
 
 def test_anonymizer_does_not_scrub_gate_challenger_terms_as_person_names():
+    text = (
+        "Gate Challenger produces Progress Review evidence. "
+        "Contact Rate, North Star Metric, Unit Economics, Product Market Fit, "
+        "Customer Experience, and Avito Sales must stay readable."
+    )
     parsed = ParsedDocument(
-        plain_text="Gate Challenger produces Progress Review evidence.",
-        markdown="Gate Challenger produces Progress Review evidence.",
+        plain_text=text,
+        markdown=text,
         blocks=[],
         parser=ParserInfo(name="test"),
-        quality=ParseQuality(char_count=49, block_count=0),
+        quality=ParseQuality(char_count=len(text), block_count=0),
     )
 
     anonymized, _ = PersonalDataAnonymizer().anonymize_document(parsed)
 
     assert "Gate Challenger" in anonymized.plain_text
     assert "Progress Review" in anonymized.plain_text
+    assert "Contact Rate" in anonymized.plain_text
+    assert "North Star Metric" in anonymized.plain_text
+    assert "Unit Economics" in anonymized.plain_text
+    assert "Product Market Fit" in anonymized.plain_text
+    assert "Customer Experience" in anonymized.plain_text
+    assert "Avito Sales" in anonymized.plain_text
+    assert "[PERSON_" not in anonymized.plain_text
+
+
+def test_anonymizer_masks_title_names_without_hiding_business_titles():
+    anonymizer = PersonalDataAnonymizer()
+
+    assert anonymizer.anonymize_title("John Smith Gate 2") == "[PERSON_001] Gate 2"
+    assert anonymizer.anonymize_title("John Ronald Smith Gate 3") == "[PERSON_002] Gate 3"
+    assert anonymizer.anonymize_title("Product Market Fit") == "Product Market Fit"
+    assert anonymizer.anonymize_title("Investment Defense") == "Investment Defense"
+
+
+def test_anonymizer_keeps_link_and_identifier_context_in_placeholders():
+    text = (
+        "Mockup https://www.figma.com/file/abc123/Product. "
+        "Dashboard https://grafana.example.com/d/abcdef123456. "
+        "Experiment EXP-123456789012345678901234."
+    )
+
+    anonymized = PersonalDataAnonymizer().anonymize_text(text)
+
+    assert "figma.com" not in anonymized
+    assert "grafana.example.com" not in anonymized
+    assert "EXP-123456789012345678901234" not in anonymized
+    assert "[LINK_FIGMA_001]" in anonymized
+    assert "[LINK_DASHBOARD_001]" in anonymized
+    assert "[IDENTIFIER_EXPERIMENT_001]" in anonymized
