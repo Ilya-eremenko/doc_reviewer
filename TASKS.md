@@ -34,8 +34,8 @@ Primary plan index:
   behavior by preserving common product terms such as Contact Rate, North Star
   Metric, Unit Economics, Product Market Fit, and Avito Sales, adding typed
   link/identifier placeholders, and formatting residual PII failures clearly.
-  Enabled the flag only in local Compose worker config, left production Compose
-  without the flag, verified focused worker/parser tests (`21 passed`), local/prod Compose config
+  Enabled the flag in local and production worker Compose config, verified
+  focused worker/parser tests (`25 passed`), local/prod Compose config
   rendering, rebuilt/restarted local worker containers, and confirmed workers
   listen on `documents` plus `analysis, benchmark` with local API health `ok`.
   Production deployment is intentionally out of scope.
