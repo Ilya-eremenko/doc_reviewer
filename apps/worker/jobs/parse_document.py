@@ -12,6 +12,7 @@ from app.services.audit import record_audit
 from app.services.document_type_detector import detect_document_type
 from app.storage.local import LocalDocumentStorage
 from jobs.deferred_analyses import DeferredAnalysisEnqueue, enqueue_ready_deferred_analyses
+from parsers.anonymizer import PersonalDataAnonymizer
 from parsers import parse_file_to_document
 
 
@@ -42,13 +43,24 @@ def parse_document(
         storage_service = storage or LocalDocumentStorage(get_settings().storage_root)
         raw_path = Path(document.storage_path)
         parsed_document = parse_file_to_document(raw_path)
+        anonymization_report = None
+        source_filename = document.original_filename
+        if get_settings().document_anonymization_enabled:
+            anonymizer = PersonalDataAnonymizer()
+            parsed_document, anonymization_report = anonymizer.anonymize_document(parsed_document)
+            source_filename = anonymizer.anonymize_source_filename(document.original_filename)
         parsed_text = parsed_document.plain_text
         structured_artifact = parsed_document.to_artifact(
-            source_filename=document.original_filename,
+            source_filename=source_filename,
             source_mime_type=document.mime_type,
             source_sha256=document.file_hash_sha256,
             source_size_bytes=document.file_size_bytes,
         )
+        if anonymization_report is not None:
+            structured_artifact["anonymization"] = {
+                "enabled": True,
+                "report": anonymization_report.to_dict(),
+            }
         parsed_artifacts = storage_service.save_parsed_artifacts(
             owner_id=document.owner_id,
             document_id=document.id,
@@ -78,6 +90,7 @@ def parse_document(
                 "parser": parsed_document.parser.name,
                 "parsed_artifacts": sorted(parsed_artifacts.keys()),
                 "parse_quality": parsed_document.quality.to_dict(),
+                "anonymization": anonymization_report.to_dict() if anonymization_report is not None else {"enabled": False},
             },
         )
         session.commit()

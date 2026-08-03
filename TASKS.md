@@ -21,6 +21,19 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Add local-only document anonymization before review: added a worker-side
+  parser post-processing layer that scrubs PII from parsed text, markdown,
+  blocks, and metadata before document type detection and queued analyses
+  consume the document. Upgraded the sanitizer to strict local PII rules adapted
+  from the support-review sanitizer: names/FIO, Latin labeled names, emails,
+  phones, bank details, addresses, IPs, links, and long opaque identifiers are
+  masked with deterministic placeholders, existing masks are preserved, and
+  residual validation fails closed before model access. Enabled the flag only in
+  local Compose worker config, left production Compose without the flag,
+  verified focused worker/parser tests (`21 passed`), local/prod Compose config
+  rendering, rebuilt/restarted local worker containers, and confirmed workers
+  listen on `documents` plus `analysis, benchmark` with local API health `ok`.
+  Production deployment is intentionally out of scope.
 - [x] Restore lazy Layer 1 / Layer 2 detail loading for staged Gate Challenger
   summaries without a saved Responses API id: detail requests now remain
   available for older chat-completions runs and worker fallback uses the saved

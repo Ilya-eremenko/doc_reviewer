@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.core.config import get_settings
 from app.models.analysis import Analysis
 from app.models.document import Document
 from app.models.skill import Skill
@@ -61,6 +62,54 @@ def test_parse_document_success_updates_database_and_writes_artifact(tmp_path):
         assert quality["block_count"] == 2
     finally:
         _close_session(db)
+
+
+def test_parse_document_anonymizes_personal_data_when_enabled(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOCUMENT_ANONYMIZATION_ENABLED", "true")
+    get_settings.cache_clear()
+    db = _create_session()
+    try:
+        owner = _create_user(db)
+        storage = LocalDocumentStorage(tmp_path)
+        document = _create_document(
+            db,
+            storage,
+            owner,
+            filename="ivan-petrov-gate-2.md",
+            content=(
+                "# Gate 2\n\n"
+                "Иван Петров owns MVP scope, traction, metrics, risks, and business case.\n"
+                "Contact ivan.petrov@example.com or +7 999 123-45-67."
+            ).encode("utf-8"),
+            mime_type="text/markdown",
+        )
+
+        parse_document(str(document.id), db=db, storage=storage)
+
+        db.refresh(document)
+        assert document.parse_status == DocumentParseStatus.COMPLETED.value
+        assert document.detected_document_type == DocumentType.GATE_2.value
+        assert document.parsed_text is not None
+        assert "Иван" not in document.parsed_text
+        assert "Петров" not in document.parsed_text
+        assert "ivan.petrov@example.com" not in document.parsed_text
+        assert "+7 999 123-45-67" not in document.parsed_text
+        assert "[PERSON_001]" in document.parsed_text
+        assert "[EMAIL_001]" in document.parsed_text
+        assert "[PHONE_001]" in document.parsed_text
+
+        parsed_dir = tmp_path / "documents" / str(owner.id) / str(document.id) / "parsed"
+        assert (parsed_dir / "parsed.txt").read_text(encoding="utf-8") == document.parsed_text
+        structured = json.loads((parsed_dir / "structured.json").read_text(encoding="utf-8"))
+        assert structured["source"]["filename"] == "anonymized-document.md"
+        assert structured["outputs"]["plain_text"] == document.parsed_text
+        assert structured["anonymization"]["enabled"] is True
+        assert "Иван" not in json.dumps(structured, ensure_ascii=False)
+        assert "Петров" not in json.dumps(structured, ensure_ascii=False)
+    finally:
+        _close_session(db)
+        monkeypatch.delenv("DOCUMENT_ANONYMIZATION_ENABLED", raising=False)
+        get_settings.cache_clear()
 
 
 def test_parse_document_failure_marks_failed_and_preserves_raw_file(tmp_path):
