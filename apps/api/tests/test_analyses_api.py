@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun, PredictedCommentRun
+from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisCheckStep, AnalysisDetailRun, PredictedCommentRun
 from app.models.document import Document
 from app.models.provider_key import ProviderKey
 from app.models.skill_source import RetrievalSnapshot, SkillSource, SkillSourceSnapshot
