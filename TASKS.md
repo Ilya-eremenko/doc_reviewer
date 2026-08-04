@@ -21,6 +21,16 @@ Primary plan index:
 
 ## Current Focus
 
+- [x] Tighten Documents page onboarding UI: aligned the anonymizer status badge
+  to the same centered page grid, reduced the badge size and moved it closer to
+  the app header, moved the white Russian instruction card directly below it,
+  and moved the `Documents` title into the upload panel while removing the old
+  subtitle. Verified focused web documents/AppShell tests (`42 passed`) and
+  `git diff --check`; local web rebuild is handled for inspection.
+- [x] Replace generic upload format hints in the Documents upload zones with
+  Russian requirement copy: the primary defense document is marked required in
+  red, while Fin Summary is marked optional in green for analysis quality. Added
+  a focused source-read regression check before local web rebuild.
 - [x] Add guarded deletion for analysis results without deleting cases: the
   Documents table Delete action now opens an in-app confirmation and deletes
   all non-running analysis results for the case via
