@@ -1,11 +1,15 @@
+from datetime import timedelta
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisCheckStep, AnalysisDetailRun, PredictedCommentRun
+from app.models.base import utc_now
 from app.models.document import Document
+from app.models.feedback import Feedback
 from app.models.provider_key import ProviderKey
 from app.models.skill_source import RetrievalSnapshot, SkillSource, SkillSourceSnapshot
 from app.core.config import get_settings
-from app.schemas.enums import DocumentParseStatus, DocumentType, Provider, Role, RunStatus
+from app.schemas.enums import DocumentParseStatus, DocumentType, FeedbackUsefulness, Provider, Role, RunStatus
 from app.security.secrets import encrypt_secret
 from app.seeds.skills import seed_baseline_skills
 
@@ -595,6 +599,90 @@ def test_delete_analysis_removes_result_runs_and_storage_artifacts(client, db_se
     get_settings.cache_clear()
 
 
+def test_delete_analysis_ignores_generic_run_parameter_path(client, db_session, monkeypatch, tmp_path):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
+    get_settings.cache_clear()
+    user = create_user(db_session, "author", "secret")
+    skill = seed_baseline_skills(db_session)[0]
+    document_id = _create_completed_document(client, db_session, user)
+    document = db_session.get(Document, document_id)
+    document_dir = tmp_path / "storage" / "documents" / str(user.id) / str(document_id)
+    assert document_dir.exists()
+    analysis = Analysis(
+        document_id=document_id,
+        user_id=user.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        structured_output={"verdict": "approve"},
+        raw_output="raw output",
+        run_parameters={"path": str(document_dir)},
+    )
+    db_session.add(analysis)
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.delete(f"/analyses/{analysis.id}")
+
+    assert response.status_code == 204
+    assert document_dir.exists()
+    assert document.storage_path
+    assert Path(document.storage_path).exists()
+    get_settings.cache_clear()
+
+
+def test_delete_analysis_preserves_feedback_trace_fields(client, db_session):
+    user = create_user(db_session, "author", "secret")
+    skill = seed_baseline_skills(db_session)[0]
+    document_id = _create_completed_document(client, db_session, user)
+    analysis = Analysis(
+        document_id=document_id,
+        user_id=user.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        verdict="need_evidence",
+        summary="Needs evidence",
+        structured_output={"verdict": "need_evidence"},
+        raw_output="raw output",
+        run_parameters={"output_language": "ru"},
+    )
+    db_session.add(analysis)
+    db_session.flush()
+    db_session.add(
+        Feedback(
+            user_id=user.id,
+            document_id=document_id,
+            analysis_id=analysis.id,
+            provider=analysis.provider,
+            model=analysis.model,
+            skill_id=analysis.skill_id,
+            skill_version=analysis.skill_version,
+            usefulness=FeedbackUsefulness.USEFUL.value,
+            comment="Useful trace.",
+            can_use_for_benchmark=True,
+        )
+    )
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.delete(f"/analyses/{analysis.id}")
+
+    assert response.status_code == 204
+    db_session.refresh(analysis)
+    assert analysis.deleted_at is not None
+    assert analysis.verdict == "need_evidence"
+    assert analysis.summary == "Needs evidence"
+    assert analysis.structured_output == {"verdict": "need_evidence"}
+    assert analysis.raw_output == "raw output"
+    assert analysis.run_parameters["output_language"] == "ru"
+    assert analysis.run_parameters["deleted_result_trace_preserved_for_feedback"] is True
+
+
 def test_delete_document_analysis_results_keeps_document_and_hides_all_owned_runs(client, db_session):
     user = create_user(db_session, "author", "secret")
     skill = seed_baseline_skills(db_session)[0]
@@ -656,6 +744,85 @@ def test_delete_document_analysis_results_rejects_active_runs(client, db_session
     login(client, "author", "secret")
 
     response = client.delete(f"/documents/{document_id}/analyses")
+
+    assert response.status_code == 409
+    db_session.refresh(analysis)
+    assert analysis.deleted_at is None
+
+
+def test_delete_document_analysis_results_checks_all_active_runs_before_deleting_artifacts(
+    client,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
+    get_settings.cache_clear()
+    user = create_user(db_session, "author", "secret")
+    skill = seed_baseline_skills(db_session)[0]
+    document_id = _create_completed_document(client, db_session, user)
+    running = Analysis(
+        document_id=document_id,
+        user_id=user.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.RUNNING.value,
+        run_parameters={},
+        created_at=utc_now(),
+    )
+    completed = Analysis(
+        document_id=document_id,
+        user_id=user.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        structured_output={"verdict": "approve"},
+        raw_output="raw output",
+        run_parameters={},
+        created_at=utc_now() + timedelta(seconds=1),
+    )
+    db_session.add_all([running, completed])
+    db_session.flush()
+    completed_prompt = tmp_path / "storage" / "rendered-prompts" / str(completed.id) / "prompt.txt"
+    completed_prompt.parent.mkdir(parents=True)
+    completed_prompt.write_text("prompt", encoding="utf-8")
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.delete(f"/documents/{document_id}/analyses")
+
+    assert response.status_code == 409
+    db_session.refresh(completed)
+    db_session.refresh(running)
+    assert completed.deleted_at is None
+    assert running.deleted_at is None
+    assert completed_prompt.exists()
+    get_settings.cache_clear()
+
+
+def test_delete_running_analysis_returns_conflict(client, db_session):
+    user = create_user(db_session, "author", "secret")
+    skill = seed_baseline_skills(db_session)[0]
+    document_id = _create_completed_document(client, db_session, user)
+    analysis = Analysis(
+        document_id=document_id,
+        user_id=user.id,
+        skill_id=skill.id,
+        skill_version=skill.version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.RUNNING.value,
+        run_parameters={},
+    )
+    db_session.add(analysis)
+    db_session.commit()
+    login(client, "author", "secret")
+
+    response = client.delete(f"/analyses/{analysis.id}")
 
     assert response.status_code == 409
     db_session.refresh(analysis)

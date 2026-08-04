@@ -43,6 +43,12 @@ Primary plan index:
   focused web documents/API tests (`40 passed`), Python compile, `git diff
   --check`, and rebuilt/restarted local `api` and `web`; local health and web
   routes return `200`.
+- [x] Harden analysis-result deletion before production merge: preflight all
+  analysis chains before filesystem cleanup, map direct active-run deletion to
+  `409`, ignore generic `run_parameters.path`, constrain IC artifact cleanup to
+  the owning IC run directory, and preserve top-level result trace fields when
+  feedback exists. Verified focused API analysis deletion tests (`25 passed`),
+  Python compile, and `git diff --check`.
 - [x] Add reversible model-only document anonymization before review: parsing
   now preserves original parsed text, metadata, title, and filename for the UI
   and case table, while worker model-call prompts are anonymized immediately

@@ -105,6 +105,8 @@ def delete_analysis(
         delete_analysis_for_actor(db=db, actor=current_user, analysis_id=analysis_id)
     except AnalysisNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found") from exc
+    except AnalysisPreconditionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete("/documents/{document_id}/analyses", status_code=status.HTTP_204_NO_CONTENT)
