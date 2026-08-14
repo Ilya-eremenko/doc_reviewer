@@ -260,19 +260,41 @@ def _skill_prompt_text(*, skill: Any, source_snapshot: SkillSourceSnapshotMateri
 def _reference_context(source_snapshot: SkillSourceSnapshotMaterial | None, *, document_type: str | None) -> str:
     if source_snapshot is None:
         return "No snapshot references were attached."
+    available_filenames = {relative_path.rsplit("/", 1)[-1] for relative_path in source_snapshot.files}
+    expected_stage_file = _expected_stage_reference_file(
+        document_type=document_type,
+        available_filenames=available_filenames,
+    )
     sections = []
     for relative_path, text in sorted(source_snapshot.files.items()):
         if relative_path.endswith("/SKILL.md") or relative_path == "SKILL.md":
             continue
-        if not _should_include_reference(relative_path=relative_path, document_type=document_type):
+        if not _should_include_reference(
+            relative_path=relative_path,
+            expected_stage_file=expected_stage_file,
+        ):
             continue
         sections.append(f"# {relative_path}\n{text}")
     return "\n\n".join(sections) if sections else "No snapshot references were attached."
 
 
-def _should_include_reference(*, relative_path: str, document_type: str | None) -> bool:
-    filename = relative_path.rsplit("/", 1)[-1]
+def _expected_stage_reference_file(
+    *,
+    document_type: str | None,
+    available_filenames: set[str],
+) -> str | None:
     expected_stage_file = _STAGE_REFERENCE_FILES.get(str(document_type or ""))
+    if (
+        document_type == "progress_review"
+        and expected_stage_file not in available_filenames
+        and "stream-review-2-plus-rubric.md" in available_filenames
+    ):
+        return "stream-review-2-plus-rubric.md"
+    return expected_stage_file
+
+
+def _should_include_reference(*, relative_path: str, expected_stage_file: str | None) -> bool:
+    filename = relative_path.rsplit("/", 1)[-1]
 
     if filename in _COMMON_REFERENCE_FILES:
         return True

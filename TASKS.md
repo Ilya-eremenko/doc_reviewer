@@ -2371,4 +2371,7 @@ Exit criteria:
   containers are recreated, and rollback runs the compatibility release seeder
   before restoring its containers. This removes the wrong-skill traffic window
   while preserving both data-contract and analysis rollback compatibility and
-  keeping the active skill and benchmark source aligned.
+  keeping the active skill and benchmark source aligned. The feature renderer
+  also falls back to the equivalent Stream Review 2+ rubric only when a
+  historical Progress Review snapshot predates the dedicated rubric file, so
+  queued compatibility runs remain executable across the activation boundary.
