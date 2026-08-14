@@ -263,7 +263,9 @@ def test_parse_and_validate_json_output_allows_custom_skill_schema_without_gate_
         document_type="gate_2",
     )
 
-    assert [item["id"] for item in parsed["stage_checklist"]] == ["gate2_hypothesis_results"]
+    assert [item["id"] for item in parsed["stage_checklist"]] == [
+        "gate2_unique_value_proposition"
+    ]
 
 
 def _main_analysis_result_payload() -> dict:
