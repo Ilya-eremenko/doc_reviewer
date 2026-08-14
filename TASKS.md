@@ -2343,8 +2343,10 @@ Exit criteria:
   to restore v1 if a later v2 feature release is rolled back. A dormant worker
   fallback routes already-queued future Progress Review jobs through the
   currently equivalent Stream Review 2+ rubric during rollback. Verified the
-  full API suite (`217 passed`), full worker suite (`201 passed`), JSON validity,
-  and diff checks.
+  full API suite (`218 passed`), full worker suite (`201 passed`), JSON validity,
+  and diff checks. Read schemas accept the future value, while a separate
+  selectable enum rejects it from upload, patch, analysis, skill, and etalon
+  write APIs until the feature release activates it.
 - 2026-08-14: Pinned production Gate Challenger to
   `Ilya-eremenko/Gate2-challenger-skill@3447f867987d8727cbbd16e8874c60f2b1ed07d0`
   and restored managed source checkout during the baseline skill refresh, so

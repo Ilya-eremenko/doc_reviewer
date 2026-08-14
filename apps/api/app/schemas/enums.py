@@ -22,6 +22,15 @@ class DocumentType(StrEnum):
     UNKNOWN = "unknown"
 
 
+class SelectableDocumentType(StrEnum):
+    GATE_2 = "gate_2"
+    STREAM_REVIEW_1 = "stream_review_1"
+    STREAM_REVIEW_2_PLUS = "stream_review_2_plus"
+    PROGRESS_REVIEW = "progress_review"
+    GATE_3 = "gate_3"
+    UNKNOWN = "unknown"
+
+
 class DocumentRole(StrEnum):
     PRIMARY = "primary"
     FIN_SUMMARY = "fin_summary"
