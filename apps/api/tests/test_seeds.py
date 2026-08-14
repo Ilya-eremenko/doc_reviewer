@@ -67,7 +67,6 @@ def test_seed_baseline_skills_archives_superseded_gate_challenger_version(
     db_session.refresh(legacy_skill)
     assert legacy_skill.status == "archived"
     assert current_skill.status == "active"
-
     monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_SKILL_VERSION", "stage-checklist-v1")
     compatibility_skill = next(
         skill
