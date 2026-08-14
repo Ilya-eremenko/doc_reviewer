@@ -2375,3 +2375,5 @@ Exit criteria:
   also falls back to the equivalent Stream Review 2+ rubric only when a
   historical Progress Review snapshot predates the dedicated rubric file, so
   queued compatibility runs remain executable across the activation boundary.
+  The checklist loader now rejects duplicate JSON object keys, and the shared
+  contract contains one unambiguous `progress_review` definition.
