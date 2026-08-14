@@ -161,7 +161,7 @@ def _ensure_git_checkout(path: Path, repo_url: str, ref: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             subprocess.run(
-                ["git", "clone", "--no-checkout", repo_url, str(path)],
+                ["git", "clone", repo_url, str(path)],
                 check=True,
                 capture_output=True,
                 text=True,
