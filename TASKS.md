@@ -2334,3 +2334,12 @@ Exit criteria:
   Added long historical output and truncated JSON regressions; localization and
   IC Review suites pass together (`37 passed`); the full worker suite passes
   (`195 passed`).
+- 2026-08-14: Prepared the rollback-compatible first phase for Progress Review.
+  The API and worker data model can deserialize future `progress_review`
+  document and skill rows, and the shared checklist contract knows the future
+  identifiers, while detection, selectable document types, seed support, and
+  UI exposure remain intentionally disabled. Baseline seeding now archives any
+  superseded Gate Challenger version in either direction, allowing this release
+  to restore v1 if a later v2 feature release is rolled back. Verified the full
+  API suite (`217 passed`), full worker suite (`200 passed`), JSON validity, and
+  diff checks.
