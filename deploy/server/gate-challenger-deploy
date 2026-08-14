@@ -211,9 +211,6 @@ deploy_release() {
   log "applying database migrations"
   compose_for "$release_dir" run --rm --no-deps api alembic upgrade head
 
-  log "refreshing baseline skills"
-  compose_for "$release_dir" run --rm --no-deps api python -m app.seeds.skills
-
   capture_previous_release
   point_current_at "$release_dir"
   switched_release="true"
@@ -223,6 +220,9 @@ deploy_release() {
 
   log "waiting for internal and public health checks"
   health_check || return 1
+
+  log "refreshing baseline skills and activating Progress Review support"
+  compose_for "$release_dir" run --rm --no-deps api python -m app.seeds.skills
 
   log "production now runs $release_sha"
 }

@@ -48,6 +48,13 @@ the shared storage volume and seeds that checkout as the active
 `GATE_CHALLENGER_MANAGED_REF` only when intentionally switching source. The
 default checkout path is derived from the effective managed ref; if you override
 `GATE_CHALLENGER_SOURCE_PATH`, keep it ref-specific for the same reason.
+`GATE2_BENCHMARK_DIR` defaults to that checkout's `benchmark` directory so
+benchmark imports and analysis snapshots use the same pinned source revision.
+
+The deployer starts the new containers and waits for health checks before it
+seeds the new skill version or writes the new `progress_review` enum value to
+skill rows. This keeps both the database contract and the active analysis skill
+compatible with the previous release if container startup requires a rollback.
 
 Devil's Advocate and IC Agentic Review sources remain externally mounted and
 independently versioned so analysis runs continue to snapshot explicit skill

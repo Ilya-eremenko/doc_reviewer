@@ -20,7 +20,8 @@ _STAGE_REFERENCE_FILES = {
     "progress_review": "progress-review-rubric.md",
     "gate_3": "gate-3-rubric.md",
 }
-_KNOWN_STAGE_REFERENCE_FILES = set(_STAGE_REFERENCE_FILES.values())
+_INACTIVE_STAGE_REFERENCE_FILES = {"gate-1-rubric.md"}
+_KNOWN_STAGE_REFERENCE_FILES = set(_STAGE_REFERENCE_FILES.values()) | _INACTIVE_STAGE_REFERENCE_FILES
 
 def render_gate2_challenger_prompt(
     *,

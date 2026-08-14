@@ -2344,8 +2344,15 @@ Exit criteria:
   checklist contract with the expanded Gate 2, Gate 3, Stream Review 1, Stream
   Review 2+, and Progress Review criteria. The draft Gate 1 rubric remains
   intentionally inactive in the external skill repository. Verified the full
-  API suite (`217 passed`), full worker suite (`201 passed`), full web suite
+  API suite (`219 passed`), full worker suite (`201 passed`), full web suite
   (`150 passed`), Next.js production build, production Compose expansion, and
   diff checks. GitHub's Linux runner exposed that `git clone --no-checkout`
   reports a fresh checkout as locally modified on its Git version; the managed
   source bootstrap now uses a normal clone before checking out the pinned ref.
+  Follow-up review hardening excludes the inactive Gate 1 draft from every
+  rendered prompt, points benchmark imports at the same managed checkout,
+  archives superseded Gate Challenger baseline versions, and defers the entire
+  baseline skill refresh until the new release containers have passed health
+  checks. This preserves both data-contract and analysis rollback compatibility
+  with the previous release while keeping the active skill and benchmark source
+  aligned.

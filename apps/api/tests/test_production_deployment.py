@@ -34,7 +34,11 @@ def test_production_compose_uses_pinned_managed_gate_challenger_source() -> None
     assert compose.count(
         f"GATE_CHALLENGER_MANAGED_REF: ${{GATE_CHALLENGER_MANAGED_REF:-{revision}}}"
     ) == 2
-    assert compose.count(f"gate-challenger-${{GATE_CHALLENGER_MANAGED_REF:-{revision}}}") == 2
+    assert compose.count(f"gate-challenger-${{GATE_CHALLENGER_MANAGED_REF:-{revision}}}") == 4
+    assert compose.count(
+        "GATE2_BENCHMARK_DIR: ${GATE2_BENCHMARK_DIR:-/var/lib/gate-challenger/storage/"
+        f"external/gate-challenger-${{GATE_CHALLENGER_MANAGED_REF:-{revision}}}/benchmark}}"
+    ) == 2
 
 
 def test_production_workflow_deploys_only_verified_main_sha() -> None:
@@ -122,6 +126,16 @@ def test_server_deployer_enforces_traceable_release_safety() -> None:
 
     for control in required_safety_controls:
         assert control in deployer
+
+
+def test_server_deployer_seeds_new_skills_only_after_new_release_health_check() -> None:
+    deployer = (REPO_ROOT / "deploy/server/gate-challenger-deploy").read_text()
+
+    health_check = "health_check || return 1"
+    seed_command = "api python -m app.seeds.skills"
+
+    assert deployer.count(seed_command) == 1
+    assert deployer.index(health_check) < deployer.index(seed_command)
 
 
 def test_restricted_ssh_entrypoint_accepts_only_a_commit_sha() -> None:

@@ -295,6 +295,7 @@ def test_gate2_challenger_renderer_filters_stage_references_for_known_document_t
         "common-verdict-policy.md": "Common verdict policy",
         "stage-detection.md": "Stage detection instructions",
         "gate-2-rubric.md": "Gate 2 rubric that must be used with decision spine and driver focus",
+        "gate-1-rubric.md": "Inactive Gate 1 rubric that must never be sent",
         "gate-3-rubric.md": "Gate 3 rubric that should not be sent",
         "stream-review-1-rubric.md": "Stream review 1 rubric that should not be sent",
         "stream-review-2-plus-rubric.md": "Stream review 2 plus rubric that should not be sent",
@@ -351,6 +352,7 @@ def test_gate2_challenger_renderer_filters_stage_references_for_known_document_t
     assert "Common verdict policy" in prompt
     assert "Stage detection instructions" in prompt
     assert "Gate 2 rubric that must be used with decision spine and driver focus" in prompt
+    assert "Inactive Gate 1 rubric that must never be sent" not in prompt
     assert "Custom calibration note" in prompt
     assert "Gate 3 rubric that should not be sent" not in prompt
     assert "Stream review 1 rubric that should not be sent" not in prompt
@@ -432,6 +434,7 @@ def test_gate2_challenger_renderer_does_not_preload_stage_rubrics_for_unknown_st
         "common-output-contract.md": "Common output contract",
         "stage-detection.md": "Stage detection instructions",
         "gate-2-rubric.md": "Gate 2 rubric should wait for routing",
+        "gate-1-rubric.md": "Inactive Gate 1 rubric should never be sent",
         "gate-3-rubric.md": "Gate 3 rubric should wait for routing",
         "stream-review-1-rubric.md": "Stream review 1 rubric should wait for routing",
         "stream-review-2-plus-rubric.md": "Stream review 2 plus rubric should wait for routing",
@@ -488,6 +491,7 @@ def test_gate2_challenger_renderer_does_not_preload_stage_rubrics_for_unknown_st
     assert "Stage detection instructions" in prompt
     assert "Custom calibration note" in prompt
     assert "Gate 2 rubric should wait for routing" not in prompt
+    assert "Inactive Gate 1 rubric should never be sent" not in prompt
     assert "Gate 3 rubric should wait for routing" not in prompt
     assert "Stream review 1 rubric should wait for routing" not in prompt
     assert "Stream review 2 plus rubric should wait for routing" not in prompt

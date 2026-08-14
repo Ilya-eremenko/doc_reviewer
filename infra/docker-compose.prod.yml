@@ -48,6 +48,7 @@ services:
       GATE_CHALLENGER_SOURCE_PATH: ${GATE_CHALLENGER_SOURCE_PATH:-/var/lib/gate-challenger/storage/external/gate-challenger-${GATE_CHALLENGER_MANAGED_REF:-3447f867987d8727cbbd16e8874c60f2b1ed07d0}}
       GATE_CHALLENGER_MANAGED_REPO_URL: ${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Ilya-eremenko/Gate2-challenger-skill.git}
       GATE_CHALLENGER_MANAGED_REF: ${GATE_CHALLENGER_MANAGED_REF:-3447f867987d8727cbbd16e8874c60f2b1ed07d0}
+      GATE2_BENCHMARK_DIR: ${GATE2_BENCHMARK_DIR:-/var/lib/gate-challenger/storage/external/gate-challenger-${GATE_CHALLENGER_MANAGED_REF:-3447f867987d8727cbbd16e8874c60f2b1ed07d0}/benchmark}
       DEVILS_ADVOCATE_SOURCE_PATH: /external/devils-advocate
       IC_AGENTIC_REVIEW_SOURCE_PATH: /external/ic-agentic-review
       SKILL_SOURCE_SNAPSHOT_MODE: ${SKILL_SOURCE_SNAPSHOT_MODE:-production_export}
@@ -97,6 +98,7 @@ services:
       GATE_CHALLENGER_SOURCE_PATH: ${GATE_CHALLENGER_SOURCE_PATH:-/var/lib/gate-challenger/storage/external/gate-challenger-${GATE_CHALLENGER_MANAGED_REF:-3447f867987d8727cbbd16e8874c60f2b1ed07d0}}
       GATE_CHALLENGER_MANAGED_REPO_URL: ${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/Ilya-eremenko/Gate2-challenger-skill.git}
       GATE_CHALLENGER_MANAGED_REF: ${GATE_CHALLENGER_MANAGED_REF:-3447f867987d8727cbbd16e8874c60f2b1ed07d0}
+      GATE2_BENCHMARK_DIR: ${GATE2_BENCHMARK_DIR:-/var/lib/gate-challenger/storage/external/gate-challenger-${GATE_CHALLENGER_MANAGED_REF:-3447f867987d8727cbbd16e8874c60f2b1ed07d0}/benchmark}
       DEVILS_ADVOCATE_SOURCE_PATH: /external/devils-advocate
       IC_AGENTIC_REVIEW_SOURCE_PATH: /external/ic-agentic-review
       SKILL_SOURCE_SNAPSHOT_MODE: ${SKILL_SOURCE_SNAPSHOT_MODE:-production_export}
