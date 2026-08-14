@@ -64,6 +64,19 @@ _RULES = (
         weak_phrases=("Stream review",),
     ),
     _DetectionRule(
+        document_type=DocumentType.PROGRESS_REVIEW,
+        exact_phrases=("Progress Review",),
+        supporting_keywords=(
+            "previous SR",
+            "plan / fact",
+            "backlog updates",
+            "traction model changes",
+            "resource assumptions",
+            "next review commitments",
+            "traffic-light",
+        ),
+    ),
+    _DetectionRule(
         document_type=DocumentType.GATE_3,
         exact_phrases=("Gate 3",),
         supporting_keywords=(

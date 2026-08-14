@@ -21,6 +21,22 @@ def test_production_compose_uses_release_tagged_application_images() -> None:
     assert "replicas: ${ANALYSIS_WORKER_REPLICAS:-2}" in compose
 
 
+def test_production_compose_uses_pinned_managed_gate_challenger_source() -> None:
+    compose = (REPO_ROOT / "infra/docker-compose.prod.yml").read_text()
+    revision = "3447f867987d8727cbbd16e8874c60f2b1ed07d0"
+
+    assert compose.count("GATE_CHALLENGER_SOURCE_PATH: ${GATE_CHALLENGER_SOURCE_PATH:-") == 2
+    assert compose.count(
+        "GATE_CHALLENGER_MANAGED_REPO_URL: "
+        "${GATE_CHALLENGER_MANAGED_REPO_URL:-https://github.com/"
+        "Ilya-eremenko/Gate2-challenger-skill.git}"
+    ) == 2
+    assert compose.count(
+        f"GATE_CHALLENGER_MANAGED_REF: ${{GATE_CHALLENGER_MANAGED_REF:-{revision}}}"
+    ) == 2
+    assert compose.count(f"gate-challenger-${{GATE_CHALLENGER_MANAGED_REF:-{revision}}}") == 2
+
+
 def test_production_workflow_deploys_only_verified_main_sha() -> None:
     workflow = (REPO_ROOT / ".github/workflows/deploy-production.yml").read_text()
 

@@ -2334,3 +2334,16 @@ Exit criteria:
   Added long historical output and truncated JSON regressions; localization and
   IC Review suites pass together (`37 passed`); the full worker suite passes
   (`195 passed`).
+- 2026-08-14: Pinned production Gate Challenger to
+  `Ilya-eremenko/Gate2-challenger-skill@3447f867987d8727cbbd16e8874c60f2b1ed07d0`
+  and restored managed source checkout during the baseline skill refresh, so
+  the normal GitHub deployment installs the exact reviewed skill revision into
+  shared storage without direct root SSH. Added `Progress Review` as a distinct
+  supported document type with automatic detection, manual selection, and
+  routing to `progress-review-rubric.md`. Synchronized the strict stage
+  checklist contract with the expanded Gate 2, Gate 3, Stream Review 1, Stream
+  Review 2+, and Progress Review criteria. The draft Gate 1 rubric remains
+  intentionally inactive in the external skill repository. Verified the full
+  API suite (`207 passed`), full worker suite (`172 passed`), full web suite
+  (`150 passed`), Next.js production build, production Compose expansion, and
+  diff checks.

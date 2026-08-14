@@ -224,10 +224,13 @@ def test_parse_and_validate_json_output_enforces_stage_checklist_for_document_ty
     )
 
     assert [item["id"] for item in payload["stage_checklist"]] == [
+        "gate2_unique_value_proposition",
         "gate2_hypothesis_results",
         "gate2_mvp_or_target_product",
+        "gate2_input_output_metric_link",
         "gate2_mockups_or_user_flow",
         "gate2_gate3_commitments",
+        "gate2_stop_criteria",
     ]
 
 
@@ -270,6 +273,12 @@ def _main_analysis_result_payload() -> dict:
         "assessment_markdown": "Оценка документа\nРекомендация: запросить доказательства.",
         "stage_checklist": [
             {
+                "id": "gate2_unique_value_proposition",
+                "label": "Уникальное товарное предложение (УТП)",
+                "status": "red",
+                "evidence": "The document does not establish a unique value proposition.",
+            },
+            {
                 "id": "gate2_hypothesis_results",
                 "label": "Результаты проверки гипотез из Gate 1",
                 "status": "red",
@@ -282,6 +291,12 @@ def _main_analysis_result_payload() -> dict:
                 "evidence": "The document describes the target product.",
             },
             {
+                "id": "gate2_input_output_metric_link",
+                "label": "Связь Input/Output метрик с сутью продукта и УТП",
+                "status": "red",
+                "evidence": "The document does not link metrics to the product value.",
+            },
+            {
                 "id": "gate2_mockups_or_user_flow",
                 "label": "Mockups или видео пользовательского flow",
                 "status": "red",
@@ -292,6 +307,12 @@ def _main_analysis_result_payload() -> dict:
                 "label": "Commitments к Gate 3: сроки, expected performance, метрики",
                 "status": "red",
                 "evidence": "The document omits Gate 3 commitments.",
+            },
+            {
+                "id": "gate2_stop_criteria",
+                "label": "Stop-критерии продукта",
+                "status": "red",
+                "evidence": "The document omits stop criteria.",
             },
         ],
         "findings": [],

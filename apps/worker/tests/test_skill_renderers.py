@@ -298,6 +298,7 @@ def test_gate2_challenger_renderer_filters_stage_references_for_known_document_t
         "gate-3-rubric.md": "Gate 3 rubric that should not be sent",
         "stream-review-1-rubric.md": "Stream review 1 rubric that should not be sent",
         "stream-review-2-plus-rubric.md": "Stream review 2 plus rubric that should not be sent",
+        "progress-review-rubric.md": "Progress Review rubric that should not be sent",
         "custom-calibration.md": "Custom calibration note",
     }
     for filename, text in reference_files.items():
@@ -354,6 +355,69 @@ def test_gate2_challenger_renderer_filters_stage_references_for_known_document_t
     assert "Gate 3 rubric that should not be sent" not in prompt
     assert "Stream review 1 rubric that should not be sent" not in prompt
     assert "Stream review 2 plus rubric that should not be sent" not in prompt
+    assert "Progress Review rubric that should not be sent" not in prompt
+
+
+def test_gate2_challenger_renderer_routes_progress_review_to_its_own_rubric(tmp_path):
+    snapshot_dir = tmp_path / "skill-snapshots" / str(uuid4())
+    files_dir = snapshot_dir / "files"
+    skill_file = files_dir / "skills" / "gate-challenger" / "SKILL.md"
+    references_dir = files_dir / "skills" / "gate-challenger" / "references"
+    references_dir.mkdir(parents=True)
+    skill_file.write_text("Snapshot Gate instructions", encoding="utf-8")
+    reference_files = {
+        "common-output-contract.md": "Common output contract",
+        "stream-review-2-plus-rubric.md": "Stream review 2 plus rubric that should not be sent",
+        "progress-review-rubric.md": "Progress Review rubric that must be used",
+    }
+    for filename, text in reference_files.items():
+        (references_dir / filename).write_text(text, encoding="utf-8")
+    (snapshot_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "source_slug": "gate-challenger",
+                "resolved_revision": "abc123",
+                "source_fingerprint": "snapshot-fingerprint",
+                "files": [
+                    {"path": "skills/gate-challenger/SKILL.md", "sha256": "skill-hash"},
+                    *[
+                        {
+                            "path": f"skills/gate-challenger/references/{filename}",
+                            "sha256": f"{filename}-hash",
+                        }
+                        for filename in reference_files
+                    ],
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = SimpleNamespace(
+        title="Progress Review",
+        parsed_text="Plan / fact results and next review commitments.",
+        manual_document_type=None,
+        detected_document_type="progress_review",
+    )
+    skill = SimpleNamespace(
+        name="gate2_challenger_main_analysis",
+        version="baseline",
+        prompt_text="Stub prompt should not be used",
+        source_uri="/external/gate-challenger",
+        source_entrypoint="skills/gate-challenger/SKILL.md",
+        source_revision="old",
+        source_fingerprint="old",
+    )
+
+    prompt = render_gate2_challenger_prompt(
+        document=document,
+        skill=skill,
+        response_schema={"title": "MainAnalysisResult", "type": "object"},
+        source_snapshot=load_skill_source_snapshot(str(snapshot_dir)),
+    )
+
+    assert "Progress Review rubric that must be used" in prompt
+    assert "Stream review 2 plus rubric that should not be sent" not in prompt
+    assert "progress_review_plan_fact_last_half_year" in prompt
 
 
 def test_gate2_challenger_renderer_does_not_preload_stage_rubrics_for_unknown_stage(tmp_path):
@@ -371,6 +435,7 @@ def test_gate2_challenger_renderer_does_not_preload_stage_rubrics_for_unknown_st
         "gate-3-rubric.md": "Gate 3 rubric should wait for routing",
         "stream-review-1-rubric.md": "Stream review 1 rubric should wait for routing",
         "stream-review-2-plus-rubric.md": "Stream review 2 plus rubric should wait for routing",
+        "progress-review-rubric.md": "Progress Review rubric should wait for routing",
         "custom-calibration.md": "Custom calibration note",
     }
     for filename, text in reference_files.items():
@@ -426,6 +491,7 @@ def test_gate2_challenger_renderer_does_not_preload_stage_rubrics_for_unknown_st
     assert "Gate 3 rubric should wait for routing" not in prompt
     assert "Stream review 1 rubric should wait for routing" not in prompt
     assert "Stream review 2 plus rubric should wait for routing" not in prompt
+    assert "Progress Review rubric should wait for routing" not in prompt
 
 
 def test_gate2_prompt_renderer_requires_snapshot_for_external_snapshot_required_skill():

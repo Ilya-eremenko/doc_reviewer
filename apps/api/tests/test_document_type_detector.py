@@ -7,6 +7,7 @@ def test_document_type_enum_matches_gate_challenger_stages():
         "gate_2",
         "stream_review_1",
         "stream_review_2_plus",
+        "progress_review",
         "gate_3",
         "unknown",
     ]
@@ -91,6 +92,22 @@ def test_detects_unqualified_stream_review_as_later_review_from_supporting_signa
     assert result.document_type == DocumentType.STREAM_REVIEW_2_PLUS
     assert result.confidence >= 0.45
     assert "Stream review" in result.explanation
+
+
+def test_detects_progress_review_from_stage_signals():
+    text = """
+    Progress Review package
+
+    The team compares plan / fact results since the previous SR, backlog
+    updates, traction model changes, resource assumptions, and next review
+    commitments.
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
+    assert result.confidence >= 0.45
+    assert "Progress Review" in result.explanation
 
 
 def test_gate_1_is_not_a_supported_gate_challenger_document_type():
