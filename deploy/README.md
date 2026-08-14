@@ -51,10 +51,12 @@ default checkout path is derived from the effective managed ref; if you override
 `GATE2_BENCHMARK_DIR` defaults to that checkout's `benchmark` directory so
 benchmark imports and analysis snapshots use the same pinned source revision.
 
-The deployer starts the new containers and waits for health checks before it
-seeds the new skill version or writes the new `progress_review` enum value to
-skill rows. This keeps both the database contract and the active analysis skill
-compatible with the previous release if container startup requires a rollback.
+The Progress Review feature follows a compatibility release that can deserialize
+the new document type and restore either baseline skill version. The feature
+deployer activates the pinned v2 skill before recreating public containers, so
+there is no interval where the new UI can launch Progress Review against v1. If
+startup fails, rollback runs the previous release's seeder before bringing its
+containers back, which reactivates v1 and archives v2.
 
 Devil's Advocate and IC Agentic Review sources remain externally mounted and
 independently versioned so analysis runs continue to snapshot explicit skill

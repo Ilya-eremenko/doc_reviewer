@@ -2351,8 +2351,9 @@ Exit criteria:
   source bootstrap now uses a normal clone before checking out the pinned ref.
   Follow-up review hardening excludes the inactive Gate 1 draft from every
   rendered prompt, points benchmark imports at the same managed checkout,
-  archives superseded Gate Challenger baseline versions, and defers the entire
-  baseline skill refresh until the new release containers have passed health
-  checks. This preserves both data-contract and analysis rollback compatibility
-  with the previous release while keeping the active skill and benchmark source
-  aligned.
+  and archives superseded Gate Challenger baseline versions. Progress Review is
+  deployed after a separate compatibility release: v2 is seeded before public
+  containers are recreated, and rollback runs the compatibility release seeder
+  before restoring its containers. This removes the wrong-skill traffic window
+  while preserving both data-contract and analysis rollback compatibility and
+  keeping the active skill and benchmark source aligned.

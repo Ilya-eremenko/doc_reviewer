@@ -128,14 +128,25 @@ def test_server_deployer_enforces_traceable_release_safety() -> None:
         assert control in deployer
 
 
-def test_server_deployer_seeds_new_skills_only_after_new_release_health_check() -> None:
+def test_server_deployer_seeds_new_skills_before_exposing_new_release() -> None:
     deployer = (REPO_ROOT / "deploy/server/gate-challenger-deploy").read_text()
 
-    health_check = "health_check || return 1"
-    seed_command = "api python -m app.seeds.skills"
+    point_current = 'point_current_at "$release_dir"'
+    seed_command = 'seed_baseline_skills_for "$release_dir"'
+    recreate_services = 'recreate_application_services "$release_dir"'
 
-    assert deployer.count(seed_command) == 1
-    assert deployer.index(health_check) < deployer.index(seed_command)
+    assert deployer.index(point_current) < deployer.index(seed_command)
+    assert deployer.index(seed_command) < deployer.index(recreate_services)
+
+
+def test_server_deployer_restores_previous_skill_version_during_rollback() -> None:
+    deployer = (REPO_ROOT / "deploy/server/gate-challenger-deploy").read_text()
+
+    rollback_start = deployer.index("rollback_release()")
+    restore_skill = 'seed_baseline_skills_for "$previous_dir"'
+    recreate_services = 'recreate_application_services "$previous_dir"'
+
+    assert deployer.index(restore_skill, rollback_start) < deployer.index(recreate_services, rollback_start)
 
 
 def test_restricted_ssh_entrypoint_accepts_only_a_commit_sha() -> None:

@@ -19,6 +19,7 @@ release_dir=""
 previous_dir=""
 switched_release="false"
 relocated_current="false"
+skills_seeded="false"
 
 log() {
   printf '[deploy] %s\n' "$*"
@@ -134,6 +135,11 @@ recreate_application_services() {
   compose_for "$target" up -d --no-deps --force-recreate "${services[@]}"
 }
 
+seed_baseline_skills_for() {
+  local target="$1"
+  compose_for "$target" run --rm --no-deps api python -m app.seeds.skills
+}
+
 point_current_at() {
   local target="$1"
   local next_link="$base_dir/.current-next"
@@ -183,6 +189,13 @@ rollback_release() {
     log "rolling application containers back to $previous_dir"
     point_current_at "$previous_dir"
     set_release_images "$(release_version_for "$previous_dir")"
+    if [[ "$skills_seeded" == "true" ]]; then
+      if seed_baseline_skills_for "$previous_dir"; then
+        log "restored the previous baseline skill version"
+      else
+        printf '[deploy] ERROR: previous baseline skill restore failed\n' >&2
+      fi
+    fi
     recreate_application_services "$previous_dir"
     if health_check; then
       log "application rollback passed health checks"
@@ -215,14 +228,15 @@ deploy_release() {
   point_current_at "$release_dir"
   switched_release="true"
 
+  log "refreshing baseline skills and activating Progress Review support"
+  seed_baseline_skills_for "$release_dir"
+  skills_seeded="true"
+
   log "recreating application and edge containers"
   recreate_application_services "$release_dir"
 
   log "waiting for internal and public health checks"
   health_check || return 1
-
-  log "refreshing baseline skills and activating Progress Review support"
-  compose_for "$release_dir" run --rm --no-deps api python -m app.seeds.skills
 
   log "production now runs $release_sha"
 }
