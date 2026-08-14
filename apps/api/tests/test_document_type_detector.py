@@ -117,6 +117,24 @@ def test_detects_progress_review_from_stage_signals():
     assert "Progress Review" in result.explanation
 
 
+def test_detects_progress_review_without_literal_stage_heading():
+    text = """
+    Quarterly delivery update
+
+    This pack summarizes product progress, current status, and milestones for
+    the next six months. It also compares plan / fact results and lists the
+    next review commitments.
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
+    assert result.confidence >= 0.45
+    assert "progress" in result.explanation
+    assert "status" in result.explanation
+    assert "milestones" in result.explanation
+
+
 def test_gate_1_is_not_a_supported_gate_challenger_document_type():
     text = """
     Gate 1 opportunity brief

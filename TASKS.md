@@ -2376,4 +2376,9 @@ Exit criteria:
   historical Progress Review snapshot predates the dedicated rubric file, so
   queued compatibility runs remain executable across the activation boundary.
   The checklist loader now rejects duplicate JSON object keys, and the shared
-  contract contains one unambiguous `progress_review` definition.
+  contract contains one unambiguous `progress_review` definition. Final review
+  hardening adds the planned progress/status/milestone detector signals, ignores
+  legacy production source-path overrides in favor of
+  `GATE_CHALLENGER_MANAGED_PATH`, quiesces public services before the v2 skill
+  activation, treats even a partial activation as requiring rollback cleanup,
+  and aborts rollback when the previous skill version cannot be restored.

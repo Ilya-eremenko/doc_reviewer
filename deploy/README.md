@@ -46,17 +46,20 @@ refresh. By default the API container checks out
 the shared storage volume and seeds that checkout as the active
 `gate-challenger` source. Override `GATE_CHALLENGER_MANAGED_REPO_URL` or
 `GATE_CHALLENGER_MANAGED_REF` only when intentionally switching source. The
-default checkout path is derived from the effective managed ref; if you override
-`GATE_CHALLENGER_SOURCE_PATH`, keep it ref-specific for the same reason.
+default checkout path is derived from the effective managed ref. Production
+intentionally ignores the legacy `GATE_CHALLENGER_SOURCE_PATH` value that may
+remain in `infra.env`; use `GATE_CHALLENGER_MANAGED_PATH` for an intentional
+ref-specific managed checkout override.
 `GATE2_BENCHMARK_DIR` defaults to that checkout's `benchmark` directory so
 benchmark imports and analysis snapshots use the same pinned source revision.
 
 The Progress Review feature follows a compatibility release that can deserialize
 the new document type and restore either baseline skill version. The feature
-deployer activates the pinned v2 skill before recreating public containers, so
-there is no interval where the new UI can launch Progress Review against v1. If
-startup fails, rollback runs the previous release's seeder before bringing its
-containers back, which reactivates v1 and archives v2.
+deployer stops the public application services before activating the pinned v2
+skill, then recreates them from the new release. If startup fails, rollback runs
+the previous release's seeder before bringing its containers back, which
+reactivates v1 and archives v2. A failed skill restore makes rollback fail
+explicitly instead of reporting a healthy but incompatible release.
 
 Devil's Advocate and IC Agentic Review sources remain externally mounted and
 independently versioned so analysis runs continue to snapshot explicit skill
