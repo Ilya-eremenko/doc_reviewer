@@ -2381,4 +2381,10 @@ Exit criteria:
   legacy production source-path overrides in favor of
   `GATE_CHALLENGER_MANAGED_PATH`, quiesces public services before the v2 skill
   activation, treats even a partial activation as requiring rollback cleanup,
-  and aborts rollback when the previous skill version cannot be restored.
+  and aborts rollback when the previous skill version cannot be restored. The
+  detector requires distinct Progress Review signals, v2 source activation and
+  rendering require the dedicated Progress Review rubric while historical v1
+  snapshots retain the compatibility fallback, rollback stops failed new
+  containers before restoring v1, and managed source tags use detached checkout.
+  Final verification: `228` API tests and `203` worker tests passed; production
+  Compose configuration and the deploy shell syntax also validate successfully.

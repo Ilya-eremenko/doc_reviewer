@@ -37,7 +37,11 @@ def render_gate2_challenger_prompt(
         document, "detected_document_type", "unknown"
     )
     skill_prompt = _skill_prompt_text(skill=skill, source_snapshot=source_snapshot)
-    reference_context = _reference_context(source_snapshot, document_type=document_type)
+    reference_context = _reference_context(
+        source_snapshot,
+        document_type=document_type,
+        skill_version=str(getattr(skill, "version", "")),
+    )
     normalized_output_language = normalize_output_language(output_language)
     layer_4_context_text = _layer_4_context_text(layer_4_context)
     source_lines = [
@@ -257,13 +261,19 @@ def _skill_prompt_text(*, skill: Any, source_snapshot: SkillSourceSnapshotMateri
     return "\n\n".join(source_snapshot.files[path] for path in sorted(source_snapshot.files))
 
 
-def _reference_context(source_snapshot: SkillSourceSnapshotMaterial | None, *, document_type: str | None) -> str:
+def _reference_context(
+    source_snapshot: SkillSourceSnapshotMaterial | None,
+    *,
+    document_type: str | None,
+    skill_version: str,
+) -> str:
     if source_snapshot is None:
         return "No snapshot references were attached."
     available_filenames = {relative_path.rsplit("/", 1)[-1] for relative_path in source_snapshot.files}
     expected_stage_file = _expected_stage_reference_file(
         document_type=document_type,
         available_filenames=available_filenames,
+        skill_version=skill_version,
     )
     sections = []
     for relative_path, text in sorted(source_snapshot.files.items()):
@@ -282,14 +292,13 @@ def _expected_stage_reference_file(
     *,
     document_type: str | None,
     available_filenames: set[str],
+    skill_version: str,
 ) -> str | None:
     expected_stage_file = _STAGE_REFERENCE_FILES.get(str(document_type or ""))
-    if (
-        document_type == "progress_review"
-        and expected_stage_file not in available_filenames
-        and "stream-review-2-plus-rubric.md" in available_filenames
-    ):
-        return "stream-review-2-plus-rubric.md"
+    if document_type == "progress_review" and expected_stage_file not in available_filenames:
+        if skill_version == "stage-checklist-v1" and "stream-review-2-plus-rubric.md" in available_filenames:
+            return "stream-review-2-plus-rubric.md"
+        raise ValueError("Progress Review skill snapshot is missing progress-review-rubric.md")
     return expected_stage_file
 
 

@@ -78,7 +78,6 @@ _RULES = (
             "next review commitments",
             "traffic-light",
         ),
-        weak_phrases=("progress", "status update", "milestone review"),
     ),
     _DetectionRule(
         document_type=DocumentType.GATE_3,

@@ -123,6 +123,8 @@ def test_seed_baseline_skills_can_manage_gate_challenger_checkout(db_session, tm
     reference_file = source_repo / "skills/gate-challenger/references/common-output-contract.md"
     reference_file.parent.mkdir()
     reference_file.write_text("Reference contract.", encoding="utf-8")
+    progress_reference = source_repo / "skills/gate-challenger/references/progress-review-rubric.md"
+    progress_reference.write_text("Progress Review rubric.", encoding="utf-8")
     _run_git(source_repo, "init", "-b", "main")
     _run_git(source_repo, "config", "user.email", "test@example.com")
     _run_git(source_repo, "config", "user.name", "Test")
@@ -151,6 +153,25 @@ def test_seed_baseline_skills_can_manage_gate_challenger_checkout(db_session, tm
     assert gate_source.default_ref == expected_revision
     assert gate_skill.prompt_text == "Managed Gate Challenger prompt."
     assert _run_git(checkout_path, "rev-parse", "HEAD").stdout.strip() == expected_revision
+
+
+def test_managed_gate_challenger_checkout_supports_tag_refs(tmp_path):
+    source_repo = tmp_path / "tagged-gate-source-repo"
+    source_repo.mkdir()
+    (source_repo / "README.md").write_text("Tagged release.", encoding="utf-8")
+    _run_git(source_repo, "init", "-b", "main")
+    _run_git(source_repo, "config", "user.email", "test@example.com")
+    _run_git(source_repo, "config", "user.name", "Test")
+    _run_git(source_repo, "add", "README.md")
+    _run_git(source_repo, "commit", "-m", "tagged release")
+    _run_git(source_repo, "tag", "v2.0")
+    expected_revision = _run_git(source_repo, "rev-parse", "v2.0^{commit}").stdout.strip()
+
+    checkout_path = tmp_path / "managed-tag-checkout"
+    skill_seeds._ensure_git_checkout(checkout_path, str(source_repo), "v2.0")
+
+    assert _run_git(checkout_path, "rev-parse", "HEAD").stdout.strip() == expected_revision
+    assert _run_git(checkout_path, "symbolic-ref", "-q", "HEAD", check=False).returncode == 1
 
 
 def test_seed_baseline_skills_rejects_managed_gate_source_missing_required_paths(
@@ -289,5 +310,5 @@ def test_seeded_result_rationale_synthesis_skill_is_inline_and_result_scoped(db_
     ]
 
 
-def _run_git(cwd, *args):
-    return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+def _run_git(cwd, *args, check=True):
+    return subprocess.run(["git", *args], cwd=cwd, check=check, capture_output=True, text=True)

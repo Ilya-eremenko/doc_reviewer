@@ -62,6 +62,7 @@ DEVILS_ADVOCATE_WIKI_PATH = DEVILS_ADVOCATE_SOURCE_PATH / "wiki-ic"
 GATE_CHALLENGER_REQUIRED_PATHS = [
     GATE_CHALLENGER_ENTRYPOINT,
     "skills/gate-challenger/references",
+    "skills/gate-challenger/references/progress-review-rubric.md",
 ]
 DEVILS_ADVOCATE_REQUIRED_PATHS = [
     DEVILS_ADVOCATE_ENTRYPOINT,
@@ -176,11 +177,27 @@ def _ensure_git_checkout(path: Path, repo_url: str, ref: str) -> None:
         raise RuntimeError(f"managed Gate Challenger source has local modifications: {path}")
 
     _git(path, "remote", "set-url", "origin", repo_url)
-    _git(path, "fetch", "--prune", "origin", timeout=180)
+    _git(path, "fetch", "--prune", "--tags", "origin", timeout=180)
     if _is_commit_sha(ref):
         _git(path, "checkout", "--detach", ref)
     else:
-        _git(path, "checkout", "-B", ref, f"origin/{ref}")
+        try:
+            remote_branch = _git(
+                path,
+                "rev-parse",
+                "--verify",
+                f"refs/remotes/origin/{ref}^{{commit}}",
+            ).strip()
+        except RuntimeError:
+            tagged_commit = _git(
+                path,
+                "rev-parse",
+                "--verify",
+                f"refs/tags/{ref}^{{commit}}",
+            ).strip()
+            _git(path, "checkout", "--detach", tagged_commit)
+        else:
+            _git(path, "checkout", "-B", ref, remote_branch)
 
 
 def _is_commit_sha(value: str) -> bool:

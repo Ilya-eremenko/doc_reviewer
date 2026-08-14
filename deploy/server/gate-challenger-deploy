@@ -197,6 +197,10 @@ rollback_release() {
   if [[ "$switched_release" == "true" && -n "$previous_dir" && -d "$previous_dir" ]]; then
     log "rolling application containers back to $previous_dir"
     point_current_at "$previous_dir"
+    if ! quiesce_application_services "$release_dir"; then
+      printf '[deploy] ERROR: failed release could not be quiesced before rollback\n' >&2
+      exit 1
+    fi
     set_release_images "$(release_version_for "$previous_dir")"
     if [[ "$skills_seeded" == "true" ]]; then
       if ! seed_baseline_skills_for "$previous_dir"; then

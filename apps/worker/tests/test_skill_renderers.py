@@ -2,6 +2,8 @@ import json
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from skills.devils_advocate_renderer import render_devils_advocate_prompt
 from skills.gate2_challenger_renderer import render_gate2_challenger_prompt
 from skills.prompt_renderer import render_prompt
@@ -484,6 +486,58 @@ def test_gate2_challenger_renderer_keeps_progress_review_runnable_during_rollbac
     assert "progress_review_plan_fact_last_half_year" in prompt
     assert "progress_review_next_half_year_plan" in prompt
     assert "progress_review_stop_criteria" in prompt
+
+
+def test_gate2_challenger_renderer_rejects_v2_progress_snapshot_without_dedicated_rubric(tmp_path):
+    snapshot_dir = tmp_path / "skill-snapshots" / str(uuid4())
+    files_dir = snapshot_dir / "files"
+    skill_file = files_dir / "skills" / "gate-challenger" / "SKILL.md"
+    references_dir = files_dir / "skills" / "gate-challenger" / "references"
+    references_dir.mkdir(parents=True)
+    skill_file.write_text("Current skill prompt", encoding="utf-8")
+    fallback_file = references_dir / "stream-review-2-plus-rubric.md"
+    fallback_file.write_text("Wrong fallback rubric", encoding="utf-8")
+    (snapshot_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "source_slug": "gate-challenger",
+                "resolved_revision": "current",
+                "source_fingerprint": "sha256:current",
+                "files": [
+                    {"path": "skills/gate-challenger/SKILL.md", "sha256": "skill-hash"},
+                    {
+                        "path": "skills/gate-challenger/references/stream-review-2-plus-rubric.md",
+                        "sha256": "fallback-hash",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    document = SimpleNamespace(
+        title="Progress Review",
+        parsed_text="Progress Review plan versus actuals.",
+        manual_document_type=None,
+        detected_document_type="progress_review",
+    )
+    skill = SimpleNamespace(
+        name="gate2_challenger_main_analysis",
+        version="stage-checklist-v2",
+        prompt_text="fallback",
+        source_uri="/external/gate-challenger",
+        source_entrypoint="skills/gate-challenger/SKILL.md",
+        source_revision="current",
+        source_fingerprint="sha256:current",
+    )
+
+    with pytest.raises(ValueError, match="missing progress-review-rubric.md"):
+        render_gate2_challenger_prompt(
+            document=document,
+            skill=skill,
+            response_schema={"title": "MainAnalysisSummaryResult", "type": "object"},
+            source_snapshot=load_skill_source_snapshot(str(snapshot_dir)),
+            output_language="ru",
+        )
 
 
 def test_gate2_challenger_renderer_does_not_preload_stage_rubrics_for_unknown_stage(tmp_path):

@@ -59,7 +59,9 @@ deployer stops the public application services before activating the pinned v2
 skill, then recreates them from the new release. If startup fails, rollback runs
 the previous release's seeder before bringing its containers back, which
 reactivates v1 and archives v2. A failed skill restore makes rollback fail
-explicitly instead of reporting a healthy but incompatible release.
+explicitly instead of reporting a healthy but incompatible release. Rollback
+also stops the failed release before restoring v1, so it cannot accept traffic
+against the baseline being changed underneath it.
 
 Devil's Advocate and IC Agentic Review sources remain externally mounted and
 independently versioned so analysis runs continue to snapshot explicit skill

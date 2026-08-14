@@ -156,10 +156,15 @@ def test_server_deployer_restores_previous_skill_version_during_rollback() -> No
     deployer = (REPO_ROOT / "deploy/server/gate-challenger-deploy").read_text()
 
     rollback_start = deployer.index("rollback_release()")
+    quiesce_failed_release = 'quiesce_application_services "$release_dir"'
     restore_skill = 'seed_baseline_skills_for "$previous_dir"'
     restore_failure = "previous baseline skill restore failed"
     recreate_services = 'recreate_application_services "$previous_dir"'
 
+    assert deployer.index(quiesce_failed_release, rollback_start) < deployer.index(
+        restore_skill,
+        rollback_start,
+    )
     assert deployer.index(restore_skill, rollback_start) < deployer.index(recreate_services, rollback_start)
     failure_index = deployer.index(restore_failure, rollback_start)
     assert failure_index < deployer.index("exit 1", failure_index) < deployer.index(
