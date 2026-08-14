@@ -2343,5 +2343,7 @@ Exit criteria:
   to restore v1 if a later v2 feature release is rolled back. A dormant worker
   fallback routes already-queued future Progress Review jobs through the
   currently equivalent Stream Review 2+ rubric during rollback. Verified the
-  full API suite (`217 passed`), full worker suite (`201 passed`), JSON validity,
-  and diff checks.
+  full API suite (`218 passed`), full worker suite (`201 passed`), JSON validity,
+  and diff checks. Read schemas accept the future value, while a separate
+  selectable enum rejects it from upload, patch, analysis, skill, and etalon
+  write APIs until the feature release activates it.
