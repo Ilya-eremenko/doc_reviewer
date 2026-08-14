@@ -68,6 +68,17 @@ def test_seed_baseline_skills_archives_superseded_gate_challenger_version(
     assert legacy_skill.status == "archived"
     assert current_skill.status == "active"
 
+    monkeypatch.setattr(skill_seeds, "GATE_CHALLENGER_SKILL_VERSION", "stage-checklist-v1")
+    compatibility_skill = next(
+        skill
+        for skill in seed_baseline_skills(db_session)
+        if skill.name == "gate2_challenger_main_analysis"
+    )
+
+    db_session.refresh(current_skill)
+    assert current_skill.status == "archived"
+    assert compatibility_skill.status == "active"
+
 
 def test_seeded_gate_challenger_skill_matches_supported_document_types(db_session):
     skills = seed_baseline_skills(db_session)

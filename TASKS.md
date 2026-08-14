@@ -2334,6 +2334,17 @@ Exit criteria:
   Added long historical output and truncated JSON regressions; localization and
   IC Review suites pass together (`37 passed`); the full worker suite passes
   (`195 passed`).
+- 2026-08-14: Prepared the rollback-compatible first phase for Progress Review.
+  The API and worker data model can deserialize future `progress_review`
+  document and skill rows, and the shared checklist contract knows the future
+  identifiers, while detection, selectable document types, seed support, and
+  UI exposure remain intentionally disabled. Baseline seeding now archives any
+  superseded Gate Challenger version in either direction, allowing this release
+  to restore v1 if a later v2 feature release is rolled back. A dormant worker
+  fallback routes already-queued future Progress Review jobs through the
+  currently equivalent Stream Review 2+ rubric during rollback. Verified the
+  full API suite (`217 passed`), full worker suite (`201 passed`), JSON validity,
+  and diff checks.
 - 2026-08-14: Pinned production Gate Challenger to
   `Ilya-eremenko/Gate2-challenger-skill@3447f867987d8727cbbd16e8874c60f2b1ed07d0`
   and restored managed source checkout during the baseline skill refresh, so

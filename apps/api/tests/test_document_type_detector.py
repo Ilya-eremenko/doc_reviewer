@@ -13,6 +13,12 @@ def test_document_type_enum_matches_gate_challenger_stages():
     ]
 
 
+def test_progress_review_enum_is_active_after_feature_activation():
+    from app.schemas.enums import GATE_CHALLENGER_DOCUMENT_TYPES
+
+    assert DocumentType.PROGRESS_REVIEW in GATE_CHALLENGER_DOCUMENT_TYPES
+
+
 def test_detects_gate_2_from_realistic_defense_text():
     text = """
     Gate 2 investment defense
