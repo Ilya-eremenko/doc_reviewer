@@ -2340,6 +2340,8 @@ Exit criteria:
   identifiers, while detection, selectable document types, seed support, and
   UI exposure remain intentionally disabled. Baseline seeding now archives any
   superseded Gate Challenger version in either direction, allowing this release
-  to restore v1 if a later v2 feature release is rolled back. Verified the full
-  API suite (`217 passed`), full worker suite (`200 passed`), JSON validity, and
-  diff checks.
+  to restore v1 if a later v2 feature release is rolled back. A dormant worker
+  fallback routes already-queued future Progress Review jobs through the
+  currently equivalent Stream Review 2+ rubric during rollback. Verified the
+  full API suite (`217 passed`), full worker suite (`201 passed`), JSON validity,
+  and diff checks.
