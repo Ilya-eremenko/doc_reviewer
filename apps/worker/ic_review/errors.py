@@ -3,13 +3,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import traceback
 from typing import Any
+from uuid import UUID
 
 from jsonschema import ValidationError
+from rq import get_current_job
 from sqlalchemy.exc import DBAPIError
+
+from app.logging import worker_logger
+from app.models.analysis import AnalysisCheckRun
 
 
 class IcReviewRunCancelled(RuntimeError):
@@ -24,6 +30,7 @@ SAFE_ERROR_CODES = {
     "ic_review_artifact_path_escapes_run_dir",
     "ic_review_context_missing",
     "ic_review_document_missing",
+    "ic_review_validation_failed",
     "invalid_synthesis_wrapper",
     "parent_analysis_not_completed",
     "provider_key_missing",
@@ -93,10 +100,14 @@ def build_ic_review_error_diagnostics(
     step_name: str | None = None,
     provider_raw_output_present: bool | None = None,
     prompt_artifact_present: bool | None = None,
+    context: dict[str, Any] | None = None,
+    schema: dict[str, Any] | None = None,
+    schema_name: str | None = None,
+    elapsed_ms: int | None = None,
 ) -> dict[str, Any]:
     message = str(exc)
     diagnostic: dict[str, Any] = {
-        "version": 1,
+        "version": 2,
         "recorded_at": datetime.now(UTC).isoformat(),
         "code": safe_ic_review_error_message(exc),
         "phase": phase,
@@ -107,7 +118,17 @@ def build_ic_review_error_diagnostics(
         "message_length": len(message),
         "message_sha256": hashlib.sha256(message.encode("utf-8", errors="replace")).hexdigest(),
         "traceback": _safe_traceback(exc),
+        "context": _safe_context({"app_release_sha": _release_sha(), **(context or {})}),
     }
+    if elapsed_ms is not None:
+        diagnostic["elapsed_ms"] = max(0, elapsed_ms)
+    if schema is not None:
+        diagnostic["schema"] = {
+            "name": _identifier(schema_name),
+            "sha256": hashlib.sha256(
+                json.dumps(schema, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest(),
+        }
     if exc.__cause__ is not None:
         diagnostic["cause_class"] = exc.__cause__.__class__.__name__
         diagnostic["cause_code"] = safe_ic_review_error_message(exc.__cause__)
@@ -118,10 +139,148 @@ def build_ic_review_error_diagnostics(
         diagnostic["provider_raw_output_present"] = provider_raw_output_present
     if prompt_artifact_present is not None:
         diagnostic["prompt_artifact_present"] = prompt_artifact_present
-    db_error = _safe_db_error_details(exc)
-    if db_error:
-        diagnostic["db_error"] = db_error
+    for error in _exception_chain(exc):
+        db_error = _safe_db_error_details(error)
+        if db_error and "db_error" not in diagnostic:
+            diagnostic["db_error"] = db_error
+        if isinstance(error, ValidationError) and "validation" not in diagnostic:
+            diagnostic["validation"] = _validation_details(error, schema or {})
+        if isinstance(error, json.JSONDecodeError) and "json_error" not in diagnostic:
+            diagnostic["json_error"] = {"line": error.lineno, "column": error.colno, "position": error.pos}
+        status = getattr(error, "status_code", None)
+        if type(status) is int and 100 <= status <= 599 and "provider_error" not in diagnostic:
+            diagnostic["provider_error"] = {
+                "status_code": status,
+                "request_id": _identifier(getattr(error, "request_id", None)),
+            }
     return diagnostic
+
+
+def ic_review_diagnostic_context(
+    check_run: AnalysisCheckRun,
+    *,
+    document_id: UUID | None = None,
+    step_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Capture scalars before provider/DB work; never inspect ORM state after a failed commit."""
+    parameters = check_run.run_parameters or {}
+    context = {
+        "app_release_sha": _release_sha(),
+        "check_run_id": str(check_run.id),
+        "analysis_id": str(check_run.analysis_id),
+        "document_id": str(document_id) if document_id else None,
+        "step_id": str(step_id) if step_id else None,
+        "skill_id": str(check_run.skill_id),
+        "skill_version": check_run.skill_version,
+        "provider": check_run.provider,
+        "model": check_run.model,
+        "source_snapshot_id": parameters.get("source_snapshot_id"),
+        "source_revision": parameters.get("source_revision"),
+        "source_fingerprint": parameters.get("source_fingerprint"),
+    }
+    try:
+        job = get_current_job()
+        if job is not None:
+            context["rq_job_id"] = job.id
+            context["rq_retries_left"] = job.retries_left
+            context["rq_retry_count"] = getattr(job, "retry_count", None)
+    except Exception:
+        # Missing queue metadata must never affect an analysis or hide its original failure.
+        pass
+    return _safe_context(context)
+
+
+def _release_sha() -> str:
+    image_tag = os.environ.get("APP_RELEASE_IMAGE", "").rpartition(":")[2]
+    return image_tag if re.fullmatch(r"[0-9a-f]{40}", image_tag) else "unknown"
+
+
+def log_ic_review_error_diagnostics(diagnostic: dict[str, Any]) -> None:
+    # RQ's default formatter drops LogRecord.extra; include the safe JSON in the message.
+    try:
+        worker_logger.warning("ic_review_diagnostic %s", json.dumps(diagnostic, ensure_ascii=True, sort_keys=True))
+    except Exception:
+        pass
+
+
+def _identifier(value: Any) -> str | None:
+    if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/@+-]{0,159}", value):
+        return value
+    return None
+
+
+def _safe_context(context: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "app_release_sha", "check_run_id", "analysis_id", "document_id", "step_id",
+        "skill_id", "skill_version", "provider", "model", "source_snapshot_id",
+        "source_revision", "source_fingerprint", "rq_job_id", "operation",
+    }
+    safe = {key: _identifier(context.get(key)) for key in allowed if key in context}
+    for key in ("rq_retries_left", "rq_retry_count"):
+        value = context.get(key)
+        if type(value) is int and value >= 0:
+            safe[key] = value
+    return safe
+
+
+def _exception_chain(exc: BaseException) -> list[BaseException]:
+    chain: list[BaseException] = []
+    while exc is not None and all(exc is not previous for previous in chain) and len(chain) < 8:
+        chain.append(exc)
+        exc = exc.__cause__ or exc.__context__
+    return chain
+
+
+def _validation_details(exc: ValidationError, schema: dict[str, Any]) -> dict[str, Any]:
+    # Only contract-defined names may enter a path; dynamic object keys can contain PII.
+    names: set[str] = set()
+    keywords: set[str] = set()
+
+    def collect(node: Any) -> None:
+        if isinstance(node, dict):
+            keywords.update(node)
+            for key, value in node.items():
+                if key in {"properties", "$defs", "definitions"} and isinstance(value, dict):
+                    names.update(value)
+                if isinstance(value, (dict, list)):
+                    collect(value)
+        elif isinstance(node, list):
+            for value in node:
+                collect(value)
+
+    collect(schema)
+
+    def path(parts: Any, allowed: set[str]) -> list[str | int]:
+        return [part if type(part) is int or part in allowed else "<dynamic>" for part in list(parts)[:32]]
+
+    value = exc.instance
+    actual_type = (
+        "null" if value is None else "boolean" if isinstance(value, bool) else
+        "string" if isinstance(value, str) else "object" if isinstance(value, dict) else
+        "array" if isinstance(value, list) else "integer" if isinstance(value, int) else
+        "number" if isinstance(value, float) else "unknown"
+    )
+    details: dict[str, Any] = {
+        "path": path(exc.absolute_path, names),
+        "schema_path": path(exc.absolute_schema_path, names | keywords),
+        "validator": _identifier(exc.validator),
+        "actual_type": actual_type,
+    }
+    if isinstance(value, (str, list, dict)):
+        details["actual_length"] = len(value)
+    expected = exc.validator_value
+    if exc.validator in {"minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties",
+                         "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}:
+        if type(expected) in (int, float):
+            details["expected"] = expected
+    elif exc.validator == "type":
+        types = expected if isinstance(expected, list) else [expected]
+        details["expected_types"] = [t for t in types if t in {"string", "object", "array", "null", "boolean", "integer", "number"}]
+    elif exc.validator == "required" and isinstance(expected, list) and isinstance(value, dict):
+        details["missing_fields"] = [key for key in expected if key in names and key not in value][:32]
+    elif exc.validator == "enum" and isinstance(expected, list):
+        details["allowed_value_count"] = len(expected)
+    return details
 
 
 def append_ic_review_error_diagnostics(

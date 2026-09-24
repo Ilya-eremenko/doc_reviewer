@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,8 @@ from ic_review.errors import (
     IcReviewRunCancelled,
     append_ic_review_error_diagnostics,
     build_ic_review_error_diagnostics,
+    ic_review_diagnostic_context,
+    log_ic_review_error_diagnostics,
     safe_ic_review_error_message,
 )
 from ic_review.renderer import REVIEW_SCHEMA_PATH, ROLE_ORDER, render_synthesis_prompt
@@ -87,6 +90,10 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
     provider_raw_output: str | None = None
     provider_structured_text: str | None = None
     core_completion_committed = False
+    started = time.monotonic()
+    diagnostic_context: dict[str, Any] = {"check_run_id": str(run_uuid)}
+    diagnostic_schema: dict[str, Any] | None = None
+    diagnostic_stage = "claiming_run"
     try:
         worker_logger.info(
             "worker_job_started",
@@ -105,9 +112,12 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
             )
             return
 
+        diagnostic_context = ic_review_diagnostic_context(check_run)
+        diagnostic_stage = "loading_context"
         analysis = session.get(Analysis, check_run.analysis_id)
         if analysis is None:
             raise RuntimeError("ic_review_context_missing")
+        diagnostic_context["document_id"] = str(analysis.document_id)
         if analysis.status != RunStatus.COMPLETED.value:
             raise RuntimeError("parent_analysis_not_completed")
         skill = session.get(Skill, check_run.skill_id)
@@ -124,6 +134,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         api_key = decrypt_secret(provider_key.encrypted_api_key) if provider_key else None
         base_url = provider_key.base_url if provider_key else None
 
+        diagnostic_stage = "loading_snapshot"
         _set_current_stage(session=session, check_run=check_run, stage="loading_snapshot")
         source_snapshot_path = _source_snapshot_artifact_path(session=session, check_run=check_run)
         source_snapshot = load_skill_source_snapshot(str(source_snapshot_path))
@@ -145,8 +156,10 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         formula_audit_json_path: Path | None = None
         if workbook_path is not None:
             try:
+                diagnostic_stage = "extracting_workbook"
                 _set_current_stage(session=session, check_run=check_run, stage="extracting_workbook")
                 workbook_snapshot = extract_workbook_snapshot(workbook_path)
+                diagnostic_stage = "formula_audit"
                 _set_current_stage(session=session, check_run=check_run, stage="formula_audit")
                 formula_audit_summary, formula_audit_json_path = _run_formula_auditor(
                     check_run=check_run,
@@ -167,6 +180,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         session.commit()
         _raise_if_cancelled(session=session, check_run=check_run)
 
+        diagnostic_stage = "building_context"
         _set_current_stage(session=session, check_run=check_run, stage="building_context")
         context = build_ic_review_context(
             document=document,
@@ -201,6 +215,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
             if role in role_outputs:
                 continue
             _raise_if_cancelled(session=session, check_run=check_run)
+            diagnostic_stage = f"role:{role}"
             check_run.current_stage = f"role:{role}"
             session.commit()
             role_outputs[role] = run_role_step(
@@ -221,10 +236,12 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         if check_run is None:
             raise RuntimeError("ic_review_run_missing")
         _raise_if_cancelled(session=session, check_run=check_run)
+        diagnostic_stage = "synthesis_prompt"
         check_run.current_stage = "synthesis"
         session.commit()
 
         review_schema = _load_schema(REVIEW_SCHEMA_PATH)
+        diagnostic_schema = review_schema
         synthesis_response_schema = review_schema
         synthesis_prompt = render_synthesis_prompt(
             context=context,
@@ -260,6 +277,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
 
         synthesis_parameters = _synthesis_run_parameters(check_run.run_parameters or {})
         _raise_if_cancelled(session=session, check_run=check_run)
+        diagnostic_stage = "synthesis_provider_request"
         result, synthesis_retry = _run_synthesis_with_json_retry(
             provider=provider,
             model=check_run.model,
@@ -272,6 +290,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         )
         provider_raw_output = result.raw_output
         provider_structured_text = result.structured_text
+        diagnostic_stage = "synthesis_save_provider_output"
         check_run.raw_output = result.raw_output or result.structured_text
         check_run.input_tokens = result.input_tokens
         check_run.output_tokens = result.output_tokens
@@ -285,6 +304,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         session.commit()
         _raise_if_cancelled(session=session, check_run=check_run)
 
+        diagnostic_stage = "synthesis_validate_output"
         try:
             compact_result = _parse_synthesis_compact(
                 result.structured_text,
@@ -327,6 +347,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         check_run.legacy_output = legacy_report_json
         flag_modified(check_run, "structured_output")
         flag_modified(check_run, "legacy_output")
+        diagnostic_stage = "save_synthesis_result"
         legacy_report_json_path = _write_json_artifact(structured_dir / "legacy_report.json", legacy_report_json)
         _add_artifact(
             check_run,
@@ -337,6 +358,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         )
         session.commit()
 
+        diagnostic_stage = "script_pipeline"
         check_run.current_stage = "postprocess"
         session.commit()
         _raise_if_cancelled(session=session, check_run=check_run)
@@ -371,6 +393,23 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
             check_run.current_stage = "failed:validation"
             check_run.error_message = "ic_review_validation_failed"
             check_run.completed_at = utc_now()
+            diagnostic = build_ic_review_error_diagnostics(
+                RuntimeError("ic_review_validation_failed"),
+                phase="script_pipeline",
+                stage=check_run.current_stage,
+                context=diagnostic_context,
+                schema=review_schema,
+                schema_name=Path(REVIEW_SCHEMA_PATH).name,
+                elapsed_ms=int((time.monotonic() - started) * 1000),
+            )
+            diagnostic["validation_failures_count"] = validation_summary["failures_count"]
+            diagnostic["scripts"] = [
+                {"name": item.script_name, "exit_code": item.exit_code}
+                for item in pipeline_result.scripts
+            ]
+            log_ic_review_error_diagnostics(diagnostic)
+            check_run.run_parameters = append_ic_review_error_diagnostics(check_run.run_parameters, diagnostic)
+            flag_modified(check_run, "run_parameters")
         else:
             core_run_status = RunStatus.COMPLETED.value
             check_run.status = RunStatus.COMPLETED.value
@@ -545,6 +584,18 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
             extra={"job_type": "run_ic_agentic_review", "entity_id": str(run_uuid), "status": "cancelled"},
         )
     except Exception as exc:
+        diagnostic = build_ic_review_error_diagnostics(
+            exc,
+            phase="optional_postprocessing" if core_completion_committed else "job_failure",
+            stage=diagnostic_stage,
+            context={**diagnostic_context, "operation": diagnostic_stage},
+            schema=diagnostic_schema,
+            schema_name=Path(REVIEW_SCHEMA_PATH).name if diagnostic_schema is not None else None,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+            provider_raw_output_present=provider_raw_output is not None,
+        )
+        # Emit before rollback/reload: database failures must still be diagnosable.
+        log_ic_review_error_diagnostics(diagnostic)
         session.rollback()
         if core_completion_committed:
             _log_optional_postprocessing_failure(
@@ -563,13 +614,7 @@ def run_ic_agentic_review(check_run_id: str, *, db: Session | None = None) -> No
         if provider_raw_output is not None and failed.raw_output is None:
             failed.raw_output = provider_raw_output or provider_structured_text
         failed.completed_at = utc_now()
-        diagnostic = build_ic_review_error_diagnostics(
-            exc,
-            phase="job_failure",
-            stage=failed.current_stage,
-            provider_raw_output_present=provider_raw_output is not None,
-            prompt_artifact_present=None,
-        )
+        diagnostic["stage"] = failed.current_stage
         failed.run_parameters = append_ic_review_error_diagnostics(
             failed.run_parameters,
             diagnostic,

@@ -526,7 +526,8 @@ def test_active_ic_review_runs_only_include_jobs_owned_by_busy_workers(monkeypat
     assert orphaned_ic_review_runs._active_ic_review_run_ids(connection=object()) == {active_run_id}
 
 
-def test_provider_failure_after_role_three_preserves_first_three_raw_outputs_and_marks_failed(tmp_path, monkeypatch):
+def test_provider_failure_after_role_three_preserves_first_three_raw_outputs_and_marks_failed(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("APP_RELEASE_IMAGE", "gate-challenger-worker:" + "e" * 40)
     db = _create_session()
     try:
         records = _seed_run(db, tmp_path, monkeypatch=monkeypatch, workbook=False, failing_role=ROLE_ORDER[3])
@@ -545,6 +546,14 @@ def test_provider_failure_after_role_three_preserves_first_three_raw_outputs_and
         assert [step.raw_output for step in steps[:3]] == [f"raw {role}" for role in ROLE_ORDER[:3]]
         assert steps[3].status == RunStatus.FAILED.value
         assert steps[3].raw_output == "not json"
+        diagnostics = check_run.run_parameters["ic_review_error_diagnostics"]
+        assert {item["context"]["check_run_id"] for item in diagnostics} == {str(check_run.id)}
+        assert {item["context"]["app_release_sha"] for item in diagnostics} == {"e" * 40}
+        assert diagnostics[0]["context"]["step_id"] == str(steps[3].id)
+        assert diagnostics[-1]["context"]["document_id"] == str(records["analysis"].document_id)
+        assert diagnostics[0]["json_error"]["line"] == 1
+        assert str(check_run.id) in caplog.text
+        assert "not json" not in caplog.text
     finally:
         db.close()
 
@@ -805,6 +814,10 @@ def test_excel_or_validation_failure_marks_spreadsheet_audit_failed(tmp_path, mo
         db.refresh(records["check_run"])
         assert records["check_run"].status == RunStatus.FAILED.value
         assert records["check_run"].structured_output["spreadsheet_audit"]["status"] == "failed"
+        diagnostic = records["check_run"].run_parameters["ic_review_error_diagnostics"][-1]
+        assert diagnostic["code"] == "ic_review_validation_failed"
+        assert diagnostic["phase"] == "script_pipeline"
+        assert {"name": "excel_audit", "exit_code": 1} in diagnostic["scripts"]
     finally:
         db.close()
 
