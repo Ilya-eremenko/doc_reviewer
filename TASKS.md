@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Add release-correlated, internal-only IC Review diagnostics (A12): exact
+  worker image SHA, run/document/step/RQ IDs, skill snapshot and schema hash,
+  operation/timing, safe schema field/constraint/type/length, JSON location,
+  provider status/request ID, and script exit codes. Emit safe JSON before DB
+  recovery so persistence failures do not erase the original diagnostic.
+  No skill, prompt, model-output schema, UI, retry policy, or analysis decision
+  changes. Focused worker/API tests: 92 passed. Full API/worker suite: 500
+  passed locally (Python 3.14, isolated PDF test dependency); production Compose
+  release-image propagation and `git diff --check` pass. Python 3.12 Docker/web
+  verification runs in GitHub CI; local Docker daemon is unavailable.
+  Recovery guide: `docs/ic-review-diagnostics.md`.
 - [x] Distinguish Progress Review presentation from Stream Review 2+ rules in
   existing and future AI Summaries. When parsed text has no explicit current
   defense, the case title can supply Progress Review; an explicit conflicting

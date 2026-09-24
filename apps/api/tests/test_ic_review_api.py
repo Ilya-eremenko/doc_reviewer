@@ -428,6 +428,9 @@ def test_failed_ic_review_exposes_public_error_but_hides_internal_diagnostics(
                     "code": "schema_validation_failed:minLength",
                     "phase": "role_step",
                     "message_sha256": "abc",
+                    "version": 2,
+                    "context": {"app_release_sha": "a" * 40, "rq_job_id": "internal-job-1"},
+                    "validation": {"path": ["findings", 0, "evidence"], "expected": 20, "actual_length": 0},
                 }
             ],
             "source_snapshot_artifact_path": str(tmp_path / "snapshot"),
@@ -474,6 +477,8 @@ def test_failed_ic_review_exposes_public_error_but_hides_internal_diagnostics(
     admin_payload = admin_response.json()
     assert admin_payload["public_error"]["failed_stage_label"] == "финансовый аудитор"
     assert "ic_review_error_diagnostics" not in admin_payload["run_parameters"]
+    assert "internal-job-1" not in admin_response.text
+    assert "internal-job-1" not in user_response.text
 
 
 def test_duplicate_prepared_statement_has_specific_public_error_copy():

@@ -771,7 +771,8 @@ def test_run_financial_role_step_without_workbook_does_not_mask_prompt_rendering
         db.close()
 
 
-def test_run_role_step_schema_validation_error_does_not_leak_provider_instance(tmp_path):
+def test_run_role_step_schema_validation_error_does_not_leak_provider_instance(tmp_path, caplog, monkeypatch):
+    monkeypatch.setenv("APP_RELEASE_IMAGE", "gate-challenger-worker:" + "d" * 40)
     db = _create_session()
     secret_evidence = "SECRET_DOCUMENT_EVIDENCE_SHOULD_NOT_RENDER"
     try:
@@ -815,6 +816,47 @@ def test_run_role_step_schema_validation_error_does_not_leak_provider_instance(t
         assert check_run.error_message == "schema_validation_failed:enum"
         assert secret_evidence not in check_run.error_message
         assert secret_evidence in (step.raw_output or "")
+        diagnostic = check_run.run_parameters["ic_review_error_diagnostics"][-1]
+        assert diagnostic["context"]["app_release_sha"] == "d" * 40
+        assert diagnostic["context"]["check_run_id"] == str(check_run.id)
+        assert diagnostic["context"]["analysis_id"] == str(analysis.id)
+        assert diagnostic["context"]["document_id"] == str(analysis.document_id)
+        assert diagnostic["context"]["step_id"] == str(step.id)
+        assert diagnostic["context"]["operation"] == "validate_schema"
+        assert diagnostic["validation"]["path"] == ["role"]
+        assert secret_evidence not in caplog.text
+        assert str(step.id) in caplog.text
+    finally:
+        db.close()
+
+
+def test_role_failure_is_logged_even_when_database_recovery_fails(tmp_path, monkeypatch, caplog):
+    db = _create_session()
+    try:
+        analysis = _analysis()
+        check_run = _check_run(analysis_id=analysis.id, run_parameters={})
+        db.add_all([analysis, check_run])
+        db.commit()
+        run_id = str(check_run.id)
+
+        def fail_render(**_kwargs):
+            raise RuntimeError("PRIVATE_PROMPT_FAILURE")
+
+        def fail_rollback():
+            raise OSError("database unavailable")
+
+        monkeypatch.setattr(role_runner, "render_role_prompt", fail_render)
+        with monkeypatch.context() as patch:
+            patch.setattr(db, "rollback", fail_rollback)
+            with pytest.raises(OSError):
+                run_role_step(
+                    session=db, check_run=check_run, analysis=analysis, role="ic-product-analyst",
+                    context=_context(), source_snapshot=_snapshot(), storage=LocalDocumentStorage(tmp_path / "storage"),
+                )
+        diagnostic = json.loads(caplog.records[-1].getMessage().removeprefix("ic_review_diagnostic "))
+        assert diagnostic["context"]["check_run_id"] == run_id
+        assert diagnostic["context"]["operation"] == "render_prompt"
+        assert "PRIVATE_PROMPT_FAILURE" not in caplog.text
     finally:
         db.close()
 

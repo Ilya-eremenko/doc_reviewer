@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,8 @@ from .errors import (
     IcReviewRunCancelled,
     append_ic_review_error_diagnostics,
     build_ic_review_error_diagnostics,
+    ic_review_diagnostic_context,
+    log_ic_review_error_diagnostics,
     safe_ic_review_error_message,
 )
 
@@ -76,6 +79,9 @@ def run_role_step(
     )
     session.add(step)
     session.commit()
+    diagnostic_context = ic_review_diagnostic_context(check_run, document_id=analysis.document_id, step_id=step.id)
+    started = time.monotonic()
+    operation = "render_prompt"
 
     provider_raw_output: str | None = None
     provider_structured_text: str | None = None
@@ -90,6 +96,7 @@ def run_role_step(
             source_snapshot=source_snapshot,
             role_schema=schema,
         )
+        operation = "anonymize_prompt"
         anonymization = anonymize_prompt_sections_for_model(
             prompt,
             sections=[("## Context Pack", "## Output Contract")],
@@ -102,6 +109,7 @@ def run_role_step(
             RUN_PARAMETER_KEY: db_safe_anonymization_metadata(anonymization.metadata) or {"enabled": False},
         }
         storage_backend = storage or LocalDocumentStorage(get_settings().storage_root)
+        operation = "write_prompt_artifact"
         prompt_artifact_path = write_prompt_artifact(
             storage=storage_backend,
             analysis_id=analysis.id,
@@ -112,9 +120,11 @@ def run_role_step(
         prompt_fingerprint = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         step.prompt_artifact_path = str(prompt_artifact_path)
         step.prompt_fingerprint = prompt_fingerprint
+        operation = "save_prompt_metadata"
         session.commit()
         prompt_artifact_committed = True
 
+        operation = "provider_request"
         result, json_retry = _run_role_provider_with_json_retry(
             provider=provider,
             model=check_run.model,
@@ -134,10 +144,12 @@ def run_role_step(
         step.estimated_cost = result.estimated_cost
         if json_retry is not None:
             step.artifacts = [*list(step.artifacts or []), json_retry]
+        operation = "save_provider_output"
         session.commit()
         if _check_run_cancelled(session=session, check_run=check_run, step=step):
             raise IcReviewRunCancelled("ic_review_cancelled")
 
+        operation = "parse_provider_output"
         try:
             payload = parse_json_output(result.structured_text)
         except json.JSONDecodeError as exc:
@@ -159,13 +171,16 @@ def run_role_step(
             step.completed_at = utc_now()
             session.commit()
             return structured
+        operation = "normalize_provider_output"
         structured = normalize_schema_bounded_strings(
             payload,
             schema,
             schema,
             output_language=context.output_language,
         )
+        operation = "validate_schema"
         validate(instance=structured, schema=schema)
+        operation = "deanonymize_output"
         structured = deanonymize_model_value(
             structured,
             metadata=(check_run.run_parameters or {}).get(RUN_PARAMETER_KEY),
@@ -173,12 +188,37 @@ def run_role_step(
         step.structured_output = structured
         step.status = RunStatus.COMPLETED.value
         step.completed_at = utc_now()
+        operation = "save_step_result"
         session.commit()
         return structured
     except IcReviewRunCancelled:
         raise
     except Exception as exc:
-        if _is_provider_timeout(exc):
+        timed_out = _is_provider_timeout(exc)
+        safe_error = safe_ic_review_error_message(exc)
+        can_fallback = _can_fallback_missing_workbook_pre_provider_error(
+            role=role,
+            context=context,
+            safe_error=safe_error,
+            provider_raw_output=provider_raw_output,
+            provider_structured_text=provider_structured_text,
+            prompt_artifact_path=prompt_artifact_path,
+            prompt_artifact_committed=prompt_artifact_committed,
+        )
+        diagnostic = build_ic_review_error_diagnostics(
+            exc,
+            phase="role_timeout_fallback" if timed_out else "role_pre_provider_fallback" if can_fallback else "role_step",
+            stage=f"role:{role}",
+            step_name=role,
+            context={**diagnostic_context, "operation": operation},
+            schema=schema,
+            schema_name=Path(ROLE_SCHEMA_PATH).name,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+            provider_raw_output_present=bool(provider_raw_output or provider_structured_text),
+            prompt_artifact_present=prompt_artifact_path is not None,
+        )
+        log_ic_review_error_diagnostics(diagnostic)
+        if timed_out:
             session.rollback()
             timed_out_step = session.get(AnalysisCheckStep, step.id)
             if timed_out_step is None:
@@ -201,30 +241,15 @@ def run_role_step(
                 },
             ]
             timed_out_step.completed_at = utc_now()
+            check_run.run_parameters = append_ic_review_error_diagnostics(check_run.run_parameters, diagnostic)
+            flag_modified(check_run, "run_parameters")
             session.commit()
             return structured
         session.rollback()
-        safe_error = safe_ic_review_error_message(exc)
-        if _can_fallback_missing_workbook_pre_provider_error(
-            role=role,
-            context=context,
-            safe_error=safe_error,
-            provider_raw_output=provider_raw_output,
-            provider_structured_text=provider_structured_text,
-            prompt_artifact_path=prompt_artifact_path,
-            prompt_artifact_committed=prompt_artifact_committed,
-        ):
+        if can_fallback:
             fallback_step = session.get(AnalysisCheckStep, step.id)
             if fallback_step is None:
                 raise
-            diagnostic = build_ic_review_error_diagnostics(
-                exc,
-                phase="role_pre_provider_fallback",
-                stage=f"role:{role}",
-                step_name=role,
-                provider_raw_output_present=False,
-                prompt_artifact_present=prompt_artifact_path is not None,
-            )
             structured = _missing_workbook_financial_role_fallback(
                 role=role,
                 schema=schema,
@@ -265,14 +290,6 @@ def run_role_step(
         failed_step.completed_at = utc_now()
         failed_run = session.get(AnalysisCheckRun, check_run.id)
         if failed_run is not None:
-            diagnostic = build_ic_review_error_diagnostics(
-                exc,
-                phase="role_step",
-                stage=f"role:{role}",
-                step_name=role,
-                provider_raw_output_present=raw_to_preserve is not None,
-                prompt_artifact_present=prompt_artifact_path is not None,
-            )
             failed_run.status = RunStatus.FAILED.value
             failed_run.current_stage = f"failed:{role}"
             failed_run.error_message = safe_error

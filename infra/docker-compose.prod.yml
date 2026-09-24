@@ -84,6 +84,8 @@ services:
         NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,postgres,redis,api,worker,web}
     environment:
       APP_ENV: production
+      # The deploy script pins this image tag to the exact release commit.
+      APP_RELEASE_IMAGE: ${GATE_WORKER_IMAGE:-unknown}
       APP_SECRET_KEY: ${APP_SECRET_KEY:?APP_SECRET_KEY is required}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-gate}
       REDIS_URL: redis://redis:6379/0
