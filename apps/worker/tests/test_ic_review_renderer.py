@@ -218,6 +218,29 @@ def test_context_pack_prioritizes_selected_current_scenario_over_historical_bank
     assert pack.common_evidence[0]["text"] == current
 
 
+def test_context_pack_preserves_prior_period_metric_and_downranks_illustrative_scenario():
+    previous = "Previous ARR was 10 million rubles."
+    illustrative = "Maximum illustrative scenario: ARR may reach 50 million rubles."
+    current = "Current Defense: selected LTM scenario has ARR of 20 million rubles."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text=f"{previous}\n\n{illustrative}\n\n{current}",
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Compare actual revenue with the current plan.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+    financial_evidence = pack.for_role("ic-financial-auditor")["role_evidence"]
+
+    assert financial_evidence[0]["text"] == current
+    assert any(item["text"] == previous for item in financial_evidence)
+    assert any(item["text"] == illustrative for item in financial_evidence)
+
+
 def test_role_and_synthesis_prompts_use_context_pack_instead_of_full_document_text():
     long_tail = "FULL_RAW_DOCUMENT_SENTINEL " * 220
     evidence = "Revenue retention is not proven by cohorts, but CAC payback is stated as 19 months."

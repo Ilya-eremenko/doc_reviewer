@@ -383,8 +383,8 @@ def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...]) -> int:
         score += 2
     if any(marker in lowered for marker in ("risk", "gap", "fail", "critical", "blocker", "риск", "нет ", "не ")):
         score += 2
-    score += decision_context_score(text)
-    return score
+    adjusted_score = score + decision_context_score(text)
+    return max(1, adjusted_score) if score > 0 else adjusted_score
 
 
 def _workbook_context(context: ICReviewContext) -> dict[str, Any] | None:

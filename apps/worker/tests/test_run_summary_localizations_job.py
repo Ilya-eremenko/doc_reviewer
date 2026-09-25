@@ -49,6 +49,20 @@ def test_new_summary_source_excerpt_keeps_short_document_unchanged():
     assert new_summary_generation._bounded_source_text(source) == source
 
 
+def test_new_summary_source_excerpt_reserves_late_current_defense():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Background only.\n" * 400
+        + ("Selected scenario: option under discussion.\n" + "Scenario details.\n" * 35) * 30
+        + "Current Defense: Gate 3, with an active LTM base scenario.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Current Defense: Gate 3" in excerpt
+
+
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
     source = "General background without decision markers.\n" * 1000
 

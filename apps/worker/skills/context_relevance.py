@@ -11,14 +11,21 @@ CURRENT_DECISION_MARKERS = re.compile(
     r"(?:защит\w*|гейт\w*|ревью|сценар\w*|план\w*|банк\w*|партн\w*|фокус\w*|вертикал\w*)",
     re.IGNORECASE,
 )
+CURRENT_DEFENSE_MARKERS = re.compile(
+    r"\bcurrent\s+(?:defen[cs]e|gate|review)\b"
+    r"|\bтекущ\w*\s+(?:защит\w*|гейт\w*|ревью)\b",
+    re.IGNORECASE,
+)
 CONTEXT_TOPICS = re.compile(
     r"\b(?:ltm|scenario|bank|partner|vertical|focus|scope|current gate|current defense)\b"
     r"|\b(?:сценар\w*|банк\w*|партн\w*|вертикал\w*|фокус\w*|защит\w*)",
     re.IGNORECASE,
 )
-HISTORICAL_MARKERS = re.compile(
-    r"\b(?:previous|prior|historical|legacy|obsolete|deprecated|rejected|hypothetical|unselected)\b"
-    r"|\b(?:прошл\w*|предыдущ\w*|устаревш\w*|отклон\w*|гипотетич\w*)",
+NON_CURRENT_ALTERNATIVE_MARKERS = re.compile(
+    r"\b(?:previous|prior|historical|legacy|obsolete|deprecated|rejected|hypothetical|unselected|alternative|illustrative|maximum)\s+"
+    r"(?:\w+\s+){0,2}(?:scenario|case|plan|bank|partner|option)\b"
+    r"|\b(?:прошл\w*|предыдущ\w*|устаревш\w*|отклон\w*|гипотетич\w*|альтернативн\w*|иллюстративн\w*|максимальн\w*)\s+"
+    r"(?:\w+\s+){0,2}(?:сценар\w*|кейс\w*|план\w*|банк\w*|партн\w*|вариант\w*)",
     re.IGNORECASE,
 )
 SELECTED_SCENARIO_MARKERS = re.compile(
@@ -41,6 +48,6 @@ def decision_context_score(text: str) -> int:
         score += 8
     if CONTEXT_TOPICS.search(text):
         score += 4
-    if HISTORICAL_MARKERS.search(text):
-        score -= 8
+    if NON_CURRENT_ALTERNATIVE_MARKERS.search(text):
+        score -= 16
     return score

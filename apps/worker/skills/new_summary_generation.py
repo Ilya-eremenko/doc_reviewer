@@ -38,7 +38,11 @@ from privacy.model_anonymization import (
 from providers.base import AnalysisProviderResult, ProviderRunRequest
 from providers.registry import get_provider_adapter
 from results.schema_validation import parse_json_output
-from skills.context_relevance import CONTEXT_CANDIDATE_MARKERS, decision_context_score
+from skills.context_relevance import (
+    CONTEXT_CANDIDATE_MARKERS,
+    CURRENT_DEFENSE_MARKERS,
+    decision_context_score,
+)
 from skills.result_synthesis_trace import (
     cancel_result_synthesis_step,
     complete_result_synthesis_step,
@@ -522,6 +526,16 @@ def _bounded_source_text(value: str) -> str:
 
     selected: list[tuple[int, int]] = []
     remaining = SOURCE_DOCUMENT_MAX_CHARS - len(head) - 120
+    defense_candidates = [
+        candidate for candidate in candidates
+        if CURRENT_DEFENSE_MARKERS.search(value[candidate[1]:candidate[2]])
+    ]
+    if defense_candidates:
+        _score, start, end = max(defense_candidates, key=lambda item: (item[0], item[1]))
+        defense_cost = len(value[start:end].strip()) + 55
+        if defense_cost <= remaining:
+            selected.append((start, end))
+            remaining -= defense_cost
     for _score, start, end in sorted(candidates, key=lambda item: (-item[0], item[1])):
         if any(start < prior_end and end > prior_start for prior_start, prior_end in selected):
             continue
