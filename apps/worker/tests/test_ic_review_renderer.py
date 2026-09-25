@@ -195,6 +195,92 @@ def test_context_pack_keeps_traceable_evidence_without_repeating_full_document()
     assert context.parsed_document_text not in packed_text
 
 
+def test_context_pack_prioritizes_selected_current_scenario_over_historical_bank_claim():
+    historical = "Previous scenario: Bank A was an unselected partner for revenue assumptions."
+    current = "Selected scenario: Bank B is the current bank partner for LTM revenue assumptions."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text=f"{historical}\n\n{current}",
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="The current partner must be checked.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+    financial_evidence = pack.for_role("ic-financial-auditor")["role_evidence"]
+
+    assert financial_evidence[0]["text"] == current
+    assert financial_evidence[0]["char_start"] == len(historical) + 2
+    assert any(item["text"] == historical for item in financial_evidence)
+    assert pack.common_evidence[0]["text"] == current
+
+
+def test_context_pack_preserves_prior_period_metric_and_downranks_illustrative_scenario():
+    previous = "Previous ARR was 10 million rubles."
+    illustrative = "Maximum illustrative scenario: ARR may reach 50 million rubles."
+    current = "Current Defense: selected LTM scenario has ARR of 20 million rubles."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text=f"{previous}\n\n{illustrative}\n\n{current}",
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Compare actual revenue with the current plan.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+    financial_evidence = pack.for_role("ic-financial-auditor")["role_evidence"]
+
+    assert financial_evidence[0]["text"] == current
+    assert any(item["text"] == previous for item in financial_evidence)
+    assert any(item["text"] == illustrative for item in financial_evidence)
+
+
+def test_context_pack_keeps_financial_metric_with_many_generic_current_sections():
+    generic = "Current Defense: the initiative scope is under discussion."
+    financial = "ARR was 20 million rubles and CAC payback is 12 months."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text="\n\n".join([*(f"{generic} Section {index}." for index in range(30)), financial]),
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Compare financial assumptions.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+    financial_evidence = pack.for_role("ic-financial-auditor")["role_evidence"]
+
+    assert any(item["text"] == financial for item in financial_evidence)
+
+
+def test_context_pack_keeps_current_initiative_scope_without_metrics():
+    scope = "Current scope: the approved launch covers SMB customers."
+    context = ICReviewContext(
+        document_title="TnS Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text="Historical background was reviewed.\n\n" + scope,
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Review the active scope.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+
+    assert any(item["text"] == scope for item in pack.common_evidence)
+    assert any(item["text"] == scope for item in pack.synthesis_evidence)
+    assert any(item["text"] == scope for item in pack.for_role("ic-financial-auditor")["common_evidence"])
+
+
 def test_role_and_synthesis_prompts_use_context_pack_instead_of_full_document_text():
     long_tail = "FULL_RAW_DOCUMENT_SENTINEL " * 220
     evidence = "Revenue retention is not proven by cohorts, but CAC payback is stated as 19 months."

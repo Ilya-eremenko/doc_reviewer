@@ -23,6 +23,96 @@ from skills import new_summary_generation
 from skills import summary_localization
 
 
+def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initial_limit():
+    beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 700
+    historical = "Previous scenario: Bank A was considered for the original plan.\n"
+    current = (
+        "Current Defense: Progress Review.\n"
+        "Selected LTM scenario: Bank B is the active partner; the maximum scenario is only illustrative.\n"
+    )
+    source = beginning + historical + "Unrelated appendix material.\n" * 550 + current
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(source) > new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Executive Summary" in excerpt
+    assert "Selected LTM scenario: Bank B" in excerpt
+    assert "Current Defense: Progress Review" in excerpt
+    assert "[Source chars " in excerpt
+    assert source != excerpt
+
+
+def test_new_summary_source_excerpt_keeps_short_document_unchanged():
+    source = "Current Defense: Gate 2.\nSelected scenario: base case."
+
+    assert new_summary_generation._bounded_source_text(source) == source
+
+
+def test_new_summary_source_excerpt_reserves_late_current_defense():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Background only.\n" * 400
+        + ("Selected scenario: option under discussion.\n" + "Scenario details.\n" * 35) * 30
+        + "Current Defense: Gate 3, with an active LTM base scenario.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Current Defense: Gate 3" in excerpt
+
+
+def test_new_summary_source_excerpt_backfills_unused_context_before_late_window():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Plain background.\n" * 350
+        + "MIDPOINT_METRIC_SENTINEL is the current measured value.\n"
+        + "More plain background.\n" * 450
+        + "Selected LTM scenario: base case for the active defense.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "MIDPOINT_METRIC_SENTINEL" in excerpt
+    assert "Selected LTM scenario" in excerpt
+
+
+def test_new_summary_source_excerpt_handles_dense_large_document():
+    source = "Executive Summary: case overview.\n" + "scenario " * 120000
+    source += "\nCurrent Defense: Gate 3 with selected LTM base scenario.\n"
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Current Defense: Gate 3" in excerpt
+
+
+def test_new_summary_source_excerpt_prioritizes_selected_qualified_scenario():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Scenario under discussion.\n" * 900
+        + "Selected base scenario: the active LTM plan uses Bank B.\n"
+        + "More generic scenario text.\n" * 600
+        + "Выбранный базовый сценарий: план с Банком Б.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert "Selected base scenario" in excerpt
+    assert "Выбранный базовый сценарий" in excerpt
+
+
+def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
+    source = "General background without decision markers.\n" * 1000
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert excerpt.endswith("[TRUNCATED: remaining source text was omitted.]")
+
+
 def test_legacy_translation_job_is_skipped_without_enabling_language_variants(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
     get_settings.cache_clear()

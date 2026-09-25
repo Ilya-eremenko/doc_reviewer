@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Improve source-context selection without changing external skill rubrics:
+  keep the New Summary document excerpt within 16,000 characters while sampling
+  current defense, selected scenario, and scope evidence from the entire parsed
+  document; rank explicitly current/selected IC Review evidence above historical
+  alternatives without dropping prior-period comparisons. Keep source offsets,
+  fingerprints, and existing analysis outputs intact. Focused regression tests
+  cover late-document context, short documents, bounded scanning, and evidence
+  ordering without losing role-specific or prior-period facts. This
+  prioritizes source statements; it does not independently verify their truth.
 - [~] Carry the Gate Challenger mandatory-checklist `green/yellow/red` statuses through
   shared JSON contracts, worker prompts, localization, AI Summary, web rendering,
   and PDF/Word exports. Map yellow to orange "Частично подтверждено", red to
