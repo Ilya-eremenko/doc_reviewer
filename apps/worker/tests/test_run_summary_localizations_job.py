@@ -178,6 +178,15 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
             "ru": {"status": "queued", "payload": None, "error_message": None},
             "en": {"status": "queued", "payload": None, "error_message": None},
         }
+        output["stage_checklist"] = [
+            *output["stage_checklist"],
+            {
+                "id": "gate2_mvp_or_target_product",
+                "label": "Описание MVP/целевого продукта",
+                "status": "yellow",
+                "evidence": "Описан только план MVP.",
+            },
+        ]
         output["result"] = result
         analysis.structured_output = output
         payload = _new_summary_report_payload(
@@ -209,6 +218,9 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
         assert state["progress"]["percent"] == 100
         assert state["ru"]["payload"]["required_elements"][0]["status"] == "нет"
         assert state["en"]["payload"]["required_elements"][0]["status"] == "нет"
+        for language in ("ru", "en"):
+            required = {item["id"]: item for item in state[language]["payload"]["required_elements"]}
+            assert required["gate2_target_product"]["status"] == "частично подтверждено"
         assert state["ru"]["source_fingerprint"] == new_summary_generation.new_summary_source_fingerprint(
             new_summary_generation.build_new_summary_source(session=db, analysis=analysis, check_run=check_run)
         )
@@ -416,6 +428,45 @@ def test_new_summary_solution_validation_detail_ignores_non_list_items():
         )
         is None
     )
+
+
+def test_new_summary_required_elements_preserve_three_gate_checklist_statuses():
+    expected = {
+        "green": "есть",
+        "yellow": "частично подтверждено",
+        "red": "нет",
+    }
+    for source_status, summary_status in expected.items():
+        assert new_summary_generation._required_element_status(
+            {"status": source_status},
+            item_id="gate2_target_product",
+            generated_item={"status": "есть"},
+            required_details={},
+        ) == summary_status
+
+
+def test_new_summary_hypothesis_fraction_comes_from_appendix_not_traffic_light():
+    assert new_summary_generation._required_element_status(
+        {"status": "yellow"},
+        item_id="gate2_hypothesis_results",
+        generated_item={"status": "2/5"},
+        required_details={
+            "gate2_hypothesis_results": {
+                "type": "solution_validation",
+                "items": [
+                    {"text": "A", "verdict": "confirmed"},
+                    {"text": "B", "verdict": "insufficient"},
+                    {"text": "C", "verdict": "confirmed"},
+                ],
+            }
+        },
+    ) == "2/3"
+    assert new_summary_generation._required_element_status(
+        {"status": "red"},
+        item_id="stream_review_1_solution_validation",
+        generated_item={"status": "1/4"},
+        required_details={},
+    ) == "1/4"
 
 
 def test_new_summary_source_fingerprint_changes_with_skill_contract(monkeypatch):

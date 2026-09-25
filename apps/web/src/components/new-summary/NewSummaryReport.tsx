@@ -24,6 +24,7 @@ const labels = {
     list: "Все новые Summary",
     metric: "Метрика",
     missing: "Нет",
+    partial: "Частично подтверждено",
     nextReview: "Значение к следующему ревью",
     other: "Другие наблюдения",
     outputMetrics: "Output metrics",
@@ -31,7 +32,7 @@ const labels = {
     prototype: "AI Summary · скилл new-summary",
     required: "Обязательные элементы документа",
     requiredIntro:
-      "Проверяется только наличие обязательных частей соответствующей стадии. Качество доказательств оценивается в следующих разделах.",
+      "Обязательные элементы соответствующей стадии сопоставлены с доказательствами в документе.",
     source: "Исходный анализ",
     stage: "Стадия инициативы",
     traction: "Traction Summary",
@@ -48,6 +49,7 @@ const labels = {
     list: "All New Summaries",
     metric: "Metric",
     missing: "Missing",
+    partial: "Partially confirmed",
     nextReview: "Next review value",
     other: "Other observations",
     outputMetrics: "Output metrics",
@@ -55,7 +57,7 @@ const labels = {
     prototype: "AI Summary · new-summary skill",
     required: "Required document elements",
     requiredIntro:
-      "This block checks only whether the stage-required elements are present. Evidence quality is assessed in the sections below.",
+      "Stage-required elements are matched against the evidence in the document.",
     source: "Source analysis",
     stage: "Initiative stage",
     traction: "Traction Summary",
@@ -149,7 +151,7 @@ export function NewSummaryReportView({
                 <div>
                   <div className="new-summary-required__title">
                     <strong>{item.label}</strong>
-                    <span>{tone === "present" ? text.present : text.missing}</span>
+                    <span>{tone === "fraction" ? item.status : text[tone]}</span>
                   </div>
                   <p>{item.evidence}</p>
                 </div>
@@ -395,8 +397,11 @@ function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value
   return Boolean(value?.periods.length && value.rows.length);
 }
 
-function requiredElementTone(item: NewSummaryRequiredElement): "present" | "missing" {
-  return item.status === "present" || item.status === "есть" ? "present" : "missing";
+function requiredElementTone(item: NewSummaryRequiredElement): "present" | "partial" | "missing" | "fraction" {
+  if (/^\d+\/\d+$/.test(item.status)) return "fraction";
+  if (item.status === "present" || item.status === "есть") return "present";
+  if (item.status === "partially confirmed" || item.status === "частично подтверждено") return "partial";
+  return "missing";
 }
 
 function orderedRequiredDetails(content: NewSummaryContent): Array<[string, NewSummaryRequiredDetails]> {
@@ -628,10 +633,12 @@ const newSummaryStyles = `
   height: 10px;
   margin-top: 5px;
   border-radius: 999px;
-  background: var(--warning);
+  background: var(--danger);
 }
 
 .new-summary-required li.present .new-summary-required__marker { background: var(--success); }
+.new-summary-required li.partial .new-summary-required__marker { background: var(--warning); }
+.new-summary-required li.fraction .new-summary-required__marker { background: transparent; }
 
 .new-summary-required__title {
   display: flex;
@@ -651,8 +658,8 @@ const newSummaryStyles = `
   min-height: 24px;
   align-items: center;
   border-radius: 999px;
-  background: var(--warning-bg);
-  color: #925c00;
+  background: var(--danger-bg);
+  color: var(--danger);
   padding: 0 8px;
   font-size: 11px;
   font-weight: 800;
@@ -661,6 +668,17 @@ const newSummaryStyles = `
 .new-summary-required li.present .new-summary-required__title span {
   background: var(--success-bg);
   color: #075e45;
+}
+
+.new-summary-required li.partial .new-summary-required__title span {
+  background: var(--warning-bg);
+  color: #925c00;
+}
+
+.new-summary-required li.fraction .new-summary-required__title span {
+  background: transparent;
+  color: var(--foreground);
+  padding: 0;
 }
 
 .new-summary-required p {

@@ -484,7 +484,7 @@ describe("analysis result page", () => {
     expect(newSummarySource).not.toContain("Что недостаточно подтверждено");
   });
 
-  it("renders the stage checklist as a red and green traffic-light block above Summary product analysis", () => {
+  it("renders the stage checklist as a three-color traffic-light block above Summary product analysis", () => {
     const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
     const resultPanelSource = pageSource.slice(
       pageSource.indexOf("function ResultPanel"),
@@ -503,8 +503,10 @@ describe("analysis result page", () => {
     expect(stageChecklistSource).toContain('className="analysis-stage-checklist__status"');
     expect(stageChecklistSource).toContain("analysis-stage-checklist__item--${item.status}");
     expect(pageSource).toContain(".analysis-stage-checklist__item--green .analysis-stage-checklist__marker");
+    expect(pageSource).toContain(".analysis-stage-checklist__item--yellow .analysis-stage-checklist__marker");
     expect(pageSource).toContain(".analysis-stage-checklist__item--red .analysis-stage-checklist__marker");
     expect(pageSource).toContain(".analysis-stage-checklist__item--green .analysis-stage-checklist__status");
+    expect(pageSource).toContain(".analysis-stage-checklist__item--yellow .analysis-stage-checklist__status");
     expect(pageSource).toContain(".analysis-stage-checklist__item--red .analysis-stage-checklist__status");
   });
 

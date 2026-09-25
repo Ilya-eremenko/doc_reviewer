@@ -41,6 +41,7 @@ EXPORT_FORMATS = {"pdf", "docx"}
 _ACCENT = "#0B6F54"
 _SUCCESS = "#0FA36B"
 _WARNING = "#C77800"
+_DANGER = "#D92D20"
 _MUTED = "#5D6675"
 _LINE = "#DDE3EA"
 _SURFACE = "#F6F8FA"
@@ -263,7 +264,12 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         status = _localized_status(item, labels)
         status_run = paragraph.add_run(f" — {status}")
         status_run.bold = True
-        status_run.font.color.rgb = RGBColor(15, 163, 107) if _is_present(item) else RGBColor(199, 120, 0)
+        status_run.font.color.rgb = {
+            "present": RGBColor(15, 163, 107),
+            "partial": RGBColor(199, 120, 0),
+            "missing": RGBColor(217, 45, 32),
+            "fraction": RGBColor(17, 24, 39),
+        }[_required_status_kind(item)]
         evidence = document.add_paragraph(_clean_text(item.get("evidence")))
         evidence.paragraph_format.left_indent = Inches(0.22)
         evidence.paragraph_format.space_after = Pt(5)
@@ -460,7 +466,12 @@ def _append_pdf_required(story: list[Any], content: dict[str, Any], labels: dict
     for item in items:
         if not isinstance(item, dict):
             continue
-        color = _SUCCESS if _is_present(item) else _WARNING
+        color = {
+            "present": _SUCCESS,
+            "partial": _WARNING,
+            "missing": _DANGER,
+            "fraction": _TEXT,
+        }[_required_status_kind(item)]
         status = _localized_status(item, labels)
         story.append(
             Paragraph(
@@ -570,6 +581,7 @@ def _labels(language: str) -> dict[str, str]:
             "input_metrics": "Input metrics",
             "metric": "Metric",
             "missing": "Missing",
+            "partial": "Partially confirmed",
             "next_review": "Next review value",
             "other": "Other observations",
             "output_metrics": "Output metrics",
@@ -591,6 +603,7 @@ def _labels(language: str) -> dict[str, str]:
         "input_metrics": "Input metrics",
         "metric": "Метрика",
         "missing": "Нет",
+        "partial": "Частично подтверждено",
         "next_review": "Значение к следующему ревью",
         "other": "Другие наблюдения",
         "output_metrics": "Output metrics",
@@ -630,12 +643,21 @@ def _appendix_title(content: dict[str, Any], detail_id: str, index: int) -> str:
     return f"Appendix {index}"
 
 
-def _is_present(item: dict[str, Any]) -> bool:
-    return str(item.get("status", "")).lower() in {"есть", "present"}
+def _required_status_kind(item: dict[str, Any]) -> str:
+    status = str(item.get("status", "")).lower()
+    if status in {"есть", "present"}:
+        return "present"
+    if status in {"частично подтверждено", "partially confirmed"}:
+        return "partial"
+    numerator, separator, denominator = status.partition("/")
+    if separator and numerator.isdecimal() and denominator.isdecimal():
+        return "fraction"
+    return "missing"
 
 
 def _localized_status(item: dict[str, Any], labels: dict[str, str]) -> str:
-    return labels["present"] if _is_present(item) else labels["missing"]
+    kind = _required_status_kind(item)
+    return str(item.get("status")) if kind == "fraction" else labels[kind]
 
 
 def _detail_status(status: Any, labels: dict[str, str]) -> str:

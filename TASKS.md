@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Carry the Gate Challenger mandatory-checklist `green/yellow/red` statuses through
+  shared JSON contracts, worker prompts, localization, AI Summary, web rendering,
+  and PDF/Word exports. Map yellow to orange "Частично подтверждено", red to
+  red "Нет", and green to green "Есть"; keep hypothesis fractions black and
+  leave completed historical analyses unchanged. External Gate Challenger
+  shared instructions must be deployed separately from the site release.
+  Verification: 505 API/worker tests, 160 web tests, and the production web
+  build pass; external skill tests pass (101 tests, 406 subtests). PR and
+  production deployment pending. External source contract is merged via
+  `Ilya-eremenko/Gate2-challenger-skill` PR #2; production source sync remains
+  independent of the site deployment.
 - [~] Add release-correlated, internal-only IC Review diagnostics (A12): exact
   worker image SHA, run/document/step/RQ IDs, skill snapshot and schema hash,
   operation/timing, safe schema field/constraint/type/length, JSON location,

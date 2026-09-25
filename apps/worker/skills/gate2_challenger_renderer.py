@@ -136,16 +136,18 @@ def _stage_checklist_requirement(document_type: str | None, *, output_language: 
     items = stage_checklist_items(document_type, output_language=output_language)
     if not items:
         return (
-            "2. stage_checklist: include a compact red/green checklist for the detected document type. "
+            "2. stage_checklist: include a compact green/yellow/red checklist for the detected document type. "
             "Use status green only when the uploaded document contains decision-grade evidence for the item; "
-            "use status red when the item is absent, only planned, or not substantiated. "
+            "use status yellow when the item is only planned, named, or insufficiently substantiated; "
+            "use status red only when the item is absent completely. "
             "Each item must include id, label, status, and evidence."
         )
 
     lines = [
         "2. stage_checklist: include exactly these items for the selected document type, in this order.",
         "Use status green only when the uploaded document contains decision-grade evidence for the item; "
-        "use status red when the item is absent, only planned, or not substantiated. "
+        "use status yellow when the item is only planned, named, or insufficiently substantiated; "
+        "use status red only when the item is absent completely. "
         "For evidence, cite the compact source proof or explain the missing proof in one sentence.",
     ]
     lines.extend(f"- id: {item_id}; label: {label}" for item_id, label in items)

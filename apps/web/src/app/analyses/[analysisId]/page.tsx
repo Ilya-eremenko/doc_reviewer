@@ -1084,7 +1084,11 @@ function StageChecklist({ items, language }: { items: StageChecklistItem[]; lang
       <h3>{language === "ru" ? "Обязательные элементы" : "Required elements"}</h3>
       <ul>
         {items.map((item) => {
-          const statusLabel = item.status === "green" ? (language === "ru" ? "Есть" : "Present") : (language === "ru" ? "Нет" : "Missing");
+          const statusLabel = item.status === "green"
+            ? (language === "ru" ? "Есть" : "Present")
+            : item.status === "yellow"
+              ? (language === "ru" ? "Частично подтверждено" : "Partially confirmed")
+              : (language === "ru" ? "Нет" : "Missing");
           return (
             <li
               aria-label={`${statusLabel}: ${item.label}`}
@@ -3630,6 +3634,10 @@ const analysisStyles = `
   background: #0e9f6e;
 }
 
+.analysis-stage-checklist__item--yellow .analysis-stage-checklist__marker {
+  background: #c77800;
+}
+
 .analysis-stage-checklist__item--red .analysis-stage-checklist__marker {
   background: #d92d20;
 }
@@ -3671,6 +3679,11 @@ const analysisStyles = `
 .analysis-stage-checklist__item--green .analysis-stage-checklist__status {
   background: #dff7ed;
   color: #047857;
+}
+
+.analysis-stage-checklist__item--yellow .analysis-stage-checklist__status {
+  background: #fff3df;
+  color: #925c00;
 }
 
 .analysis-stage-checklist__item--red .analysis-stage-checklist__status {

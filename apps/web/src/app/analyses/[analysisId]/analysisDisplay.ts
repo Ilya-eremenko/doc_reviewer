@@ -132,7 +132,7 @@ export type ResultRationaleItem = {
   sources: ResultRationaleSource[];
 };
 
-export type StageChecklistStatus = "green" | "red";
+export type StageChecklistStatus = "green" | "yellow" | "red";
 
 export type StageChecklistItem = {
   id: string;
@@ -192,7 +192,7 @@ function isResultRationaleSource(value: string): value is ResultRationaleSource 
 
 function asStageChecklistStatus(value: unknown): StageChecklistStatus | null {
   const normalized = asString(value)?.toLowerCase();
-  return normalized === "green" || normalized === "red" ? normalized : null;
+  return normalized === "green" || normalized === "yellow" || normalized === "red" ? normalized : null;
 }
 
 export function analysisGateDetailsOutput(
