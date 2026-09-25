@@ -215,8 +215,11 @@
         },
         "status": {
           "type": "string",
-          "enum": ["есть", "нет"],
-          "description": "Use only есть/нет in JSON; presentation layers may localize the displayed label."
+          "anyOf": [
+            { "enum": ["есть", "частично подтверждено", "нет"] },
+            { "pattern": "^[0-9]+/[0-9]+$" }
+          ],
+          "description": "Use есть/частично подтверждено/нет; only the two hypothesis-count items may use a black numerator/denominator fraction instead."
         },
         "evidence": {
           "type": "string",

@@ -681,12 +681,13 @@ def _validated_source_dependent_report(
         if isinstance(expected_stage, str) and version.get("stage") != expected_stage:
             raise ValueError("new_summary_stage_mismatch")
         normalized_version = dict(version)
+        normalized_version["required_details"] = _normalized_required_details(version)
         normalized_version["required_elements"] = _required_elements_from_source(
             source_payload=source_payload,
             target_language=expected_language,
             generated_payload=version,
+            required_details=normalized_version["required_details"],
         )
-        normalized_version["required_details"] = _normalized_required_details(version)
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
         normalized_versions.append(normalized_version)
@@ -856,6 +857,7 @@ def _required_elements_from_source(
     source_payload: dict[str, Any],
     target_language: str,
     generated_payload: dict[str, Any],
+    required_details: dict[str, Any],
 ) -> list[dict[str, str]]:
     document_type = source_payload.get("document_type")
     expected = _new_summary_stage_checklist_items(
@@ -868,7 +870,12 @@ def _required_elements_from_source(
         {
             "id": item_id,
             "label": label,
-            "status": _required_element_status(by_id.get(item_id)),
+            "status": _required_element_status(
+                by_id.get(item_id),
+                item_id=item_id,
+                generated_item=generated_by_id.get(item_id),
+                required_details=required_details,
+            ),
             "evidence": _required_element_evidence(
                 by_id.get(item_id),
                 generated_by_id.get(item_id),
@@ -1030,10 +1037,30 @@ def _generated_required_elements_by_id(payload: dict[str, Any]) -> dict[str, dic
     return result
 
 
-def _required_element_status(item: dict[str, Any] | None) -> str:
+def _required_element_status(
+    item: dict[str, Any] | None,
+    *,
+    item_id: str,
+    generated_item: dict[str, Any] | None,
+    required_details: dict[str, Any],
+) -> str:
+    if item_id in {"gate2_hypothesis_results", "stream_review_1_solution_validation"}:
+        detail = required_details.get(item_id)
+        if isinstance(detail, dict) and detail.get("type") == "solution_validation":
+            items = detail.get("items")
+            if isinstance(items, list) and items:
+                confirmed = sum(entry.get("verdict") == "confirmed" for entry in items if isinstance(entry, dict))
+                return f"{confirmed}/{len(items)}"
+        generated_status = str((generated_item or {}).get("status") or "")
+        numerator, separator, denominator = generated_status.partition("/")
+        if separator and numerator.isdecimal() and denominator.isdecimal() and int(numerator) <= int(denominator):
+            return generated_status
+
     status = str((item or {}).get("status") or "").lower()
     if status in {"present", "green", "true", "yes", "есть"}:
         return "есть"
+    if status in {"yellow", "partial", "partially_confirmed", "частично подтверждено"}:
+        return "частично подтверждено"
     return "нет"
 
 

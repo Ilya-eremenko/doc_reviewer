@@ -30,7 +30,7 @@
     "stage_checklist": {
       "type": "array",
       "minItems": 1,
-      "description": "Stage-specific mandatory checklist rendered as a red/green traffic-light block above the product analysis.",
+      "description": "Stage-specific mandatory checklist rendered as a green/yellow/red traffic-light block above the product analysis.",
       "items": { "$ref": "#/$defs/stage_checklist_item" }
     },
     "findings": {
@@ -80,7 +80,7 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "label": { "type": "string", "minLength": 1 },
-        "status": { "type": "string", "enum": ["green", "red"] },
+        "status": { "type": "string", "enum": ["green", "yellow", "red"] },
         "evidence": { "type": "string", "minLength": 1 }
       }
     },

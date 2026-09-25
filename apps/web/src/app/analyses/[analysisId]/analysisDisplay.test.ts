@@ -48,6 +48,12 @@ describe("analysis display helpers", () => {
               evidence: "Раздел MVP описывает целевой пользовательский flow.",
             },
             {
+              id: "gate2_mockups_or_user_flow",
+              label: "Mockups пользовательского flow",
+              status: "yellow",
+              evidence: "Показан только план создания макета.",
+            },
+            {
               id: "ignored",
               label: "Ignored",
               status: "partial",
@@ -68,6 +74,12 @@ describe("analysis display helpers", () => {
         label: "Описание MVP/целевого продукта",
         status: "green",
         evidence: "Раздел MVP описывает целевой пользовательский flow.",
+      },
+      {
+        id: "gate2_mockups_or_user_flow",
+        label: "Mockups пользовательского flow",
+        status: "yellow",
+        evidence: "Показан только план создания макета.",
       },
     ]);
   });

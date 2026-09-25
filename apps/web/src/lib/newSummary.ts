@@ -12,7 +12,7 @@ export type NewSummaryStage =
 export type NewSummaryRequiredElement = {
   id: string;
   label: string;
-  status: "есть" | "нет" | "present" | "missing";
+  status: "есть" | "частично подтверждено" | "нет" | "present" | "partially confirmed" | "missing" | `${number}/${number}`;
   evidence: string;
 };
 

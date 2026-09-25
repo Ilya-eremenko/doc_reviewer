@@ -19,7 +19,7 @@
         "properties": {
           "id": { "type": "string" },
           "label": { "type": "string" },
-          "status": { "type": "string", "enum": ["green", "red"] },
+          "status": { "type": "string", "enum": ["green", "yellow", "red"] },
           "evidence": { "type": "string" }
         }
       }

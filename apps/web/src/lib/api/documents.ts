@@ -24,7 +24,7 @@ export type OutputLanguage = "ru" | "en";
 export type SummaryStageChecklistItem = {
   id: string;
   label: string;
-  status: "green" | "red";
+  status: "green" | "yellow" | "red";
   evidence: string;
 };
 
