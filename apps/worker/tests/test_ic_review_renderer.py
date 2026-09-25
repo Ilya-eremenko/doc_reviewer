@@ -261,6 +261,26 @@ def test_context_pack_keeps_financial_metric_with_many_generic_current_sections(
     assert any(item["text"] == financial for item in financial_evidence)
 
 
+def test_context_pack_keeps_current_initiative_scope_without_metrics():
+    scope = "Current scope: the approved launch covers SMB customers."
+    context = ICReviewContext(
+        document_title="TnS Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text="Historical background was reviewed.\n\n" + scope,
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Review the active scope.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+
+    assert any(item["text"] == scope for item in pack.common_evidence)
+    assert any(item["text"] == scope for item in pack.synthesis_evidence)
+    assert any(item["text"] == scope for item in pack.for_role("ic-financial-auditor")["common_evidence"])
+
+
 def test_role_and_synthesis_prompts_use_context_pack_instead_of_full_document_text():
     long_tail = "FULL_RAW_DOCUMENT_SENTINEL " * 220
     evidence = "Revenue retention is not proven by cohorts, but CAC payback is stated as 19 months."
