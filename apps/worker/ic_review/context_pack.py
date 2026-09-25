@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from ic_review.context import ICReviewContext
+from skills.context_relevance import decision_context_score
 
 
 ROLE_ORDER = (
@@ -170,6 +171,18 @@ COMMON_KEYWORDS = (
     "section",
     "verdict",
     "вывод",
+    "current defense",
+    "current gate",
+    "ltm",
+    "scenario",
+    "bank",
+    "partner",
+    "vertical",
+    "текущ",
+    "выбран",
+    "сценар",
+    "банк",
+    "вертикал",
     "доказ",
     "метрик",
     "риск",
@@ -202,6 +215,7 @@ class ICReviewContextPack:
             "source_stats": self.source_stats,
             "instructions": [
                 "Use evidence_id values when grounding findings.",
+                "Treat explicitly current or selected scenarios and initiative scope as controlling; do not promote historical or hypothetical alternatives to the active plan. Surface unresolved conflicts rather than guessing.",
                 "Treat omitted source text as unavailable context, not as evidence that a fact is absent.",
                 "Prefer document, main-analysis, workbook, and formula facts included in this pack.",
                 "Populate full_report_materials with detailed prose and tables suitable for the original IC full report.",
@@ -218,6 +232,7 @@ class ICReviewContextPack:
             "source_stats": self.source_stats,
             "instructions": [
                 "Synthesize from role outputs first, then use this evidence index for traceability.",
+                "Keep current or selected scenarios separate from historical and hypothetical alternatives; do not silently resolve conflicting source statements.",
                 "Do not infer facts from source text that is not present in role outputs or this context pack.",
                 "Keep the final compact result short and evidence-grounded.",
                 "Do not generate the full report in synthesis; the worker assembles it from role full_report_materials.",
@@ -368,6 +383,7 @@ def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...]) -> int:
         score += 2
     if any(marker in lowered for marker in ("risk", "gap", "fail", "critical", "blocker", "риск", "нет ", "не ")):
         score += 2
+    score += decision_context_score(text)
     return score
 
 

@@ -195,6 +195,29 @@ def test_context_pack_keeps_traceable_evidence_without_repeating_full_document()
     assert context.parsed_document_text not in packed_text
 
 
+def test_context_pack_prioritizes_selected_current_scenario_over_historical_bank_claim():
+    historical = "Previous scenario: Bank A was an unselected partner for revenue assumptions."
+    current = "Selected scenario: Bank B is the current bank partner for LTM revenue assumptions."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text=f"{historical}\n\n{current}",
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="The current partner must be checked.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+    financial_evidence = pack.for_role("ic-financial-auditor")["role_evidence"]
+
+    assert financial_evidence[0]["text"] == current
+    assert financial_evidence[0]["char_start"] == len(historical) + 2
+    assert any(item["text"] == historical for item in financial_evidence)
+    assert pack.common_evidence[0]["text"] == current
+
+
 def test_role_and_synthesis_prompts_use_context_pack_instead_of_full_document_text():
     long_tail = "FULL_RAW_DOCUMENT_SENTINEL " * 220
     evidence = "Revenue retention is not proven by cohorts, but CAC payback is stated as 19 months."
