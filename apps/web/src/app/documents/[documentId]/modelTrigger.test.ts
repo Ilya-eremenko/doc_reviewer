@@ -129,7 +129,7 @@ describe("document detail analysis controls", () => {
   it("uses the manual document type override when launching analysis", () => {
     const source = readFileSync(join(__dirname, "page.tsx"), "utf8");
 
-    expect(source).toContain("document_type_override: document?.manual_document_type ?? document?.detected_document_type");
+    expect(source).toContain("document_type_override: document?.manual_document_type ?? undefined");
   });
 
   it("keeps the blocked analysis marker circular like the ready marker", () => {

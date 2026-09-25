@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -117,6 +118,13 @@ def create_analysis_for_document(
         if document_type_override
         else document.manual_document_type or document.detected_document_type
     )
+    if (
+        document_type_override is None
+        and document.manual_document_type is None
+        and document_type == DocumentType.STREAM_REVIEW_2_PLUS.value
+        and document.display_stage == "Progress Review"
+    ):
+        document_type = DocumentType.PROGRESS_REVIEW.value
     skill = _resolve_skill(db=db, skill_id=skill_id, document_type=document_type)
     if provider != Provider.HERMES:
         provider_key = get_shared_provider_key(db=db, provider=provider)
@@ -189,6 +197,14 @@ def _attach_source_snapshot(
     source = db.get(SkillSource, skill.skill_source_id)
     if source is None:
         raise AnalysisPreconditionError("Skill source is not configured")
+    if run_parameters.get("document_type") == DocumentType.PROGRESS_REVIEW.value and skill.name == "gate2_challenger_main_analysis":
+        source_root = Path(source.local_path) if source.local_path else None
+        rubric = source_root / "skills/gate-challenger/references/progress-review-rubric.md" if source_root else None
+        entrypoint = source_root / source.entrypoint if source_root else None
+        if not rubric or not rubric.is_file() or not entrypoint or not entrypoint.is_file() or (
+            "progress-review-rubric.md" not in entrypoint.read_text(encoding="utf-8")
+        ):
+            raise AnalysisPreconditionError("Progress Review rubric is not installed in the Gate Challenger source")
     settings = get_settings()
     snapshot_mode = run_parameters.get("snapshot_mode") or default_skill_source_snapshot_mode(settings)
     storage = LocalDocumentStorage(settings.storage_root)

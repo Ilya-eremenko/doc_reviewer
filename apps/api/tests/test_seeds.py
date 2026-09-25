@@ -54,6 +54,7 @@ def test_seeded_gate_challenger_skill_matches_supported_document_types(db_sessio
         DocumentType.GATE_2.value,
         DocumentType.STREAM_REVIEW_1.value,
         DocumentType.STREAM_REVIEW_2_PLUS.value,
+        DocumentType.PROGRESS_REVIEW.value,
         DocumentType.GATE_3.value,
     ]
 
@@ -87,6 +88,7 @@ def test_seeded_devils_advocate_skill_runs_for_unknown_documents(db_session):
         DocumentType.GATE_2.value,
         DocumentType.STREAM_REVIEW_1.value,
         DocumentType.STREAM_REVIEW_2_PLUS.value,
+        DocumentType.PROGRESS_REVIEW.value,
         DocumentType.GATE_3.value,
         DocumentType.UNKNOWN.value,
     ]
@@ -103,6 +105,7 @@ def test_seeded_ic_agentic_review_skill_matches_source_contract(db_session):
         DocumentType.GATE_2.value,
         DocumentType.STREAM_REVIEW_1.value,
         DocumentType.STREAM_REVIEW_2_PLUS.value,
+        DocumentType.PROGRESS_REVIEW.value,
         DocumentType.GATE_3.value,
     ]
     assert ic_review_skill.source_type == SkillSourceType.LOCAL_SKILL_REPO.value
@@ -158,6 +161,7 @@ def test_seeded_result_summary_synthesis_skill_is_inline_and_result_scoped(db_se
         DocumentType.GATE_2.value,
         DocumentType.STREAM_REVIEW_1.value,
         DocumentType.STREAM_REVIEW_2_PLUS.value,
+        DocumentType.PROGRESS_REVIEW.value,
         DocumentType.GATE_3.value,
     ]
 
@@ -175,5 +179,6 @@ def test_seeded_result_rationale_synthesis_skill_is_inline_and_result_scoped(db_
         DocumentType.GATE_2.value,
         DocumentType.STREAM_REVIEW_1.value,
         DocumentType.STREAM_REVIEW_2_PLUS.value,
+        DocumentType.PROGRESS_REVIEW.value,
         DocumentType.GATE_3.value,
     ]

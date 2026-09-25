@@ -64,6 +64,28 @@ def test_parse_document_success_updates_database_and_writes_artifact(tmp_path):
         _close_session(db)
 
 
+def test_parse_document_persists_native_progress_review_type(tmp_path):
+    db = _create_session()
+    try:
+        owner = _create_user(db)
+        storage = LocalDocumentStorage(tmp_path)
+        document = _create_document(
+            db, storage, owner,
+            filename="progress-review.md",
+            content=b"# Initiative\nExecutive Summary\nPrevious Defense: Gate 3\nCurrent Defense: Progress Review",
+            mime_type="text/markdown",
+        )
+
+        parse_document(str(document.id), db=db, storage=storage)
+
+        db.refresh(document)
+        assert document.parse_status == DocumentParseStatus.COMPLETED.value
+        assert document.detected_document_type == DocumentType.PROGRESS_REVIEW.value
+        assert document.display_stage == "Progress Review"
+    finally:
+        _close_session(db)
+
+
 def test_parse_document_preserves_personal_data_when_model_anonymization_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("DOCUMENT_ANONYMIZATION_ENABLED", "true")
     get_settings.cache_clear()

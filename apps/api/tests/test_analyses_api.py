@@ -118,6 +118,80 @@ def test_create_analysis_queues_default_gate2_skill_with_snapshot(client, db_ses
         app.dependency_overrides.pop(documents_router.get_parse_document_enqueue, None)
 
 
+def test_progress_review_requires_installed_rubric_before_analysis_is_queued(client, db_session, monkeypatch, tmp_path):
+    from app.main import app
+    from app.routers import analyses as analyses_router
+    from app.routers import documents as documents_router
+
+    enqueued = []
+    app.dependency_overrides[analyses_router.get_run_analysis_enqueue] = lambda: lambda analysis_id: enqueued.append(analysis_id)
+    app.dependency_overrides[documents_router.get_parse_document_enqueue] = lambda: lambda document_id: None
+    try:
+        monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
+        get_settings.cache_clear()
+        source_root = tmp_path / "gate-source"
+        references = source_root / "skills/gate-challenger/references"
+        references.mkdir(parents=True)
+        entrypoint = source_root / "skills/gate-challenger/SKILL.md"
+        entrypoint.write_text("Gate skill without a Progress Review route", encoding="utf-8")
+
+        admin = create_user(db_session, "admin", "secret", role=Role.ADMIN)
+        create_user(db_session, "author", "secret")
+        seed_baseline_skills(db_session)
+        gate_source = db_session.query(SkillSource).filter_by(slug="gate-challenger").one()
+        gate_source.source_kind = "local_directory"
+        gate_source.local_path = str(source_root)
+        db_session.add(ProviderKey(
+            owner_id=admin.id, provider=Provider.OPENAI_COMPATIBLE.value, base_url=None,
+            default_model="openai/gpt-5.5", available_models=["openai/gpt-5.5"],
+            encrypted_api_key=encrypt_secret("sk-test"), api_key_fingerprint="openai_compatible:...test",
+        ))
+        db_session.commit()
+        login(client, "author", "secret")
+        upload = upload_document(client, "progress.txt", b"Current Defense: Progress Review")
+        document = db_session.get(Document, UUID(upload.json()["id"]))
+        document.parse_status = DocumentParseStatus.COMPLETED.value
+        document.parsed_text = "Executive Summary\nCurrent Defense: Progress Review"
+        document.detected_document_type = DocumentType.PROGRESS_REVIEW.value
+        db_session.commit()
+
+        url = f"/documents/{document.id}/analyses"
+        request = {"provider": "openai_compatible", "model": "openai/gpt-5.5"}
+        missing = client.post(url, json=request)
+        assert missing.status_code == 409
+        assert "Progress Review rubric is not installed" in missing.json()["detail"]
+        assert not enqueued
+
+        entrypoint.write_text("Use references/progress-review-rubric.md for Progress Review", encoding="utf-8")
+        (references / "progress-review-rubric.md").write_text("Native Progress Review rubric", encoding="utf-8")
+        created = client.post(url, json=request)
+        assert created.status_code == 201, created.text
+        analysis = db_session.get(Analysis, UUID(created.json()["id"]))
+        assert analysis.run_parameters["document_type"] == DocumentType.PROGRESS_REVIEW.value
+        snapshot = db_session.get(SkillSourceSnapshot, UUID(analysis.run_parameters["source_snapshot_id"]))
+        assert any(item["path"].endswith("progress-review-rubric.md") for item in snapshot.file_manifest)
+        assert enqueued == [analysis.id]
+
+        document.detected_document_type = DocumentType.STREAM_REVIEW_2_PLUS.value
+        db_session.commit()
+        rerun = client.post(url, json=request)
+        assert rerun.status_code == 201
+        rerun_analysis = db_session.get(Analysis, UUID(rerun.json()["id"]))
+        assert rerun_analysis.run_parameters["document_type"] == DocumentType.PROGRESS_REVIEW.value
+        assert document.detected_document_type == DocumentType.STREAM_REVIEW_2_PLUS.value
+
+        document.parsed_text = "Executive Summary\nPrevious Defense: Progress Review\nCurrent Defense: Stream Review 2+"
+        db_session.commit()
+        real_stream = client.post(url, json=request)
+        assert real_stream.status_code == 201
+        stream_analysis = db_session.get(Analysis, UUID(real_stream.json()["id"]))
+        assert stream_analysis.run_parameters["document_type"] == DocumentType.STREAM_REVIEW_2_PLUS.value
+    finally:
+        get_settings.cache_clear()
+        app.dependency_overrides.pop(analyses_router.get_run_analysis_enqueue, None)
+        app.dependency_overrides.pop(documents_router.get_parse_document_enqueue, None)
+
+
 def test_create_analysis_rejects_model_outside_shared_admin_allowlist(client, db_session, monkeypatch, tmp_path):
     from app.main import app
     from app.routers import analyses as analyses_router
