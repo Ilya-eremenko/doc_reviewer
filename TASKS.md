@@ -27,7 +27,8 @@ Primary plan index:
   document; rank explicitly current/selected IC Review evidence above historical
   alternatives without dropping prior-period comparisons. Keep source offsets,
   fingerprints, and existing analysis outputs intact. Focused regression tests
-  cover late-document context, short documents, and evidence ordering. This
+  cover late-document context, short documents, bounded scanning, and evidence
+  ordering without losing role-specific or prior-period facts. This
   prioritizes source statements; it does not independently verify their truth.
 - [~] Carry the Gate Challenger mandatory-checklist `green/yellow/red` statuses through
   shared JSON contracts, worker prompts, localization, AI Summary, web rendering,

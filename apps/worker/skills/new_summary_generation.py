@@ -40,7 +40,9 @@ from providers.registry import get_provider_adapter
 from results.schema_validation import parse_json_output
 from skills.context_relevance import (
     CONTEXT_CANDIDATE_MARKERS,
+    CURRENT_DECISION_MARKERS,
     CURRENT_DEFENSE_MARKERS,
+    SELECTED_SCENARIO_MARKERS,
     decision_context_score,
 )
 from skills.result_synthesis_trace import (
@@ -56,6 +58,7 @@ MAX_OUTPUT_TOKENS = 12000
 SOURCE_DOCUMENT_MAX_CHARS = 16000
 SOURCE_DOCUMENT_HEAD_CHARS = 4500
 SOURCE_DOCUMENT_WINDOW_CHARS = 1050
+SOURCE_DOCUMENT_MAX_BUCKETS = 512
 SCHEMA_PATH = "contracts/schemas/new-summary.schema.json"
 SKILL_PATH = "skills/new-summary/SKILL.md"
 CHECKLIST_PATH = "contracts/new-summary-stage-checklists.json"
@@ -512,17 +515,35 @@ def _bounded_source_text(value: str) -> str:
     head_end = _source_line_end(value, SOURCE_DOCUMENT_HEAD_CHARS)
     head = value[:head_end].rstrip()
     candidates: list[tuple[int, int, int]] = []
-    for match in CONTEXT_CANDIDATE_MARKERS.finditer(value, head_end):
-        start = max(head_end, match.start() - 250)
-        line_start = value.rfind("\n", start, match.start())
-        if line_start >= start:
-            start = line_start + 1
-        end = min(len(value), start + SOURCE_DOCUMENT_WINDOW_CHARS)
-        line_end = value.rfind("\n", match.end(), end)
-        if line_end > match.end():
-            end = line_end
-        score = decision_context_score(value[start:end])
-        candidates.append((score, start, end))
+    bucket_size = max(
+        SOURCE_DOCUMENT_WINDOW_CHARS,
+        (len(value) - head_end + SOURCE_DOCUMENT_MAX_BUCKETS - 1) // SOURCE_DOCUMENT_MAX_BUCKETS,
+    )
+    for bucket_start in range(head_end, len(value), bucket_size):
+        bucket = value[bucket_start:bucket_start + bucket_size]
+        matches = (
+            CURRENT_DEFENSE_MARKERS.search(bucket),
+            SELECTED_SCENARIO_MARKERS.search(bucket),
+            CURRENT_DECISION_MARKERS.search(bucket),
+            CONTEXT_CANDIDATE_MARKERS.search(bucket),
+        )
+        seen_positions: set[int] = set()
+        for match in matches:
+            if match is None or match.start() in seen_positions:
+                continue
+            seen_positions.add(match.start())
+            match_start = bucket_start + match.start()
+            match_end = bucket_start + match.end()
+            start = max(head_end, match_start - 250)
+            line_start = value.rfind("\n", start, match_start)
+            if line_start >= start:
+                start = line_start + 1
+            end = min(len(value), start + SOURCE_DOCUMENT_WINDOW_CHARS)
+            line_end = value.rfind("\n", match_end, end)
+            if line_end > match_end:
+                end = line_end
+            score = decision_context_score(value[start:end])
+            candidates.append((score, start, end))
 
     selected: list[tuple[int, int]] = []
     remaining = SOURCE_DOCUMENT_MAX_CHARS - len(head) - 120
@@ -554,8 +575,20 @@ def _bounded_source_text(value: str) -> str:
             excerpt = excerpt[:boundary]
         return excerpt.rstrip() + suffix
 
-    parts = [head, "[SELECTED EXCERPTS FROM THE REST OF THE DOCUMENT; OTHER TEXT OMITTED]"]
-    for start, end in sorted(selected):
+    ordered = sorted(selected)
+    fillers: list[tuple[int, int]] = []
+    cursor = head_end
+    for start, end in [*ordered, (len(value), len(value))]:
+        if cursor < start and remaining > 55:
+            fill_end = min(start, cursor + remaining - 55)
+            fragment = value[cursor:fill_end].strip()
+            if fragment:
+                fillers.append((cursor, fill_end))
+                remaining -= len(fragment) + 55
+        cursor = max(cursor, end)
+
+    parts = [head, "[SOURCE EXCERPTS FROM THE DOCUMENT; OTHER TEXT OMITTED]"]
+    for start, end in sorted([*selected, *fillers]):
         parts.append(f"[Source chars {start}-{end}]\n{value[start:end].strip()}")
     return "\n\n".join(parts)
 

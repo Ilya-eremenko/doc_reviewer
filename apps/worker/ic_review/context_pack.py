@@ -372,9 +372,11 @@ def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...]) -> int:
     text = str(item.get("text") or "")
     lowered = text.lower()
     score = 0
+    keyword_hits = 0
     for keyword in keywords:
         if keyword.lower() in lowered:
             score += 5
+            keyword_hits += 1
     if re.search(r"\d", text):
         score += 3
     if re.search(r"[%$€₽]|\b(?:m|mln|bn|k|млн|млрд)\b", lowered):
@@ -383,7 +385,7 @@ def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...]) -> int:
         score += 2
     if any(marker in lowered for marker in ("risk", "gap", "fail", "critical", "blocker", "риск", "нет ", "не ")):
         score += 2
-    adjusted_score = score + decision_context_score(text)
+    adjusted_score = score + (decision_context_score(text) if keyword_hits else 0)
     return max(1, adjusted_score) if score > 0 else adjusted_score
 
 

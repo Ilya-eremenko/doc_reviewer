@@ -63,6 +63,32 @@ def test_new_summary_source_excerpt_reserves_late_current_defense():
     assert "Current Defense: Gate 3" in excerpt
 
 
+def test_new_summary_source_excerpt_backfills_unused_context_before_late_window():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Plain background.\n" * 350
+        + "MIDPOINT_METRIC_SENTINEL is the current measured value.\n"
+        + "More plain background.\n" * 450
+        + "Selected LTM scenario: base case for the active defense.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "MIDPOINT_METRIC_SENTINEL" in excerpt
+    assert "Selected LTM scenario" in excerpt
+
+
+def test_new_summary_source_excerpt_handles_dense_large_document():
+    source = "Executive Summary: case overview.\n" + "scenario " * 120000
+    source += "\nCurrent Defense: Gate 3 with selected LTM base scenario.\n"
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Current Defense: Gate 3" in excerpt
+
+
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
     source = "General background without decision markers.\n" * 1000
 

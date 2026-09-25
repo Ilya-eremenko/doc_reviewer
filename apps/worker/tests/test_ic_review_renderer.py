@@ -241,6 +241,26 @@ def test_context_pack_preserves_prior_period_metric_and_downranks_illustrative_s
     assert any(item["text"] == illustrative for item in financial_evidence)
 
 
+def test_context_pack_keeps_financial_metric_with_many_generic_current_sections():
+    generic = "Current Defense: the initiative scope is under discussion."
+    financial = "ARR was 20 million rubles and CAC payback is 12 months."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text="\n\n".join([*(f"{generic} Section {index}." for index in range(30)), financial]),
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Compare financial assumptions.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    pack = build_ic_review_context_pack(context)
+    financial_evidence = pack.for_role("ic-financial-auditor")["role_evidence"]
+
+    assert any(item["text"] == financial for item in financial_evidence)
+
+
 def test_role_and_synthesis_prompts_use_context_pack_instead_of_full_document_text():
     long_tail = "FULL_RAW_DOCUMENT_SENTINEL " * 220
     evidence = "Revenue retention is not proven by cohorts, but CAC payback is stated as 19 months."
