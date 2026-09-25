@@ -17,6 +17,7 @@ _STAGE_REFERENCE_FILES = {
     "gate_2": "gate-2-rubric.md",
     "stream_review_1": "stream-review-1-rubric.md",
     "stream_review_2_plus": "stream-review-2-plus-rubric.md",
+    "progress_review": "progress-review-rubric.md",
     "gate_3": "gate-3-rubric.md",
 }
 _KNOWN_STAGE_REFERENCE_FILES = set(_STAGE_REFERENCE_FILES.values())
@@ -258,6 +259,11 @@ def _skill_prompt_text(*, skill: Any, source_snapshot: SkillSourceSnapshotMateri
 
 
 def _reference_context(source_snapshot: SkillSourceSnapshotMaterial | None, *, document_type: str | None) -> str:
+    if document_type == "progress_review" and (
+        source_snapshot is None
+        or not any(path.endswith("/progress-review-rubric.md") for path in source_snapshot.files)
+    ):
+        raise ValueError("progress_review_rubric_missing_from_skill_snapshot")
     if source_snapshot is None:
         return "No snapshot references were attached."
     sections = []

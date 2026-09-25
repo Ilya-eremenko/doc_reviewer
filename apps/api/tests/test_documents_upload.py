@@ -371,7 +371,7 @@ def test_admin_documents_list_recovers_analyzed_documents_without_primary_role(a
     assert "raw_output" not in documents[0]["latest_analysis"]
 
 
-def test_documents_list_coerces_unsupported_legacy_document_type_to_unknown(api_client, db_session):
+def test_documents_list_reads_native_progress_review_type(api_client, db_session):
     create_user(db_session, "author", "secret")
     login(api_client, "author", "secret")
     upload = upload_document(api_client, "legacy-progress-review.txt", b"Progress review plan fact")
@@ -385,7 +385,8 @@ def test_documents_list_coerces_unsupported_legacy_document_type_to_unknown(api_
     assert response.status_code == 200
     documents = response.json()["documents"]
     assert [item["id"] for item in documents] == [str(document_id)]
-    assert documents[0]["detected_document_type"] == DocumentType.UNKNOWN.value
+    assert documents[0]["detected_document_type"] == DocumentType.PROGRESS_REVIEW.value
+    assert documents[0]["display_stage"] == "Progress Review"
 
 
 def test_admin_recovered_documents_returns_compact_statuses_for_analyzed_documents(api_client, db_session):

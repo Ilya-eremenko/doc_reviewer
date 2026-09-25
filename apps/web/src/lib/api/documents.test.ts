@@ -35,6 +35,7 @@ describe("documents api", () => {
       "gate_2",
       "stream_review_1",
       "stream_review_2_plus",
+      "progress_review",
       "gate_3",
     ]);
   });

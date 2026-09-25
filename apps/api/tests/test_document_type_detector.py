@@ -9,6 +9,7 @@ def test_document_type_enum_matches_gate_challenger_stages():
         "gate_2",
         "stream_review_1",
         "stream_review_2_plus",
+        "progress_review",
         "gate_3",
         "unknown",
     ]
@@ -122,7 +123,7 @@ def test_unrelated_current_row_outside_executive_summary_does_not_override_title
     assert result.explanation.startswith("Document title:")
 
 
-def test_current_progress_review_uses_stream_review_2_plus_rules():
+def test_current_progress_review_has_its_own_document_type():
     text = """
     [Page 1]
     Auction InvCom May'26
@@ -138,12 +139,12 @@ def test_current_progress_review_uses_stream_review_2_plus_rules():
 
     result = detect_document_type(text)
 
-    assert result.document_type == DocumentType.STREAM_REVIEW_2_PLUS
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
     assert result.explanation.startswith("Current defense: Progress Review")
-    assert "using Stream Review 2+ rules" in result.explanation
+    assert "using Stream Review 2+ rules" not in result.explanation
 
 
-def test_progress_review_in_title_uses_stream_review_2_plus_rules():
+def test_progress_review_in_title_has_its_own_document_type():
     text = """
     Operator of Financial Platforms - Progress Review
     Previous defense at Gate 3. The next Gate 3 commitments were discussed.
@@ -151,8 +152,28 @@ def test_progress_review_in_title_uses_stream_review_2_plus_rules():
 
     result = detect_document_type(text)
 
-    assert result.document_type == DocumentType.STREAM_REVIEW_2_PLUS
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
     assert result.explanation.startswith("Document title: Progress Review")
+
+
+def test_filename_progress_review_is_used_when_document_text_has_no_current_stage():
+    result = detect_document_type(
+        "Executive Summary\nPrevious Defense: Gate 3\nPlan-fact and next half-year metrics",
+        title="Auction - Progress Review.pdf",
+    )
+
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
+    assert result.explanation.startswith("Document title: Progress Review")
+
+
+def test_explicit_current_stream_review_wins_over_progress_review_filename_and_previous_stage():
+    result = detect_document_type(
+        "Executive Summary\nPrevious Defense: Progress Review\nCurrent Defense: Stream Review 2+",
+        title="Auction - Progress Review.pdf",
+    )
+
+    assert result.document_type == DocumentType.STREAM_REVIEW_2_PLUS
+    assert result.explanation.startswith("Current defense: Stream Review 2+")
 
 
 def test_progress_review_display_stage_uses_current_defense_not_historical_mentions():
@@ -171,6 +192,7 @@ Current Defense: Stream Review 2+
     assert progress_review_display_stage(stream_text, DocumentType.STREAM_REVIEW_2_PLUS.value) is None
     assert progress_review_display_stage(progress_text, DocumentType.GATE_2.value) is None
     assert progress_review_display_stage(None, DocumentType.STREAM_REVIEW_2_PLUS.value) is None
+    assert progress_review_display_stage(None, DocumentType.PROGRESS_REVIEW.value) == "Progress Review"
 
 
 def test_progress_review_display_stage_uses_case_title_only_without_a_conflicting_document_stage():

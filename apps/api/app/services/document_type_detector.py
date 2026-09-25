@@ -95,23 +95,21 @@ _STAGE_PATTERNS = (
         DocumentType.STREAM_REVIEW_2_PLUS,
         re.compile(r"\b(?:2nd\s+stream\s+review|stream\s+review\s*#?\s*(?:2\+|[2-9])|sr\s*#?\s*2\+?)(?!\d)", re.IGNORECASE),
     ),
-    (DocumentType.STREAM_REVIEW_2_PLUS, _PROGRESS_REVIEW),
+    (DocumentType.PROGRESS_REVIEW, _PROGRESS_REVIEW),
 )
 _UNSUPPORTED_STAGE_PATTERNS = (
     re.compile(r"\bgate\s*[-–]?\s*1\b", re.IGNORECASE),
 )
 
 
-def detect_document_type(text: str) -> DocumentTypeDetection:
+def detect_document_type(text: str, *, title: str | None = None) -> DocumentTypeDetection:
     current_stage = _current_defense_stage(text)
-    title_stage = _title_stage(text)
+    title_stage = _title_stage(text) or (_title_stage(title) if title else None)
     if current_stage is not None:
         document_type, phrase = current_stage
         explanation = f"Current defense: {phrase}"
         if document_type == DocumentType.UNKNOWN:
             explanation += " (unsupported document type)"
-        elif _PROGRESS_REVIEW.fullmatch(phrase):
-            explanation += " (using Stream Review 2+ rules)"
         if title_stage is not None and title_stage[0] != document_type:
             explanation += f" (document title says {title_stage[1]})"
         return DocumentTypeDetection(document_type, Decimal("0.95"), explanation)
@@ -119,8 +117,6 @@ def detect_document_type(text: str) -> DocumentTypeDetection:
         explanation = f"Document title: {title_stage[1]}"
         if title_stage[0] == DocumentType.UNKNOWN:
             explanation += " (unsupported document type)"
-        elif _PROGRESS_REVIEW.fullmatch(title_stage[1]):
-            explanation += " (using Stream Review 2+ rules)"
         return DocumentTypeDetection(title_stage[0], Decimal("0.90"), explanation)
 
     normalized_text = text.casefold()
@@ -148,7 +144,9 @@ def detect_document_type(text: str) -> DocumentTypeDetection:
 
 
 def progress_review_display_stage(text: str | None, effective_type: str, *, title: str | None = None) -> str | None:
-    """Preserve Stream Review 2+ rules while showing an explicit current Progress Review."""
+    """Keep historical Stream Review 2+ runs' current-stage presentation intact."""
+    if effective_type == DocumentType.PROGRESS_REVIEW.value:
+        return "Progress Review"
     if not text or effective_type != DocumentType.STREAM_REVIEW_2_PLUS.value:
         return None
     stage = _current_defense_stage(text)

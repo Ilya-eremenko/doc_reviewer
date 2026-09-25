@@ -26,6 +26,7 @@ describe("documents display helpers", () => {
     ["gate_2", "Gate 2"],
     ["stream_review_1", "Stream review 1"],
     ["stream_review_2_plus", "Stream review 2 plus"],
+    ["progress_review", "Progress Review"],
     ["gate_3", "Gate 3"],
     [null, "-"],
   ] as const)("formats %s as a reader-facing document type", (value, expected) => {
@@ -40,5 +41,6 @@ describe("documents display helpers", () => {
     };
     expect(formatDocumentStage(streamDocument)).toBe("Stream review 2 plus");
     expect(formatDocumentStage({ ...streamDocument, display_stage: "Progress Review" })).toBe("Progress Review");
+    expect(formatDocumentStage({ ...streamDocument, manual_document_type: "progress_review", display_stage: null })).toBe("Progress Review");
   });
 });

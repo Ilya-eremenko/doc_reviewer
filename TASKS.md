@@ -21,6 +21,20 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Make Progress Review a native analysis stage. The external skill already
+  contains its own rubric and main-skill route, but the site still persisted
+  `stream_review_2_plus` and omitted the Progress Review checklist. This change
+  adds native detection/manual selection, stage-specific snapshot routing and
+  checklist validation, source-presence preflight, Summary aliases, and display
+  labels while preserving historical runs. A repeat analysis on an old
+  Progress-labelled case now chooses the native stage unless the user
+  explicitly set a different manual type. The site checklist is aligned to
+  current Gate Challenger rubric IDs for all active stages; the Gate 2
+  commitments wording is aligned to AI Summary. Verification: 512 API/worker
+  tests, 161 web tests, production web build, and 101 external-skill tests
+  (406 subtests) pass. Do not
+  merge or enable on production until the separately mounted Gate Challenger
+  source has been synced and inspected, and active analyses have been checked.
 - [~] Carry the Gate Challenger mandatory-checklist `green/yellow/red` statuses through
   shared JSON contracts, worker prompts, localization, AI Summary, web rendering,
   and PDF/Word exports. Map yellow to orange "Частично подтверждено", red to
