@@ -29,8 +29,10 @@ NON_CURRENT_ALTERNATIVE_MARKERS = re.compile(
     re.IGNORECASE,
 )
 SELECTED_SCENARIO_MARKERS = re.compile(
-    r"\b(?:selected|chosen|approved|committed|current)\s+(?:ltm\s+)?scenario\b"
-    r"|\b(?:выбран\w*|утвержд\w*|текущ\w*)\s+(?:ltm[- ]?)?сценар\w*",
+    r"\b(?:selected|chosen|approved|committed|current)\s+"
+    r"(?:(?:base|baseline|target|ltm|actual|conservative|upside)\s+){0,2}scenario\b"
+    r"|\b(?:выбран\w*|утвержд\w*|текущ\w*)\s+"
+    r"(?:(?:базов\w*|целев\w*|консервативн\w*|ltm)\s+){0,2}сценар\w*",
     re.IGNORECASE,
 )
 CONTEXT_CANDIDATE_MARKERS = re.compile(
@@ -42,9 +44,10 @@ CONTEXT_CANDIDATE_MARKERS = re.compile(
 
 def decision_context_score(text: str) -> int:
     score = 0
-    if CURRENT_DECISION_MARKERS.search(text):
+    selected_scenario = SELECTED_SCENARIO_MARKERS.search(text)
+    if CURRENT_DECISION_MARKERS.search(text) or selected_scenario:
         score += 14
-    if SELECTED_SCENARIO_MARKERS.search(text):
+    if selected_scenario:
         score += 8
     if CONTEXT_TOPICS.search(text):
         score += 4

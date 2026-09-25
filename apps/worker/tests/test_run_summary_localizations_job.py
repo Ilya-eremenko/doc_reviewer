@@ -89,6 +89,21 @@ def test_new_summary_source_excerpt_handles_dense_large_document():
     assert "Current Defense: Gate 3" in excerpt
 
 
+def test_new_summary_source_excerpt_prioritizes_selected_qualified_scenario():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Scenario under discussion.\n" * 900
+        + "Selected base scenario: the active LTM plan uses Bank B.\n"
+        + "More generic scenario text.\n" * 600
+        + "Выбранный базовый сценарий: план с Банком Б.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert "Selected base scenario" in excerpt
+    assert "Выбранный базовый сценарий" in excerpt
+
+
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
     source = "General background without decision markers.\n" * 1000
 
