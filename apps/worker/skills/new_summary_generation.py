@@ -42,6 +42,7 @@ from skills.context_relevance import (
     CONTEXT_CANDIDATE_MARKERS,
     CURRENT_DECISION_MARKERS,
     CURRENT_DEFENSE_MARKERS,
+    CURRENT_SCOPE_MARKERS,
     SELECTED_SCENARIO_MARKERS,
     decision_context_score,
 )
@@ -523,15 +524,17 @@ def _bounded_source_text(value: str) -> str:
         bucket_end = min(len(value), bucket_start + bucket_size)
         best_defense: tuple[int, int, int] | None = None
         best_context: tuple[int, int, int] | None = None
+        best_scope: tuple[int, int, int] | None = None
         for scan_start in range(bucket_start, bucket_end, SOURCE_DOCUMENT_WINDOW_CHARS):
             scan = value[scan_start:min(bucket_end, scan_start + SOURCE_DOCUMENT_WINDOW_CHARS)]
             defense_match = CURRENT_DEFENSE_MARKERS.search(scan)
+            scope_match = CURRENT_SCOPE_MARKERS.search(scan)
             context_match = (
                 SELECTED_SCENARIO_MARKERS.search(scan)
                 or CURRENT_DECISION_MARKERS.search(scan)
                 or CONTEXT_CANDIDATE_MARKERS.search(scan)
             )
-            for match, is_defense in ((defense_match, True), (context_match, False)):
+            for match, kind in ((defense_match, "defense"), (context_match, "context"), (scope_match, "scope")):
                 if match is None:
                     continue
                 match_start = scan_start + match.start()
@@ -545,12 +548,14 @@ def _bounded_source_text(value: str) -> str:
                 if line_end > match_end:
                     end = line_end
                 candidate = (decision_context_score(value[start:end]), start, end)
-                if is_defense:
+                if kind == "defense":
                     best_defense = max(best_defense, candidate) if best_defense else candidate
-                else:
+                elif kind == "context":
                     best_context = max(best_context, candidate) if best_context else candidate
-        for candidate in (best_defense, best_context):
-            if candidate is not None and candidate not in candidates[-1:]:
+                else:
+                    best_scope = max(best_scope, candidate) if best_scope else candidate
+        for candidate in (best_defense, best_context, best_scope):
+            if candidate is not None and candidate not in candidates:
                 candidates.append(candidate)
 
     selected: list[tuple[int, int]] = []

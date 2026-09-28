@@ -30,6 +30,12 @@ Primary plan index:
   cover late-document context, short documents, bounded scanning, and evidence
   ordering without losing role-specific or prior-period facts. This
   prioritizes source statements; it does not independently verify their truth.
+  PR #78 follow-up: preserve distinct selected-scenario and current-scope
+  windows even when both occur within one large scan bucket; added regression
+  coverage before the production merge. Focused Summary and IC tests: 63 pass.
+  Full local worker suite: 274 pass, three unrelated PDF parser tests fail
+  because this local Python environment lacks `pdfplumber`; production CI
+  runs with the declared dependencies.
 - [~] Complete native Progress Review rollout from PR #77 (2026-09-28): fixed
   deferred uploads to validate their immutable skill snapshot after stage
   detection, before enqueueing inference; incompatible snapshots now fail the

@@ -130,6 +130,24 @@ def test_new_summary_source_excerpt_keeps_later_selection_within_large_bucket():
     assert "Selected base scenario: Bank B" in excerpt
 
 
+def test_new_summary_source_excerpt_keeps_distinct_scope_in_same_large_bucket(monkeypatch):
+    monkeypatch.setattr(new_summary_generation, "SOURCE_DOCUMENT_MAX_BUCKETS", 8)
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Neutral appendix text.\n" * 210
+        + "Selected base scenario: Bank B is the active LTM partner.\n"
+        + "Neutral appendix text.\n" * 500
+        + "Current scope: only SMB customers are included.\n"
+        + "Neutral appendix text.\n" * 7000
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Selected base scenario: Bank B" in excerpt
+    assert "Current scope: only SMB customers" in excerpt
+
+
 def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
     source = (
         "Executive Summary: case overview.\n"

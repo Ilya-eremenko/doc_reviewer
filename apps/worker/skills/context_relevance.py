@@ -16,6 +16,11 @@ CURRENT_DEFENSE_MARKERS = re.compile(
     r"|\bтекущ\w*\s+(?:защит\w*|гейт\w*|ревью)\b",
     re.IGNORECASE,
 )
+CURRENT_SCOPE_MARKERS = re.compile(
+    r"\bcurrent\s+(?:scope|focus)\b"
+    r"|\bтекущ\w*\s+(?:охват\w*|фокус\w*|вертикал\w*)\b",
+    re.IGNORECASE,
+)
 CONTEXT_TOPICS = re.compile(
     r"\b(?:ltm|scenario|bank|partner|vertical|focus|scope|current gate|current defense)\b"
     r"|\b(?:сценар\w*|банк\w*|партн\w*|вертикал\w*|фокус\w*|охват\w*|защит\w*)",
