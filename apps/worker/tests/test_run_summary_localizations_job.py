@@ -21,6 +21,16 @@ from jobs.run_summary_localizations import run_summary_localizations
 from providers.base import AnalysisProviderResult
 from skills import new_summary_generation
 from skills import summary_localization
+from skills.context_relevance import decision_context_score
+
+
+def test_context_priority_does_not_penalize_selected_plan_for_separate_alternative():
+    active = "Selected base scenario: Bank B is the active partner."
+    alternative = "Maximum illustrative scenario: Bank A was rejected."
+    historical = "Previous selected scenario: Bank A was considered."
+
+    assert decision_context_score(active + " " + alternative) == decision_context_score(active)
+    assert decision_context_score(historical) < decision_context_score(active)
 
 
 def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initial_limit():

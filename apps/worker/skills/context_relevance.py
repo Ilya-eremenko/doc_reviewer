@@ -44,13 +44,17 @@ CONTEXT_CANDIDATE_MARKERS = re.compile(
 
 def decision_context_score(text: str) -> int:
     score = 0
-    selected_scenario = SELECTED_SCENARIO_MARKERS.search(text)
-    if CURRENT_DECISION_MARKERS.search(text) or selected_scenario:
+    alternatives = list(NON_CURRENT_ALTERNATIVE_MARKERS.finditer(text))
+    active_selected = any(
+        not any(match.start() < alternative.end() and match.end() > alternative.start() for alternative in alternatives)
+        for match in SELECTED_SCENARIO_MARKERS.finditer(text)
+    )
+    if CURRENT_DECISION_MARKERS.search(text) or active_selected:
         score += 14
-    if selected_scenario:
+    if active_selected:
         score += 8
     if CONTEXT_TOPICS.search(text):
         score += 4
-    if NON_CURRENT_ALTERNATIVE_MARKERS.search(text):
+    if alternatives and not active_selected:
         score -= 16
     return score
