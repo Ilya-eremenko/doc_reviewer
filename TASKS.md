@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Detect Progress Review from PDF table cells whose line breaks become
+  `<br>` in the stored parsed text. Read only the current-review cell, retain
+  explicit-stage precedence, and return unknown instead of a high-confidence
+  Gate 3 keyword guess when an unqualified Progress Review mention conflicts.
+  Preserve raw/parsed artifacts, manual overrides, and historical analysis
+  snapshots. Regression coverage includes the Auction-style table, previous
+  versus current-stage rows, neighboring-cell contamination, and ambiguous
+  fallback. Local verification: 263 API tests and 26 parsing/renderer worker
+  tests pass; production CI/deploy and metadata-only backfill remain pending.
 - [~] Improve source-context selection without changing external skill rubrics:
   keep the New Summary document excerpt within 16,000 characters while sampling
   current defense, selected scenario, and scope evidence from the entire parsed

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
+from html import unescape
 import re
 
 from app.schemas.enums import DocumentType
@@ -129,6 +130,12 @@ def detect_document_type(text: str, *, title: str | None = None) -> DocumentType
         top_score = max(Decimal("0.0"), top_score - Decimal("0.2"))
 
     top_score = min(top_score, Decimal("0.95"))
+    if top_type == DocumentType.GATE_3 and _PROGRESS_REVIEW.search(_normalize_stage_cell(text)):
+        return DocumentTypeDetection(
+            document_type=DocumentType.UNKNOWN,
+            confidence=min(top_score, Decimal("0.44")).quantize(Decimal("0.01")),
+            explanation="Current review could not be identified; both Gate 3 and Progress Review are mentioned",
+        )
     if top_score < _UNKNOWN_THRESHOLD:
         return DocumentTypeDetection(
             document_type=DocumentType.UNKNOWN,
@@ -160,37 +167,62 @@ def progress_review_display_stage(text: str | None, effective_type: str, *, titl
 
 
 def _current_defense_stage(text: str) -> tuple[DocumentType, str] | None:
-    lines = text[:16000].replace("\xa0", " ").splitlines()
+    lines = text[:16000].splitlines()
     last_summary_index: int | None = None
     for index, raw_line in enumerate(lines):
-        line = raw_line.strip().strip("| ").strip()
-        if "executive summary" in line.casefold():
-            last_summary_index = index
-        marker = _CURRENT_DEFENSE.match(line)
-        if marker is None:
-            continue
-        if marker.group().casefold() == "current" and (
-            last_summary_index is None or index - last_summary_index > 180
-        ):
-            continue
-        suffix = line[marker.end():].strip(" :|")
-        if suffix:
-            if marker.group().casefold().endswith("gate") and re.match(r"[123]\b", suffix):
-                suffix = f"Gate {suffix}"
-            same_line_stage = _explicit_stage(suffix, at_start=True)
-            if same_line_stage is not None:
-                return same_line_stage
-            continue
-        following = [
-            candidate.strip().strip("| ").strip()
-            for candidate in lines[index + 1 : index + 4]
-            if candidate.strip() and not candidate.strip().startswith("[Page ")
-        ]
-        if following:
-            stage = _explicit_stage(" ".join(following), at_start=True)
-            if stage is not None:
-                return stage
+        cells = _markdown_table_cells(raw_line)
+        candidates = cells if cells is not None else [_normalize_stage_cell(raw_line.strip().strip("| "))]
+        for cell_index, line in enumerate(candidates):
+            if "executive summary" in line.casefold():
+                last_summary_index = index
+            if cells is not None and cell_index != 0:
+                continue
+            marker = _CURRENT_DEFENSE.match(line)
+            if marker is None:
+                continue
+            if marker.group().casefold() == "current" and (
+                last_summary_index is None or index - last_summary_index > 180
+            ):
+                continue
+            suffix = line[marker.end():].strip(" :|")
+            if suffix:
+                if marker.group().casefold().endswith("gate") and re.match(r"[123]\b", suffix):
+                    suffix = f"Gate {suffix}"
+                same_line_stage = _explicit_stage(suffix, at_start=True)
+                if same_line_stage is not None:
+                    return same_line_stage
+                continue
+            if cells is not None:
+                if cell_index + 1 < len(cells) and len(cells[cell_index + 1]) <= 80:
+                    stage = _explicit_stage(cells[cell_index + 1], at_start=True)
+                    if stage is not None:
+                        return stage
+                continue
+            following = [
+                _normalize_stage_cell(candidate.strip().strip("| "))
+                for candidate in lines[index + 1 : index + 4]
+                if candidate.strip() and not candidate.strip().startswith("[Page ")
+            ]
+            if following:
+                stage = _explicit_stage(" ".join(following), at_start=True)
+                if stage is not None:
+                    return stage
     return None
+
+
+def _markdown_table_cells(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if not stripped.startswith("|"):
+        return None
+    return [
+        _normalize_stage_cell(cell.replace(r"\|", "|"))
+        for cell in re.split(r"(?<!\\)\|", stripped.strip("|"))
+    ]
+
+
+def _normalize_stage_cell(value: str) -> str:
+    expanded = re.sub(r"<br\s*/?>", " ", unescape(value), flags=re.IGNORECASE).replace("\xa0", " ")
+    return re.sub(r"\s+", " ", expanded).strip()
 
 
 def _title_stage(text: str) -> tuple[DocumentType, str] | None:
