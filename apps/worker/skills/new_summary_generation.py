@@ -570,6 +570,19 @@ def _bounded_source_text(value: str) -> str:
         if defense_cost <= remaining:
             selected.append((start, end))
             remaining -= defense_cost
+    scope_candidates = sorted(
+        (candidate for candidate in candidates if CURRENT_SCOPE_MARKERS.search(value[candidate[1]:candidate[2]])),
+        key=lambda item: (item[0], item[1]),
+        reverse=True,
+    )
+    for _score, start, end in scope_candidates:
+        if any(start < prior_end and end > prior_start for prior_start, prior_end in selected):
+            continue
+        scope_cost = len(value[start:end].strip()) + 55
+        if scope_cost <= remaining:
+            selected.append((start, end))
+            remaining -= scope_cost
+            break
     for _score, start, end in sorted(candidates, key=lambda item: (-item[0], item[1])):
         if any(start < prior_end and end > prior_start for prior_start, prior_end in selected):
             continue

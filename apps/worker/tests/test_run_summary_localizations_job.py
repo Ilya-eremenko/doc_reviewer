@@ -148,6 +148,19 @@ def test_new_summary_source_excerpt_keeps_distinct_scope_in_same_large_bucket(mo
     assert "Current scope: only SMB customers" in excerpt
 
 
+def test_new_summary_source_excerpt_reserves_scope_among_many_selected_scenarios():
+    source = (
+        "Executive Summary: case overview.\n"
+        + ("Selected scenario: illustrative option.\n" + "Neutral appendix text.\n" * 60) * 35
+        + "Current scope: only SMB customers are included.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Current scope: only SMB customers" in excerpt
+
+
 def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
     source = (
         "Executive Summary: case overview.\n"
