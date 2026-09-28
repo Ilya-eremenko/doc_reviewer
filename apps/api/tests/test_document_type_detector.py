@@ -178,6 +178,31 @@ def test_current_stage_is_read_from_its_table_cell_not_historical_stage():
     assert result.explanation == "Current defense: Progress Review"
 
 
+def test_current_gate_in_long_adjacent_table_cell_keeps_explicit_stage():
+    text = """
+    Executive Summary
+    | Review | Stage |
+    | --- | --- |
+    | Previous Defense | Progress Review |
+    | Current Defense | Gate 3<br>This longer note explains the agenda for the current defense and the document review in detail. |
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.GATE_3
+    assert result.explanation == "Current defense: Gate 3"
+
+
+def test_current_gate_number_in_adjacent_table_cell_is_detected():
+    for number, expected in (("2", DocumentType.GATE_2), ("3", DocumentType.GATE_3)):
+        text = f"Executive Summary\n| Review | Stage |\n| --- | --- |\n| Current Gate | {number} |"
+
+        result = detect_document_type(text)
+
+        assert result.document_type == expected
+        assert result.explanation == f"Current defense: Gate {number}"
+
+
 def test_neighboring_summary_cell_cannot_override_current_review_cell():
     text = """
     Executive Summary

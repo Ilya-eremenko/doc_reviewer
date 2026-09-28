@@ -193,8 +193,11 @@ def _current_defense_stage(text: str) -> tuple[DocumentType, str] | None:
                     return same_line_stage
                 continue
             if cells is not None:
-                if cell_index + 1 < len(cells) and len(cells[cell_index + 1]) <= 80:
-                    stage = _explicit_stage(cells[cell_index + 1], at_start=True)
+                if cell_index + 1 < len(cells):
+                    adjacent = cells[cell_index + 1]
+                    if marker.group().casefold().endswith("gate") and re.match(r"[123]\b", adjacent):
+                        adjacent = f"Gate {adjacent}"
+                    stage = _explicit_stage(adjacent, at_start=True)
                     if stage is not None:
                         return stage
                 continue

@@ -27,8 +27,9 @@ Primary plan index:
   Gate 3 keyword guess when an unqualified Progress Review mention conflicts.
   Preserve raw/parsed artifacts, manual overrides, and historical analysis
   snapshots. Regression coverage includes the Auction-style table, previous
-  versus current-stage rows, neighboring-cell contamination, and ambiguous
-  fallback. Local verification: 263 API tests and 26 parsing/renderer worker
+  versus current-stage rows, neighboring-cell contamination, long adjacent
+  stage notes, numeric Current Gate cells, and ambiguous fallback. Local
+  verification: 265 API tests and 26 parsing/renderer worker
   tests pass; production CI/deploy and metadata-only backfill remain pending.
 - [~] Improve source-context selection without changing external skill rubrics:
   keep the New Summary document excerpt within 16,000 characters while sampling
