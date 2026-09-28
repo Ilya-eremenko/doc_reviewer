@@ -3,6 +3,8 @@ from pathlib import Path
 from uuid import uuid4
 import json
 
+import pytest
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -60,6 +62,28 @@ def test_parse_document_success_updates_database_and_writes_artifact(tmp_path):
         assert structured["blocks"][0]["type"] == "heading"
         quality = json.loads((parsed_dir / "quality.json").read_text(encoding="utf-8"))
         assert quality["block_count"] == 2
+    finally:
+        _close_session(db)
+
+
+def test_parse_document_persists_native_progress_review_type(tmp_path):
+    db = _create_session()
+    try:
+        owner = _create_user(db)
+        storage = LocalDocumentStorage(tmp_path)
+        document = _create_document(
+            db, storage, owner,
+            filename="progress-review.md",
+            content=b"# Initiative\nExecutive Summary\nPrevious Defense: Gate 3\nCurrent Defense: Progress Review",
+            mime_type="text/markdown",
+        )
+
+        parse_document(str(document.id), db=db, storage=storage)
+
+        db.refresh(document)
+        assert document.parse_status == DocumentParseStatus.COMPLETED.value
+        assert document.detected_document_type == DocumentType.PROGRESS_REVIEW.value
+        assert document.display_stage == "Progress Review"
     finally:
         _close_session(db)
 
@@ -269,3 +293,70 @@ def _create_document(
     db.commit()
     db.refresh(document)
     return document
+
+
+@pytest.mark.parametrize("source_state", ["ready", "missing_rubric", "missing_route", "missing_snapshot"])
+def test_deferred_progress_review_validates_saved_snapshot_before_enqueue(tmp_path, source_state):
+    from app.models.skill_source import SkillSource
+    from app.services.skill_snapshots import create_skill_source_snapshot
+    from jobs.deferred_analyses import enqueue_ready_deferred_analyses
+
+    db = _create_session()
+    try:
+        owner = _create_user(db)
+        storage = LocalDocumentStorage(tmp_path / "storage")
+        document = _create_document(db, storage, owner, filename="progress.md",
+            content=b"# Progress Review\nPlan / fact and next commitments", mime_type="text/markdown")
+        root = tmp_path / "source"
+        skill_dir = root / "skills/gate-challenger"
+        refs = skill_dir / "references"
+        refs.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "Use progress-review-rubric.md" if source_state != "missing_route" else "Old entrypoint")
+        rubric = refs / "progress-review-rubric.md"
+        if source_state != "missing_rubric":
+            rubric.write_text("Progress Review rubric")
+        source = SkillSource(slug="gate-challenger", display_name="Gate", source_kind="local_directory",
+            local_path=str(root), entrypoint="skills/gate-challenger/SKILL.md",
+            required_paths=["skills/gate-challenger"], update_policy="allow_pinned", status="active")
+        db.add(source)
+        db.flush()
+        skill = Skill(name="gate2_challenger_main_analysis", description="Gate", version="test",
+            skill_type=SkillType.MAIN_ANALYSIS.value, source_type="local_skill_repo", skill_source_id=source.id,
+            prompt_text="Gate", result_schema_path="contracts/schemas/main-analysis-result.schema.json")
+        db.add(skill)
+        db.flush()
+        analysis = Analysis(document_id=document.id, user_id=owner.id, skill_id=skill.id,
+            skill_version=skill.version, provider="openai_compatible", model="test",
+            status=RunStatus.QUEUED.value, run_parameters={})
+        db.add(analysis)
+        db.flush()
+        parameters = {"document_type": "unknown", DOCUMENT_PARSE_DEPENDENCY_KEY: {"state": "waiting"}}
+        if source_state != "missing_snapshot":
+            snapshot = create_skill_source_snapshot(db=db, storage=storage, source=source,
+                analysis_id=analysis.id, predicted_comment_run_id=None, analysis_check_run_id=None,
+                snapshot_mode="production_export")
+            parameters["source_snapshot_id"] = str(snapshot.id)
+        analysis.run_parameters = parameters
+        db.commit()
+        # A later source update must not silently repair an incompatible saved snapshot.
+        (skill_dir / "SKILL.md").write_text("Use progress-review-rubric.md")
+        rubric.write_text("New live Progress Review rubric")
+        enqueued = []
+        parse_document(str(document.id), db=db, storage=storage, enqueue_analysis=enqueued.append)
+        db.refresh(document)
+        db.refresh(analysis)
+        assert document.parse_status == DocumentParseStatus.COMPLETED.value
+        assert document.detected_document_type == DocumentType.PROGRESS_REVIEW.value
+        assert analysis.run_parameters["document_type"] == "progress_review"
+        if source_state == "ready":
+            assert enqueued == [analysis.id]
+            assert analysis.status == RunStatus.QUEUED.value
+        else:
+            assert enqueued == []
+            assert analysis.status == RunStatus.FAILED.value
+            assert analysis.completed_at is not None
+            assert analysis.run_parameters[DOCUMENT_PARSE_DEPENDENCY_KEY]["state"] == "source_preflight_failed"
+            assert enqueue_ready_deferred_analyses(db=db, enqueue=enqueued.append) == 0
+    finally:
+        _close_session(db)

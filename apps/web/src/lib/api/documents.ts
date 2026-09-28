@@ -5,6 +5,7 @@ export type DocumentType =
   | "gate_2"
   | "stream_review_1"
   | "stream_review_2_plus"
+  | "progress_review"
   | "gate_3"
   | "unknown";
 
@@ -12,6 +13,7 @@ export const USER_SELECTABLE_DOCUMENT_TYPES = [
   "gate_2",
   "stream_review_1",
   "stream_review_2_plus",
+  "progress_review",
   "gate_3",
 ] as const satisfies readonly DocumentType[];
 

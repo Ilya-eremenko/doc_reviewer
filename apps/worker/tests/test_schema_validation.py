@@ -1,6 +1,7 @@
 import json
 
 from results import schema_validation
+from skills import stage_checklists
 
 
 def test_parse_json_output_unwraps_chat_completion_envelope():
@@ -293,10 +294,13 @@ def test_parse_and_validate_json_output_enforces_stage_checklist_for_document_ty
     )
 
     assert [item["id"] for item in payload["stage_checklist"]] == [
+        "gate2_unique_value_proposition",
         "gate2_hypothesis_results",
         "gate2_mvp_or_target_product",
+        "gate2_input_output_metric_link",
         "gate2_mockups_or_user_flow",
         "gate2_gate3_commitments",
+        "gate2_stop_criteria",
     ]
 
 
@@ -319,6 +323,37 @@ def test_parse_and_validate_json_output_rejects_partial_stage_checklist_for_docu
     raise AssertionError("stage-specific checklist validator accepted a partial checklist")
 
 
+def test_progress_review_requires_its_own_three_checklist_ids():
+    payload = _main_analysis_result_payload()
+    payload["stage_checklist"] = [
+        {"id": item_id, "label": label, "status": "yellow", "evidence": "Partially supported."}
+        for item_id, label in stage_checklists.stage_checklist_items("progress_review")
+    ]
+    parsed = schema_validation.parse_and_validate_json_output(
+        structured_text=json.dumps(payload),
+        schema_path="contracts/schemas/main-analysis-result.schema.json",
+        document_type="progress_review",
+        enforce_stage_checklist=True,
+    )
+    assert [item["id"] for item in parsed["stage_checklist"]] == [
+        "progress_review_plan_fact_last_half_year",
+        "progress_review_next_half_year_plan",
+        "progress_review_stop_criteria",
+    ]
+
+    try:
+        schema_validation.parse_and_validate_json_output(
+            structured_text=json.dumps(payload),
+            schema_path="contracts/schemas/main-analysis-result.schema.json",
+            document_type="stream_review_2_plus",
+            enforce_stage_checklist=True,
+        )
+    except ValueError as exc:
+        assert "stage_checklist must match" in str(exc)
+    else:
+        raise AssertionError("Stream Review 2+ accepted Progress Review checklist IDs")
+
+
 def test_parse_and_validate_json_output_allows_custom_skill_schema_without_gate_checklist_enforcement():
     payload = _main_analysis_result_payload()
     payload["stage_checklist"] = payload["stage_checklist"][:1]
@@ -329,7 +364,7 @@ def test_parse_and_validate_json_output_allows_custom_skill_schema_without_gate_
         document_type="gate_2",
     )
 
-    assert [item["id"] for item in parsed["stage_checklist"]] == ["gate2_hypothesis_results"]
+    assert [item["id"] for item in parsed["stage_checklist"]] == ["gate2_unique_value_proposition"]
 
 
 def _main_analysis_result_payload() -> dict:
@@ -338,6 +373,12 @@ def _main_analysis_result_payload() -> dict:
         "summary": "Needs evidence.",
         "assessment_markdown": "Оценка документа\nРекомендация: запросить доказательства.",
         "stage_checklist": [
+            {
+                "id": "gate2_unique_value_proposition",
+                "label": "Уникальное товарное предложение (УТП)",
+                "status": "yellow",
+                "evidence": "The value proposition is present but not substantiated.",
+            },
             {
                 "id": "gate2_hypothesis_results",
                 "label": "Результаты проверки гипотез из Gate 1",
@@ -351,6 +392,12 @@ def _main_analysis_result_payload() -> dict:
                 "evidence": "The document describes the target product.",
             },
             {
+                "id": "gate2_input_output_metric_link",
+                "label": "Связь Input/Output метрик продукта с самой сутью продукта и его УТП",
+                "status": "red",
+                "evidence": "The document omits a causal metrics link.",
+            },
+            {
                 "id": "gate2_mockups_or_user_flow",
                 "label": "Mockups или видео пользовательского flow",
                 "status": "red",
@@ -358,9 +405,15 @@ def _main_analysis_result_payload() -> dict:
             },
             {
                 "id": "gate2_gate3_commitments",
-                "label": "Commitments к Gate 3: сроки, expected performance, метрики",
+                "label": "Commitments к Gate 3: список функционала и метрики",
                 "status": "red",
                 "evidence": "The document omits Gate 3 commitments.",
+            },
+            {
+                "id": "gate2_stop_criteria",
+                "label": "Stop-критерии - в каких случаях мы останавливаем работу над продуктом",
+                "status": "red",
+                "evidence": "The document omits stop criteria.",
             },
         ],
         "findings": [],
