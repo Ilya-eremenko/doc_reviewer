@@ -29,6 +29,9 @@ CONTEXT_TOPICS = re.compile(
 NON_CURRENT_ALTERNATIVE_MARKERS = re.compile(
     r"\b(?:previous|prior|historical|legacy|obsolete|deprecated|rejected|hypothetical|unselected|alternative|illustrative|maximum)\s+"
     r"(?:\w+\s+){0,2}(?:scenario|case|plan|bank|partner|option)\b"
+    r"|\b(?:selected|chosen|approved|committed|current)\s+"
+    r"(?:(?:base|baseline|target|ltm|actual|conservative|upside)\s+){0,2}scenario\b\s+"
+    r"(?:in\s+(?:19|20)\d{2}\b|from\s+(?:the\s+)?(?:previous|prior|historical)\s+period\b|(?:was\s+)?retired\b)"
     r"|\b(?:прошл\w*|предыдущ\w*|устаревш\w*|отклон\w*|гипотетич\w*|альтернативн\w*|иллюстративн\w*|максимальн\w*)\s+"
     r"(?:\w+\s+){0,2}(?:сценар\w*|кейс\w*|план\w*|банк\w*|партн\w*|вариант\w*)",
     re.IGNORECASE,

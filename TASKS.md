@@ -33,7 +33,8 @@ Primary plan index:
   PR #78 follow-up: preserve distinct selected-scenario and current-scope
   windows even when both occur within one large scan bucket, and reserve one
   scope window when selected-scenario candidates crowd the excerpt; added
-  regression coverage before the production merge.
+  regression coverage before the production merge. Historical selections with
+  trailing dates or retirement qualifiers now rank below the active scenario.
   Full local worker suite: 274 pass, three unrelated PDF parser tests fail
   because this local Python environment lacks `pdfplumber`; production CI
   runs with the declared dependencies.

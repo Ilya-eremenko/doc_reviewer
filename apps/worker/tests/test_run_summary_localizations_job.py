@@ -33,6 +33,18 @@ def test_context_priority_does_not_penalize_selected_plan_for_separate_alternati
     assert decision_context_score(historical) < decision_context_score(active)
 
 
+def test_context_priority_downranks_dated_or_retired_selected_scenarios():
+    active = "Selected scenario: Bank B is the active partner."
+
+    for historical in (
+        "Selected scenario in 2023: Bank A was the old partner.",
+        "Selected base scenario from the previous period: Bank A.",
+        "Selected scenario retired: Bank A.",
+    ):
+        assert decision_context_score(historical) < decision_context_score(active)
+        assert decision_context_score(active + " " + historical) == decision_context_score(active)
+
+
 def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initial_limit():
     beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 700
     historical = "Previous scenario: Bank A was considered for the original plan.\n"
@@ -51,6 +63,19 @@ def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initia
     assert "Current Defense: Progress Review" in excerpt
     assert "[Source chars " in excerpt
     assert source != excerpt
+
+
+def test_new_summary_source_excerpt_prefers_active_plan_over_dated_selections():
+    source = (
+        "Executive Summary: case overview.\n"
+        + ("Selected scenario in 2023: Bank A was the old partner.\n" + "Old option details.\n" * 50) * 35
+        + "Selected scenario: Bank B is the active partner for this defense.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Selected scenario: Bank B is the active partner" in excerpt
 
 
 def test_new_summary_source_excerpt_keeps_short_document_unchanged():
