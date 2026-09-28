@@ -10,10 +10,14 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.db.session import SessionLocal
 from app.logging import worker_logger
 from app.models.analysis import Analysis
+from app.models.base import utc_now
+from app.models.skill import Skill
+from app.models.skill_source import SkillSourceSnapshot
 from app.models.document import Document
-from app.schemas.enums import DocumentParseStatus, RunStatus
+from app.schemas.enums import DocumentParseStatus, DocumentType, RunStatus
 from app.services.analysis_jobs import enqueue_run_analysis
 from app.services.analyses import DOCUMENT_PARSE_DEPENDENCY_KEY
+from skills.snapshot_loader import load_skill_source_snapshot
 
 
 DeferredAnalysisEnqueue = Callable[[UUID], None]
@@ -32,6 +36,24 @@ def enqueue_ready_deferred_analyses(
         analyses = _ready_deferred_analyses(session=session, document_id=document_id)
         enqueued = 0
         for analysis, document in analyses:
+            try:
+                _validate_progress_review_snapshot(session=session, analysis=analysis, document=document)
+            except (ValueError, RuntimeError, OSError):
+                analysis.status = RunStatus.FAILED.value
+                analysis.completed_at = utc_now()
+                analysis.error_message = "Progress Review source snapshot is missing its rubric or main-skill route"
+                _mark_dependency_state(
+                    session=session,
+                    analysis=analysis,
+                    document=document,
+                    state="source_preflight_failed",
+                    error=analysis.error_message,
+                )
+                worker_logger.info(
+                    "deferred_analysis_source_preflight_failed",
+                    extra={"analysis_id": str(analysis.id), "status": "failed"},
+                )
+                continue
             _mark_dependency_state(
                 session=session,
                 analysis=analysis,
@@ -80,6 +102,26 @@ def enqueue_ready_deferred_analyses(
     finally:
         if owns_session:
             session.close()
+
+
+
+def _validate_progress_review_snapshot(*, session: Session, analysis: Analysis, document: Document) -> None:
+    document_type = document.manual_document_type or document.detected_document_type
+    if document_type != DocumentType.PROGRESS_REVIEW.value:
+        return
+    skill = session.get(Skill, analysis.skill_id)
+    if skill is None or skill.name != "gate2_challenger_main_analysis":
+        return
+    snapshot_id = (analysis.run_parameters or {}).get("source_snapshot_id")
+    snapshot = session.get(SkillSourceSnapshot, UUID(str(snapshot_id))) if snapshot_id else None
+    if snapshot is None or snapshot.analysis_id != analysis.id:
+        raise ValueError("progress_review_snapshot_unavailable")
+    material = load_skill_source_snapshot(snapshot.artifact_path)
+    prefix = "skills/gate-challenger/"
+    if not material.read_text(prefix + "references/progress-review-rubric.md") or (
+        "progress-review-rubric.md" not in (material.read_text(prefix + "SKILL.md") or "")
+    ):
+        raise ValueError("progress_review_snapshot_incomplete")
 
 
 def _ready_deferred_analyses(

@@ -58,7 +58,7 @@ def parse_document(
             structured_artifact=structured_artifact,
             quality_report=parsed_document.quality.to_dict(),
         )
-        detection = detect_document_type(parsed_text)
+        detection = detect_document_type(parsed_text, title=document.title)
 
         document.parsed_text = parsed_text
         document.detected_document_type = detection.document_type.value
