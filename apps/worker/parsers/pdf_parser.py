@@ -116,6 +116,7 @@ def _pdfplumber_page_blocks(page: object, *, page_number: int) -> list[dict[str,
                         "bbox": [round(float(value), 2) for value in table.bbox],
                         "row_count": len(rows),
                         "column_count": max(len(row) for row in rows),
+                        "rows": rows,
                     },
                 },
             )

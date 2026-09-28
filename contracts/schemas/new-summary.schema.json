@@ -134,6 +134,35 @@
       ]
     },
     "traction_summary": {
+      "oneOf": [
+        { "$ref": "#/$defs/traction_tables" },
+        { "$ref": "#/$defs/legacy_traction_summary" }
+      ]
+    },
+    "traction_tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tables"],
+      "properties": {
+        "tables": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/traction_table" }
+        }
+      }
+    },
+    "traction_table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "metric_label", "periods", "rows"],
+      "properties": {
+        "metric": { "type": "string", "enum": ["revenue", "dtb"] },
+        "metric_label": { "$ref": "#/$defs/non_empty_string" },
+        "periods": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" } },
+        "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traction_row" } }
+      }
+    },
+    "legacy_traction_summary": {
       "type": "object",
       "additionalProperties": false,
       "required": ["metric_label", "periods", "rows"],

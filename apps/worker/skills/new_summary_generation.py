@@ -52,6 +52,7 @@ from skills.result_synthesis_trace import (
     fail_result_synthesis_step,
     start_result_synthesis_step,
 )
+from skills.traction_tables import display_traction_tables, source_traction_tables
 
 
 LANGUAGES = ("ru", "en")
@@ -345,6 +346,7 @@ def build_new_summary_source(
         "document_stage": stage,
         "document_type": document_type,
         "source_document": _source_document_payload(document),
+        "source_traction_tables": source_traction_tables(document),
         "gate_challenger": _gate_challenger_source(analysis.structured_output),
         "gate_challenger_detail": _latest_detail_source(session=session, analysis=analysis),
         "ic_review": _ic_review_source(check_run.structured_output),
@@ -805,6 +807,11 @@ def _validated_source_dependent_report(
             generated_payload=version,
             required_details=normalized_version["required_details"],
         )
+        source_tables = source_payload.get("source_traction_tables")
+        if isinstance(source_tables, list) and source_tables:
+            normalized_version["traction_summary"] = display_traction_tables(
+                source_tables, language=expected_language
+            )
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
         normalized_versions.append(normalized_version)
@@ -906,6 +913,22 @@ def _source_initiative_title(source_payload: dict[str, Any]) -> str:
 
 
 def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
+    if isinstance(value, dict) and isinstance(value.get("tables"), list):
+        tables = []
+        for table in value["tables"]:
+            if not isinstance(table, dict) or table.get("metric") not in {"revenue", "dtb"}:
+                continue
+            normalized = _normalize_single_traction_table(table)
+            if normalized is not None:
+                tables.append({"metric": table["metric"], **normalized})
+        return {"tables": tables}
+    normalized = _normalize_single_traction_table(value)
+    if normalized is not None:
+        return normalized
+    return {"tables": []}
+
+
+def _normalize_single_traction_table(value: Any) -> dict[str, Any] | None:
     if isinstance(value, dict):
         metric_label = value.get("metric_label")
         periods = value.get("periods")
@@ -936,12 +959,7 @@ def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
                     "periods": normalized_periods,
                     "rows": normalized_rows,
                 }
-    period = "Не указано" if language == "ru" else "Not provided"
-    return {
-        "metric_label": "Revenue",
-        "periods": [period],
-        "rows": [{"label": "Total incremental output uplifts", "values": [""]}],
-    }
+    return None
 
 
 def _missing_text(language: str, field: str) -> str:

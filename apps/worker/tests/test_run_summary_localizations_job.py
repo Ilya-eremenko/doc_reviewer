@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+from jsonschema import validate
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -662,6 +663,20 @@ def test_new_summary_traction_summary_filters_blank_period_values_together():
         "periods": ["2025", "2027"],
         "rows": [{"label": "Total", "values": ["1", "3"]}],
     }
+
+
+def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    for version in report["versions"]:
+        version["traction_summary"] = {
+            "tables": [
+                {"metric": "revenue", "metric_label": "Revenue", "periods": ["2026", "2027", "2026-27 total"],
+                 "rows": [{"label": "Total", "values": ["1", "2", "3"]}]},
+                {"metric": "dtb", "metric_label": "DTB", "periods": ["CY26", "CY27"],
+                 "rows": [{"label": "Total", "values": ["1%", "2%"]}]},
+            ]
+        }
+    validate(instance=report, schema=new_summary_generation._new_summary_schema())
 
 
 def test_new_summary_solution_validation_detail_ignores_non_list_items():

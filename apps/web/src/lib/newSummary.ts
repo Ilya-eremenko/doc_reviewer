@@ -16,7 +16,8 @@ export type NewSummaryRequiredElement = {
   evidence: string;
 };
 
-export type NewSummaryTractionSummary = {
+export type NewSummaryTractionTable = {
+  metric?: "revenue" | "dtb";
   metric_label: string;
   periods: string[];
   rows: Array<{
@@ -24,6 +25,8 @@ export type NewSummaryTractionSummary = {
     values: string[];
   }>;
 };
+
+export type NewSummaryTractionSummary = NewSummaryTractionTable | { tables: NewSummaryTractionTable[] };
 
 export type NewSummaryRequiredDetails =
   | {

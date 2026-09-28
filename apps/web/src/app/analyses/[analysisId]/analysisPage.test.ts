@@ -75,7 +75,8 @@ describe("analysis result page", () => {
     expect(pageSource).toContain('activeTopTab === "executiveSummary"');
     expect(pageSource).toContain('activeTopTab === "mainOutput"');
     expect(pageSource).toContain('activeTopTab === "icReview"');
-    expect(pageSource).toContain('<NewSummaryPanel analysis={analysis} newSummary={newSummary} newSummaryError={newSummaryError} />');
+    expect(pageSource).toContain('<NewSummaryPanel');
+    expect(pageSource).toContain('newSummary={newSummary}');
     expect(pageSource).toContain("{activeTopTab === \"mainOutput\" ? <MainSkillMarkdownPanel analysis={analysis} /> : null}");
     expect(pageSource).toContain('{activeTopTab === "icReview" ? (');
     expect(pageSource).toContain("resultProductAnalysisMarkdown(analysis)");
@@ -400,7 +401,7 @@ describe("analysis result page", () => {
     expect(newSummaryPanelSource).toContain('newSummary.en.status === "completed"');
     expect(newSummaryPanelSource).toContain('docx_path: newSummaryExportUrl(analysis.id, "docx")');
     expect(newSummaryPanelSource).toContain('pdf_path: newSummaryExportUrl(analysis.id, "pdf")');
-    expect(newSummaryPanelSource).toContain("return <NewSummaryReportView embedded report={report} />");
+    expect(newSummaryPanelSource).toContain("<NewSummaryReportView embedded report={report} />");
     expect(pageSource).toContain('useState<OutputLanguage>("ru")');
     expect(pageSource).not.toContain("window.location.reload");
   });
@@ -430,7 +431,7 @@ describe("analysis result page", () => {
     expect(newSummaryPanelSource).toContain('newSummary.en.status === "completed"');
     expect(newSummaryPanelSource).toContain('docx_path: newSummaryExportUrl(analysis.id, "docx")');
     expect(newSummaryPanelSource).toContain('pdf_path: newSummaryExportUrl(analysis.id, "pdf")');
-    expect(newSummaryPanelSource).toContain("return <NewSummaryReportView embedded report={report} />");
+    expect(newSummaryPanelSource).toContain("<NewSummaryReportView embedded report={report} />");
     expect(newSummaryPanelSource).toContain("<NewSummaryProgress progress={newSummary?.progress ?? fallbackNewSummaryProgress(newSummary)} />");
     expect(newSummaryPanelSource).toContain("Повторная попытка начнётся автоматически при следующем открытии страницы.");
     expect(pageSource).toContain("function NewSummaryProgress");

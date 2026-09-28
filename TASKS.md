@@ -2826,3 +2826,18 @@ Exit criteria:
   old analyses, recover stale waiting postprocessing states, render cancelled
   New Summary states in the UI, and finalize cancelled synthesis trace steps
   with retained raw provider output.
+- 2026-09-28: AI Summary Traction Summary now accepts Revenue and DTB as separate
+  metric tables with independent periods. The worker reads verified, owned
+  structured parse artifacts so an explicit current incremental P&L table can
+  supply all source years and its matching total (the Auction FAQ 5 case had
+  2026-2031 values but the former Summary mixed a 2026-2030 header with the
+  2026-2031 total). Legacy stored reports retain their old table shape and are
+  not bulk regenerated. An admin-only action queues a single completed report
+  for regeneration; it does not rerun Gate Challenger or IC Review. The prior
+  completed report is restored if that targeted regeneration fails. The
+  new-summary skill changed only in its Traction Summary and technical JSON
+  contract sections. Parser metadata includes structured PDF table rows for
+  future uploads; legacy artifacts fall back to their stored Markdown table.
+  Focused Python and web tests cover both shapes, metric horizons, exports,
+  authorization, and parser provenance. Production deployment and targeted
+  regeneration remain to be verified after PR merge.

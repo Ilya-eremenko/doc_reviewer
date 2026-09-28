@@ -562,6 +562,10 @@ export async function ensureNewSummary(analysisId: string): Promise<NewSummaryRe
   return apiFetch<NewSummaryRecord>(`/analyses/${analysisId}/new-summary`, { method: "POST" });
 }
 
+export async function regenerateNewSummary(analysisId: string): Promise<NewSummaryRecord> {
+  return apiFetch<NewSummaryRecord>(`/analyses/${analysisId}/new-summary/regenerate`, { method: "POST" });
+}
+
 export async function getNewSummary(analysisId: string): Promise<NewSummaryRecord> {
   return apiFetch<NewSummaryRecord>(`/analyses/${analysisId}/new-summary`);
 }

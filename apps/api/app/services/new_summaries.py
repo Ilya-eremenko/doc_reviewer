@@ -69,6 +69,22 @@ def request_new_summary(
     return response, should_enqueue
 
 
+def regenerate_new_summary(*, db: Session, analysis: Analysis) -> tuple[NewSummaryRead, bool]:
+    analysis = db.execute(select(Analysis).where(Analysis.id == analysis.id).with_for_update()).scalar_one()
+    check_run = latest_completed_ic_review(db=db, analysis_id=analysis.id)
+    if analysis.status != RunStatus.COMPLETED.value or check_run is None:
+        return read_new_summary(analysis), False
+    state = _state(analysis)
+    if any((state.get(language) or {}).get("status") in {"queued", "running", "waiting"} for language in ("ru", "en")):
+        return read_new_summary(analysis), False
+    queued = _empty_state(str(check_run.id))
+    if all((state.get(language) or {}).get("status") == "completed" for language in ("ru", "en")):
+        queued["previous"] = state
+    _persist_state(analysis, queued)
+    db.commit()
+    return read_new_summary(analysis), True
+
+
 def with_display_stage(response: NewSummaryRead, display_stage: str | None) -> NewSummaryRead:
     if display_stage is None:
         return response
@@ -187,7 +203,7 @@ def mark_new_summary_enqueue_failed(*, db: Session, analysis: Analysis, error_me
         variant = state.get(language)
         if isinstance(variant, dict) and variant.get("status") == "queued":
             state[language] = {**variant, "status": "failed", "error_message": error_message}
-    _persist_state(analysis, state)
+    _persist_state(analysis, _restore_previous_after_failure(state, error_message))
     db.commit()
 
 
@@ -210,8 +226,14 @@ def mark_new_summary_progress(*, analysis: Analysis, revision: str, stage: str, 
 
 def mark_new_summary_failed(*, analysis: Analysis, revision: str, language: str, error_message: str) -> None:
     state = _state_for_revision(analysis=analysis, revision=revision)
+    if state.get("regeneration_error") and all(
+        (state.get(item) or {}).get("status") == "completed" for item in ("ru", "en")
+    ):
+        return
     state[language] = {"status": "failed", "payload": None, "error_message": error_message[:1000]}
     state["progress"] = _progress_state(stage="failed", status="failed")
+    if all((state.get(item) or {}).get("status") == "failed" for item in ("ru", "en")):
+        state = _restore_previous_after_failure(state, error_message)
     _persist_state(analysis, state)
 
 
@@ -229,7 +251,7 @@ def mark_new_summary_cancelled(*, analysis: Analysis, revision: str | None = Non
             changed = True
     if changed:
         state["progress"] = _progress_state(stage="cancelled", status="cancelled")
-        _persist_state(analysis, state)
+        _persist_state(analysis, _restore_previous_after_failure(state, "cancelled_by_user"))
     return changed
 
 
@@ -253,7 +275,13 @@ def persist_new_summary_variant(
     }
     if all((state.get(item) or {}).get("status") == "completed" for item in ("ru", "en")):
         state["progress"] = _progress_state(stage="completed", status="completed")
+        state.pop("previous", None)
     _persist_state(analysis, state)
+
+
+def _restore_previous_after_failure(state: dict[str, Any], error_message: str) -> dict[str, Any]:
+    previous = state.get("previous")
+    return {**previous, "regeneration_error": error_message[:1000]} if isinstance(previous, dict) else state
 
 
 def read_new_summary(analysis: Analysis) -> NewSummaryRead:
