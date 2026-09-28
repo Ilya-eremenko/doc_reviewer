@@ -17,6 +17,7 @@ import {
   getDocument,
   getNewSummary,
   newSummaryExportUrl,
+  regenerateNewSummary,
   type AnalysisCheckRunStatusRecord,
   type AnalysisCheckStepRecord,
   type AnalysisCheckStepStatusRecord,
@@ -133,6 +134,8 @@ export default function AnalysisDetailPage() {
   const [isLaunchingIcReview, setIsLaunchingIcReview] = useState(false);
   const [newSummary, setNewSummary] = useState<NewSummaryRecord | null>(null);
   const [newSummaryError, setNewSummaryError] = useState("");
+  const [newSummaryRefreshToken, setNewSummaryRefreshToken] = useState(0);
+  const [isRegeneratingNewSummary, setIsRegeneratingNewSummary] = useState(false);
 
   useEffect(() => {
     me().then(setCurrentUser).catch(() => undefined);
@@ -201,7 +204,20 @@ export default function AnalysisDetailPage() {
         window.clearTimeout(timer);
       }
     };
-  }, [analysis?.id, analysis?.status, analysis?.ic_review_run?.id, analysis?.ic_review_run?.status, analysisDocument, currentUser, params.analysisId]);
+  }, [analysis?.id, analysis?.status, analysis?.ic_review_run?.id, analysis?.ic_review_run?.status, analysisDocument, currentUser, params.analysisId, newSummaryRefreshToken]);
+
+  async function handleRegenerateNewSummary() {
+    setIsRegeneratingNewSummary(true);
+    try {
+      setNewSummary(await regenerateNewSummary(params.analysisId));
+      setNewSummaryError("");
+      setNewSummaryRefreshToken((value) => value + 1);
+    } catch (err) {
+      setNewSummaryError(err instanceof Error ? err.message : "Failed to regenerate AI Summary");
+    } finally {
+      setIsRegeneratingNewSummary(false);
+    }
+  }
 
   useEffect(() => {
     let ignore = false;
@@ -528,7 +544,13 @@ export default function AnalysisDetailPage() {
                 </nav>
 
                 {activeTopTab === "executiveSummary" ? (
-                  <NewSummaryPanel analysis={analysis} newSummary={newSummary} newSummaryError={newSummaryError} />
+                  <NewSummaryPanel
+                    analysis={analysis}
+                    newSummary={newSummary}
+                    newSummaryError={newSummaryError}
+                    onRegenerate={currentUser?.role === "admin" ? handleRegenerateNewSummary : undefined}
+                    isRegenerating={isRegeneratingNewSummary}
+                  />
                 ) : null}
                 {activeTopTab === "mainOutput" ? <MainSkillMarkdownPanel analysis={analysis} /> : null}
                 {activeTopTab === "icReview" ? (
@@ -931,10 +953,14 @@ function NewSummaryPanel({
   analysis,
   newSummary,
   newSummaryError,
+  onRegenerate,
+  isRegenerating,
 }: {
   analysis: AnalysisRecord;
   newSummary: NewSummaryRecord | null;
   newSummaryError: string;
+  onRegenerate?: () => void;
+  isRegenerating: boolean;
 }) {
   const newSummaryReady =
     newSummary?.available === true
@@ -965,7 +991,16 @@ function NewSummaryPanel({
       ru: newSummaryRu,
       en: newSummaryEn,
     };
-    return <NewSummaryReportView embedded report={report} />;
+    return (
+      <>
+        {onRegenerate ? (
+          <button className="analysis-secondary-action" disabled={isRegenerating} type="button" onClick={onRegenerate}>
+            {isRegenerating ? "Обновляем AI Summary..." : "Пересобрать AI Summary"}
+          </button>
+        ) : null}
+        <NewSummaryReportView embedded report={report} />
+      </>
+    );
   }
 
   return (

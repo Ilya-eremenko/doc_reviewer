@@ -1535,6 +1535,78 @@ def test_new_summary_endpoint_queues_legacy_completed_ic_review_without_postproc
     assert response.json()["progress"]["stage"] == "queued"
 
 
+def test_admin_can_regenerate_only_one_completed_new_summary(client, db_session):
+    from app.main import app
+    from app.routers import analyses as analyses_router
+
+    owner = create_user(db_session, "traction-owner", "secret")
+    admin = create_user(db_session, "traction-admin", "secret", role=Role.ADMIN)
+    skills = seed_baseline_skills(db_session)
+    document_id = _create_completed_document(client, db_session, owner)
+    analysis = Analysis(
+        document_id=document_id,
+        user_id=owner.id,
+        skill_id=skills[0].id,
+        skill_version=skills[0].version,
+        provider=Provider.OPENAI_COMPATIBLE.value,
+        model="gpt-test",
+        status=RunStatus.COMPLETED.value,
+        structured_output={"result": {"new_summary": {
+            "version": 2,
+            "generation_mode": "new_summary_skill",
+            "ru": {"status": "completed", "payload": _new_summary_payload(language="ru")},
+            "en": {"status": "completed", "payload": _new_summary_payload(language="en")},
+        }}},
+        run_parameters={},
+    )
+    db_session.add(analysis)
+    db_session.flush()
+    db_session.add(AnalysisCheckRun(
+        analysis_id=analysis.id,
+        skill_id=skills[0].id,
+        skill_version=skills[0].version,
+        check_type="ic_agentic_review",
+        provider=analysis.provider,
+        model=analysis.model,
+        status=RunStatus.COMPLETED.value,
+        structured_output={"run_mode": "ic_agentic_review_compact"},
+        run_parameters={},
+        artifacts=[],
+        uploaded_workbook_metadata={},
+    ))
+    db_session.commit()
+    login(client, owner.login, "secret")
+    assert client.post(f"/analyses/{analysis.id}/new-summary/regenerate").status_code == 403
+
+    login(client, admin.login, "secret")
+    enqueued: list[str] = []
+    app.dependency_overrides[analyses_router.get_run_summary_localizations_enqueue] = (
+        lambda: lambda analysis_id: enqueued.append(str(analysis_id))
+    )
+    try:
+        response = client.post(f"/analyses/{analysis.id}/new-summary/regenerate")
+        duplicate = client.post(f"/analyses/{analysis.id}/new-summary/regenerate")
+    finally:
+        app.dependency_overrides.pop(analyses_router.get_run_summary_localizations_enqueue, None)
+    assert response.status_code == 200
+    assert response.json()["ru"]["status"] == "queued"
+    assert response.json()["en"]["status"] == "queued"
+    assert duplicate.status_code == 200
+    assert enqueued == [str(analysis.id)]
+
+    from app.services.new_summaries import mark_new_summary_failed
+
+    db_session.refresh(analysis)
+    check_run = db_session.query(AnalysisCheckRun).filter_by(analysis_id=analysis.id).one()
+    mark_new_summary_failed(analysis=analysis, revision=str(check_run.id), language="ru", error_message="test failure")
+    mark_new_summary_failed(analysis=analysis, revision=str(check_run.id), language="en", error_message="test failure")
+    db_session.commit()
+    restored = client.get(f"/analyses/{analysis.id}/new-summary")
+    assert restored.status_code == 200
+    assert restored.json()["ru"]["status"] == "completed"
+    assert restored.json()["ru"]["payload"]["title"] == "AI Summary Test Initiative"
+
+
 def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, db_session, tmp_path):
     user = create_user(db_session, "new-summary-export-author", "secret")
     skills = seed_baseline_skills(db_session)
@@ -1601,6 +1673,35 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     assert f"document_id={analysis.document_id}" in text
     assert "Что подтверждено" not in text
     assert "Что недостаточно подтверждено" not in text
+
+    output = dict(analysis.structured_output)
+    result = dict(output["result"])
+    state = dict(result["new_summary"])
+    for language in ("ru", "en"):
+        variant = dict(state[language])
+        payload = dict(variant["payload"])
+        payload["traction_summary"] = {"tables": [
+            {"metric": "revenue", "metric_label": "Revenue (incr), mR", "periods": ["2026", "2027", "2026-27 total"],
+             "rows": [{"label": "Total incremental output uplifts", "values": ["86", "379", "465"]}]},
+            {"metric": "dtb", "metric_label": "DTB (incr), %", "periods": ["2026", "2027", "2028", "Total"],
+             "rows": [{"label": "Total incremental output uplifts", "values": ["1%", "2%", "3%", "2%"]}]},
+        ]}
+        variant["payload"] = payload
+        state[language] = variant
+    result["new_summary"] = state
+    output["result"] = result
+    analysis.structured_output = output
+    db_session.commit()
+    multi_pdf = client.get(f"/analyses/{analysis.id}/new-summary/export/pdf")
+    multi_docx = client.get(f"/analyses/{analysis.id}/new-summary/export/docx")
+    assert multi_pdf.status_code == 200 and multi_pdf.content.startswith(b"%PDF")
+    assert multi_docx.status_code == 200
+    exported.write_bytes(multi_docx.content)
+    document = DocxDocument(exported)
+    all_cells = "\n".join(cell.text for table in document.tables for row in table.rows for cell in row.cells)
+    assert "Revenue (incr), mR" in all_cells
+    assert "DTB (incr), %" in all_cells
+    assert "2028" in all_cells
 
 
 def test_existing_progress_review_displays_correct_stage_without_changing_analysis(client, db_session, tmp_path):

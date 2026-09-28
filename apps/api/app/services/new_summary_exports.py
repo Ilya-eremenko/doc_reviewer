@@ -216,26 +216,27 @@ def _append_docx_list_section(document: DocxDocument, title: str, items: list[st
 
 
 def _append_docx_traction(document: DocxDocument, content: dict[str, Any], labels: dict[str, str]) -> None:
-    traction = content.get("traction_summary")
-    if not _has_traction(traction):
+    tables = _traction_tables(content.get("traction_summary"))
+    if not tables:
         return
     _append_docx_heading(document, labels["traction"])
-    periods = [str(item) for item in traction["periods"]]
-    rows = traction["rows"]
-    table = document.add_table(rows=1 + len(rows), cols=1 + len(periods))
-    table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    table.style = "Table Grid"
-    header = table.rows[0].cells
-    header[0].text = _clean_text(traction.get("metric_label"))
-    for index, period in enumerate(periods, start=1):
-        header[index].text = period
-    for row_index, row in enumerate(rows, start=1):
-        cells = table.rows[row_index].cells
-        cells[0].text = _clean_text(row.get("label"))
-        values = row.get("values") if isinstance(row.get("values"), list) else []
-        for cell_index, _period in enumerate(periods, start=1):
-            cells[cell_index].text = _clean_text(values[cell_index - 1] if cell_index - 1 < len(values) else "")
-    _style_docx_table(table)
+    for traction in tables:
+        periods = [str(item) for item in traction["periods"]]
+        rows = traction["rows"]
+        table = document.add_table(rows=1 + len(rows), cols=1 + len(periods))
+        table.alignment = WD_TABLE_ALIGNMENT.LEFT
+        table.style = "Table Grid"
+        header = table.rows[0].cells
+        header[0].text = _clean_text(traction.get("metric_label"))
+        for index, period in enumerate(periods, start=1):
+            header[index].text = period
+        for row_index, row in enumerate(rows, start=1):
+            cells = table.rows[row_index].cells
+            cells[0].text = _clean_text(row.get("label"))
+            values = row.get("values") if isinstance(row.get("values"), list) else []
+            for cell_index, _period in enumerate(periods, start=1):
+                cells[cell_index].text = _clean_text(values[cell_index - 1] if cell_index - 1 < len(values) else "")
+        _style_docx_table(table)
 
 
 def _style_docx_table(table) -> None:
@@ -429,10 +430,17 @@ def _append_pdf_traction(
     styles: dict[str, ParagraphStyle],
     frame_width: float,
 ) -> None:
-    traction = content.get("traction_summary")
-    if not _has_traction(traction):
+    tables = _traction_tables(content.get("traction_summary"))
+    if not tables:
         return
     _append_pdf_heading(story, labels["traction"], styles)
+    for traction in tables:
+        _append_pdf_traction_table(story, traction, styles, frame_width)
+
+
+def _append_pdf_traction_table(
+    story: list[Any], traction: dict[str, Any], styles: dict[str, ParagraphStyle], frame_width: float
+) -> None:
     periods = [str(item) for item in traction["periods"]]
     data = [[Paragraph(_xml(traction.get("metric_label")), styles["table_header"])] + [Paragraph(_xml(item), styles["table_header"]) for item in periods]]
     for row in traction["rows"]:
@@ -456,6 +464,7 @@ def _append_pdf_traction(
         )
     )
     story.append(table)
+    story.append(Spacer(1, 8))
 
 
 def _append_pdf_required(story: list[Any], content: dict[str, Any], labels: dict[str, str], styles: dict[str, ParagraphStyle]) -> None:
@@ -617,14 +626,16 @@ def _labels(language: str) -> dict[str, str]:
     }
 
 
-def _has_traction(value: Any) -> bool:
-    return (
-        isinstance(value, dict)
-        and isinstance(value.get("periods"), list)
-        and bool(value["periods"])
-        and isinstance(value.get("rows"), list)
-        and bool(value["rows"])
-    )
+def _traction_tables(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, dict):
+        return []
+    candidates = value.get("tables") if isinstance(value.get("tables"), list) else [value]
+    return [
+        table for table in candidates
+        if isinstance(table, dict)
+        and isinstance(table.get("periods"), list) and table["periods"]
+        and isinstance(table.get("rows"), list) and table["rows"]
+    ]
 
 
 def _ordered_details(content: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:

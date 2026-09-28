@@ -46,6 +46,7 @@ from app.services.documents import DocumentNotFoundError, get_manageable_documen
 from app.services.new_summaries import (
     mark_new_summary_enqueue_failed,
     read_new_summary,
+    regenerate_new_summary,
     request_new_summary,
     with_display_stage,
 )
@@ -250,6 +251,31 @@ def ensure_analysis_new_summary(
                 db=db,
                 analysis=analysis,
                 error_message="new_summary_generation_queue_unavailable",
+            )
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="New Summary generation queue is unavailable") from exc
+    return with_display_stage(response, _display_stage_for_analysis(db, analysis))
+
+
+@router.post("/analyses/{analysis_id}/new-summary/regenerate", response_model=NewSummaryRead)
+def regenerate_analysis_new_summary(
+    analysis_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_current_user),
+    enqueue: RunSummaryLocalizationsEnqueue = Depends(get_run_summary_localizations_enqueue),
+) -> NewSummaryRead:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required")
+    try:
+        analysis = get_analysis_for_actor(db=db, actor=current_user, analysis_id=analysis_id)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found") from exc
+    response, should_enqueue = regenerate_new_summary(db=db, analysis=analysis)
+    if should_enqueue:
+        try:
+            enqueue(analysis.id)
+        except Exception as exc:
+            mark_new_summary_enqueue_failed(
+                db=db, analysis=analysis, error_message="new_summary_generation_queue_unavailable"
             )
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="New Summary generation queue is unavailable") from exc
     return with_display_stage(response, _display_stage_for_analysis(db, analysis))

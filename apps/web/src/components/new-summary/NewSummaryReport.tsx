@@ -9,6 +9,7 @@ import type {
   NewSummaryRequiredDetails,
   NewSummaryRequiredElement,
   NewSummaryTractionSummary,
+  NewSummaryTractionTable,
 } from "@/lib/newSummary";
 
 const labels = {
@@ -200,28 +201,30 @@ function TractionSummaryTable({
   return (
     <section className="new-summary-panel new-summary-traction">
       <h2>{text.traction}</h2>
-      <div className="new-summary-table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>{traction.metric_label}</th>
-              {traction.periods.map((period) => (
-                <th key={period}>{period}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {traction.rows.map((row) => (
-              <tr key={row.label}>
-                <th>{row.label}</th>
-                {traction.periods.map((period, index) => (
-                  <td key={`${row.label}-${period}`}>{row.values[index] ?? ""}</td>
+      {tractionTables(traction).map((table) => (
+        <div className="new-summary-table-scroll" key={table.metric ?? table.metric_label}>
+          <table>
+            <thead>
+              <tr>
+                <th>{table.metric_label}</th>
+                {table.periods.map((period, index) => (
+                  <th key={`${period}-${index}`}>{period}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={`${row.label}-${rowIndex}`}>
+                  <th>{row.label}</th>
+                  {table.periods.map((period, index) => (
+                    <td key={`${rowIndex}-${period}-${index}`}>{row.values[index] ?? ""}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </section>
   );
 }
@@ -394,7 +397,12 @@ function StatusChip({
 }
 
 function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value is NewSummaryTractionSummary {
-  return Boolean(value?.periods.length && value.rows.length);
+  return tractionTables(value).some((table) => table.periods.length > 0 && table.rows.length > 0);
+}
+
+function tractionTables(value: NewSummaryTractionSummary | undefined): NewSummaryTractionTable[] {
+  if (!value) return [];
+  return "tables" in value ? value.tables : [value];
 }
 
 function requiredElementTone(item: NewSummaryRequiredElement): "present" | "partial" | "missing" | "fraction" {
