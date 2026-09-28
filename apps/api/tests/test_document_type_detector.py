@@ -144,6 +144,118 @@ def test_current_progress_review_has_its_own_document_type():
     assert "using Stream Review 2+ rules" not in result.explanation
 
 
+def test_current_progress_review_in_pdf_table_cell_overrides_gate_3_history():
+    text = """
+    [Page 1]
+    Auction InvCom May'26
+    Previous and current review executive summary
+    [Page 2]
+    | Review | Executive summary |
+    | --- | --- |
+    | Current<br>progres<br>s review<br>Date:<br>May'26 | Last review commitment October 2025<br>Plan versus fact for PMF and CSAT |
+    FAQ: The previous milestone was Gate 3 and the next commitment is Gate 4.
+    """
+
+    result = detect_document_type(text, title="Auction")
+
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
+    assert result.confidence == Decimal("0.95")
+    assert result.explanation == "Current defense: Progress Review"
+
+
+def test_current_stage_is_read_from_its_table_cell_not_historical_stage():
+    text = """
+    Executive Summary
+    | Review | Stage |
+    | --- | --- |
+    | Previous Defense | Gate 3 |
+    | Current Defense | Progress Review |
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
+    assert result.explanation == "Current defense: Progress Review"
+
+
+def test_current_gate_in_long_adjacent_table_cell_keeps_explicit_stage():
+    text = """
+    Executive Summary
+    | Review | Stage |
+    | --- | --- |
+    | Previous Defense | Progress Review |
+    | Current Defense | Gate 3<br>This longer note explains the agenda for the current defense and the document review in detail. |
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.GATE_3
+    assert result.explanation == "Current defense: Gate 3"
+
+
+def test_current_gate_number_in_adjacent_table_cell_is_detected():
+    for number, expected in (("2", DocumentType.GATE_2), ("3", DocumentType.GATE_3)):
+        text = f"Executive Summary\n| Review | Stage |\n| --- | --- |\n| Current Gate | {number} |"
+
+        result = detect_document_type(text)
+
+        assert result.document_type == expected
+        assert result.explanation == f"Current defense: Gate {number}"
+
+
+def test_neighboring_summary_cell_cannot_override_current_review_cell():
+    text = """
+    Executive Summary
+    | Review | Executive summary |
+    | --- | --- |
+    | Previous Defense | Current Defense: Gate 3 was discussed in the previous review. |
+    | Current<br>progres<br>s review | The team compares plan and fact. |
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.PROGRESS_REVIEW
+
+
+def test_current_gate_3_is_not_replaced_by_previous_progress_review():
+    text = """
+    Executive Summary
+    | Review | Stage |
+    | --- | --- |
+    | Previous Defense | Progress Review |
+    | Current Defense | Gate 3 |
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.GATE_3
+    assert result.explanation == "Current defense: Gate 3"
+
+
+def test_gate_3_keyword_fallback_is_unknown_when_progress_review_is_also_mentioned():
+    text = """
+    Auction initiative
+    General case overview
+    Gate 3 results: MLP, PMF, Gate 4, customer experience, Contact Rate and CSAT.
+    FAQ: When will you come for the next Progress Review?
+    """
+
+    result = detect_document_type(text)
+
+    assert result.document_type == DocumentType.UNKNOWN
+    assert result.confidence < Decimal("0.45")
+    assert "current review" in result.explanation.lower()
+
+
+def test_explicit_gate_3_title_wins_over_future_progress_review_mention():
+    result = detect_document_type(
+        "Auction - Gate 3\nFAQ: When will you come for the next Progress Review?"
+    )
+
+    assert result.document_type == DocumentType.GATE_3
+    assert result.explanation == "Document title: Gate 3"
+
+
 def test_progress_review_in_title_has_its_own_document_type():
     text = """
     Operator of Financial Platforms - Progress Review
