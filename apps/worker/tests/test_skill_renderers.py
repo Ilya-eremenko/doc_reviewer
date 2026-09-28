@@ -835,3 +835,43 @@ def test_devils_advocate_renderer_uses_source_snapshot_and_retrieval_dossier(tmp
     assert "corpus-fingerprint" in prompt
     assert "Needs incrementality evidence" in prompt
     assert "Fallback DA prompt should not be used" not in prompt
+
+
+def test_native_progress_review_uses_only_its_rubric_and_requires_stop_criteria(tmp_path):
+    from skills.snapshot_loader import SkillSourceSnapshotMaterial
+    from skills.stage_checklists import expected_stage_checklist_ids, validate_stage_checklist_for_document_type
+
+    rubrics = {
+        'gate_2': 'gate-2-rubric.md',
+        'stream_review_1': 'stream-review-1-rubric.md',
+        'stream_review_2_plus': 'stream-review-2-plus-rubric.md',
+        'progress_review': 'progress-review-rubric.md',
+        'gate_3': 'gate-3-rubric.md',
+    }
+    files = {'skills/gate-challenger/SKILL.md': 'Canonical instructions'}
+    files.update({f'skills/gate-challenger/references/{name}': f'UNIQUE {name}'
+                  for name in [*rubrics.values(), 'gate-1-rubric.md', 'common-adversarial-rubric.md']})
+    snapshot = SkillSourceSnapshotMaterial(tmp_path, {}, files)
+    skill = SimpleNamespace(name='gate2_challenger_main_analysis', version='baseline',
+                            source_entrypoint='skills/gate-challenger/SKILL.md')
+    for stage in [*rubrics, 'unknown']:
+        document = SimpleNamespace(title='Synthetic defense', parsed_text='Synthetic evidence',
+                                   manual_document_type=None, detected_document_type=stage)
+        prompt = render_gate2_challenger_prompt(document=document, skill=skill,
+            response_schema={'title': 'MainAnalysisSummaryResult'}, source_snapshot=snapshot)
+        for rubric_stage, name in rubrics.items():
+            assert (f'UNIQUE {name}' in prompt) == (rubric_stage == stage)
+        assert 'UNIQUE gate-1-rubric.md' not in prompt
+        assert 'UNIQUE common-adversarial-rubric.md' in prompt
+        if stage == 'progress_review':
+            assert 'progress_review_stop_criteria' in prompt
+            assert 'stream_review_2_plus_plan_fact_last_half_year' not in prompt
+    expected = ['progress_review_plan_fact_last_half_year',
+                'progress_review_next_half_year_plan', 'progress_review_stop_criteria']
+    assert expected_stage_checklist_ids('progress_review') == expected
+    validate_stage_checklist_for_document_type(
+        {'stage_checklist': [{'id': value} for value in expected]}, document_type='progress_review')
+    import pytest
+    with pytest.raises(ValueError, match='selected document type exactly'):
+        validate_stage_checklist_for_document_type(
+            {'stage_checklist': [{'id': value} for value in expected[:-1]]}, document_type='progress_review')
