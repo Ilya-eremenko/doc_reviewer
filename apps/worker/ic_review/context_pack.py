@@ -191,6 +191,10 @@ COMMON_KEYWORDS = (
     "метрик",
     "риск",
 )
+PRIOR_PERIOD_MARKERS = re.compile(
+    r"\b(?:previous|prior|last period|historical)\b|\b(?:прошл\w*|предыдущ\w*)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -359,20 +363,45 @@ def _select_evidence(
     limit: int,
 ) -> list[dict[str, Any]]:
     scored = [
-        (_evidence_score(item, keywords), index, item)
+        (_evidence_score(item, keywords), _evidence_score(item, keywords, include_context=False), index, item)
         for index, item in enumerate(evidence)
     ]
-    selected = [
-        item
-        for score, _index, item in sorted(scored, key=lambda entry: (-entry[0], entry[1]))
-        if score > 0
-    ][:limit]
+    ranked = sorted(scored, key=lambda entry: (-entry[0], entry[2]))
+    selected: dict[int, tuple[int, int, int, dict[str, Any]]] = {}
+    prior_period = sorted(
+        (
+            entry for entry in scored
+            if entry[1] > 0
+            and re.search(r"\d", str(entry[3].get("text") or ""))
+            and PRIOR_PERIOD_MARKERS.search(str(entry[3].get("text") or ""))
+            and _matches_keywords(entry[3], keywords)
+        ),
+        key=lambda entry: (-entry[1], entry[2]),
+    )
+    for entry in prior_period[: min(2, limit)]:
+        selected[entry[2]] = entry
+    topical = sorted(scored, key=lambda entry: (-entry[1], entry[2]))
+    for entry in topical:
+        if len(selected) >= min(limit, max(2, limit // 3)):
+            break
+        if entry[1] > 0 and _matches_keywords(entry[3], keywords):
+            selected[entry[2]] = entry
+    for entry in ranked:
+        if len(selected) >= limit:
+            break
+        if entry[0] > 0:
+            selected[entry[2]] = entry
     if selected:
-        return selected
+        return [entry[3] for entry in sorted(selected.values(), key=lambda entry: (-entry[0], entry[2]))]
     return evidence[: min(limit, 3)]
 
 
-def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...]) -> int:
+def _matches_keywords(item: dict[str, Any], keywords: tuple[str, ...]) -> bool:
+    lowered = str(item.get("text") or "").lower()
+    return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...], *, include_context: bool = True) -> int:
     text = str(item.get("text") or "")
     lowered = text.lower()
     score = 0
@@ -389,7 +418,7 @@ def _evidence_score(item: dict[str, Any], keywords: tuple[str, ...]) -> int:
         score += 2
     if any(marker in lowered for marker in ("risk", "gap", "fail", "critical", "blocker", "риск", "нет ", "не ")):
         score += 2
-    adjusted_score = score + (decision_context_score(text) if keyword_hits else 0)
+    adjusted_score = score + (decision_context_score(text) if keyword_hits and include_context else 0)
     return max(1, adjusted_score) if score > 0 else adjusted_score
 
 

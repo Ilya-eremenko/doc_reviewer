@@ -281,6 +281,46 @@ def test_context_pack_keeps_current_initiative_scope_without_metrics():
     assert any(item["text"] == scope for item in pack.for_role("ic-financial-auditor")["common_evidence"])
 
 
+def test_context_pack_retains_prior_period_metric_when_current_financial_pack_is_full():
+    current = [f"Current Defense: ARR is {index} million rubles." for index in range(30)]
+    baseline = "Previous ARR was 10 million rubles."
+    context = ICReviewContext(
+        document_title="OFP Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text="\n\n".join([*current, baseline]),
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Compare ARR with the previous period.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    financial = build_ic_review_context_pack(context).for_role("ic-financial-auditor")["role_evidence"]
+
+    assert len(financial) == 24
+    assert any(item["text"] == baseline for item in financial)
+
+
+def test_context_pack_retains_role_fact_when_current_review_headings_fill_pack():
+    generic = [f"Current Review: governance section {index} is discussed." for index in range(30)]
+    fact = "External customer feedback reported a failed integration."
+    context = ICReviewContext(
+        document_title="TnS Progress Review",
+        document_type="stream_review_2_plus",
+        parsed_document_text="\n\n".join([*generic, fact]),
+        main_analysis_verdict="need_evidence",
+        main_analysis_summary="Check external evidence.",
+        main_analysis_structured_output={},
+        main_analysis_detail_output=None,
+        output_language="ru",
+    )
+
+    web = build_ic_review_context_pack(context).for_role("ic-web-researcher")["role_evidence"]
+
+    assert len(web) == 24
+    assert any(item["text"] == fact for item in web)
+
+
 def test_role_and_synthesis_prompts_use_context_pack_instead_of_full_document_text():
     long_tail = "FULL_RAW_DOCUMENT_SENTINEL " * 220
     evidence = "Revenue retention is not proven by cohorts, but CAC payback is stated as 19 months."
