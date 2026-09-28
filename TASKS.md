@@ -21,6 +21,23 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Improve source-context selection without changing external skill rubrics:
+  keep the New Summary document excerpt within 16,000 characters while sampling
+  current defense, selected scenario, and scope evidence from the entire parsed
+  document; rank explicitly current/selected IC Review evidence above historical
+  alternatives without dropping prior-period comparisons. Keep source offsets,
+  fingerprints, and existing analysis outputs intact. Focused regression tests
+  cover late-document context, short documents, bounded scanning, and evidence
+  ordering without losing role-specific or prior-period facts. This
+  prioritizes source statements; it does not independently verify their truth.
+  PR #78 follow-up: preserve distinct selected-scenario and current-scope
+  windows even when both occur within one large scan bucket, and reserve one
+  scope window when selected-scenario candidates crowd the excerpt; added
+  regression coverage before the production merge. Historical selections with
+  trailing dates or retirement qualifiers now rank below the active scenario.
+  Full local worker suite: 274 pass, three unrelated PDF parser tests fail
+  because this local Python environment lacks `pdfplumber`; production CI
+  runs with the declared dependencies.
 - [~] Complete native Progress Review rollout from PR #77 (2026-09-28): fixed
   deferred uploads to validate their immutable skill snapshot after stage
   detection, before enqueueing inference; incompatible snapshots now fail the

@@ -38,6 +38,14 @@ from privacy.model_anonymization import (
 from providers.base import AnalysisProviderResult, ProviderRunRequest
 from providers.registry import get_provider_adapter
 from results.schema_validation import parse_json_output
+from skills.context_relevance import (
+    CONTEXT_CANDIDATE_MARKERS,
+    CURRENT_DECISION_MARKERS,
+    CURRENT_DEFENSE_MARKERS,
+    CURRENT_SCOPE_MARKERS,
+    SELECTED_SCENARIO_MARKERS,
+    decision_context_score,
+)
 from skills.result_synthesis_trace import (
     cancel_result_synthesis_step,
     complete_result_synthesis_step,
@@ -49,6 +57,9 @@ from skills.result_synthesis_trace import (
 LANGUAGES = ("ru", "en")
 MAX_OUTPUT_TOKENS = 12000
 SOURCE_DOCUMENT_MAX_CHARS = 16000
+SOURCE_DOCUMENT_HEAD_CHARS = 4500
+SOURCE_DOCUMENT_WINDOW_CHARS = 1050
+SOURCE_DOCUMENT_MAX_BUCKETS = 512
 SCHEMA_PATH = "contracts/schemas/new-summary.schema.json"
 SKILL_PATH = "skills/new-summary/SKILL.md"
 CHECKLIST_PATH = "contracts/new-summary-stage-checklists.json"
@@ -501,11 +512,116 @@ def _source_document_payload(document: Document) -> dict[str, Any]:
 def _bounded_source_text(value: str) -> str:
     if len(value) <= SOURCE_DOCUMENT_MAX_CHARS:
         return value
-    excerpt = value[:SOURCE_DOCUMENT_MAX_CHARS]
-    boundary = excerpt.rfind("\n")
-    if boundary > SOURCE_DOCUMENT_MAX_CHARS // 2:
-        excerpt = excerpt[:boundary]
-    return excerpt.rstrip() + "\n\n[TRUNCATED: source document excerpt was shortened for Summary generation.]"
+
+    head_end = _source_line_end(value, SOURCE_DOCUMENT_HEAD_CHARS)
+    head = value[:head_end].rstrip()
+    candidates: list[tuple[int, int, int]] = []
+    bucket_size = max(
+        SOURCE_DOCUMENT_WINDOW_CHARS,
+        (len(value) - head_end + SOURCE_DOCUMENT_MAX_BUCKETS - 1) // SOURCE_DOCUMENT_MAX_BUCKETS,
+    )
+    for bucket_start in range(head_end, len(value), bucket_size):
+        bucket_end = min(len(value), bucket_start + bucket_size)
+        best_defense: tuple[int, int, int] | None = None
+        best_context: tuple[int, int, int] | None = None
+        best_scope: tuple[int, int, int] | None = None
+        for scan_start in range(bucket_start, bucket_end, SOURCE_DOCUMENT_WINDOW_CHARS):
+            scan = value[scan_start:min(bucket_end, scan_start + SOURCE_DOCUMENT_WINDOW_CHARS)]
+            defense_match = CURRENT_DEFENSE_MARKERS.search(scan)
+            scope_match = CURRENT_SCOPE_MARKERS.search(scan)
+            context_match = (
+                SELECTED_SCENARIO_MARKERS.search(scan)
+                or CURRENT_DECISION_MARKERS.search(scan)
+                or CONTEXT_CANDIDATE_MARKERS.search(scan)
+            )
+            for match, kind in ((defense_match, "defense"), (context_match, "context"), (scope_match, "scope")):
+                if match is None:
+                    continue
+                match_start = scan_start + match.start()
+                match_end = scan_start + match.end()
+                start = max(head_end, match_start - 250)
+                line_start = value.rfind("\n", start, match_start)
+                if line_start >= start:
+                    start = line_start + 1
+                end = min(len(value), start + SOURCE_DOCUMENT_WINDOW_CHARS)
+                line_end = value.rfind("\n", match_end, end)
+                if line_end > match_end:
+                    end = line_end
+                candidate = (decision_context_score(value[start:end]), start, end)
+                if kind == "defense":
+                    best_defense = max(best_defense, candidate) if best_defense else candidate
+                elif kind == "context":
+                    best_context = max(best_context, candidate) if best_context else candidate
+                else:
+                    best_scope = max(best_scope, candidate) if best_scope else candidate
+        for candidate in (best_defense, best_context, best_scope):
+            if candidate is not None and candidate not in candidates:
+                candidates.append(candidate)
+
+    selected: list[tuple[int, int]] = []
+    remaining = SOURCE_DOCUMENT_MAX_CHARS - len(head) - 120
+    defense_candidates = [
+        candidate for candidate in candidates
+        if CURRENT_DEFENSE_MARKERS.search(value[candidate[1]:candidate[2]])
+    ]
+    if defense_candidates:
+        _score, start, end = max(defense_candidates, key=lambda item: (item[0], item[1]))
+        defense_cost = len(value[start:end].strip()) + 55
+        if defense_cost <= remaining:
+            selected.append((start, end))
+            remaining -= defense_cost
+    scope_candidates = sorted(
+        (candidate for candidate in candidates if CURRENT_SCOPE_MARKERS.search(value[candidate[1]:candidate[2]])),
+        key=lambda item: (item[0], item[1]),
+        reverse=True,
+    )
+    for _score, start, end in scope_candidates:
+        if any(start < prior_end and end > prior_start for prior_start, prior_end in selected):
+            continue
+        scope_cost = len(value[start:end].strip()) + 55
+        if scope_cost <= remaining:
+            selected.append((start, end))
+            remaining -= scope_cost
+            break
+    for _score, start, end in sorted(candidates, key=lambda item: (-item[0], item[1])):
+        if any(start < prior_end and end > prior_start for prior_start, prior_end in selected):
+            continue
+        fragment = value[start:end].strip()
+        cost = len(fragment) + 55
+        if cost > remaining:
+            continue
+        selected.append((start, end))
+        remaining -= cost
+
+    if not selected:
+        suffix = "\n\n[TRUNCATED: remaining source text was omitted.]"
+        excerpt = value[: SOURCE_DOCUMENT_MAX_CHARS - len(suffix)]
+        boundary = excerpt.rfind("\n")
+        if boundary > SOURCE_DOCUMENT_MAX_CHARS // 2:
+            excerpt = excerpt[:boundary]
+        return excerpt.rstrip() + suffix
+
+    ordered = sorted(selected)
+    fillers: list[tuple[int, int]] = []
+    cursor = head_end
+    for start, end in [*ordered, (len(value), len(value))]:
+        if cursor < start and remaining > 55:
+            fill_end = min(start, cursor + remaining - 55)
+            fragment = value[cursor:fill_end].strip()
+            if fragment:
+                fillers.append((cursor, fill_end))
+                remaining -= len(fragment) + 55
+        cursor = max(cursor, end)
+
+    parts = [head, "[SOURCE EXCERPTS FROM THE DOCUMENT; OTHER TEXT OMITTED]"]
+    for start, end in sorted([*selected, *fillers]):
+        parts.append(f"[Source chars {start}-{end}]\n{value[start:end].strip()}")
+    return "\n\n".join(parts)
+
+
+def _source_line_end(value: str, limit: int) -> int:
+    boundary = value.rfind("\n", 0, limit)
+    return boundary + 1 if boundary > limit // 2 else limit
 
 
 def _copy_jsonish(value: Any) -> Any:
@@ -524,6 +640,7 @@ def _generation_prompt(
             "Собери ровно один bilingual JSON-объект по схеме ниже.",
             "Первая версия в `versions[]` должна быть английской, вторая — русской.",
             "`document_stage` — текущая стадия инициативы для заголовка и контекста; `document_type` задаёт только набор правил проверки. Если они отличаются, не называй текущую стадию по `document_type`.",
+            "Фрагменты `source_document.parsed_text_excerpt` взяты из разных частей исходного документа и не являются полным текстом. Отличай явно выбранный текущий сценарий и фокус инициативы от старых, расчётных и альтернативных вариантов; при неразрешённом противоречии не угадывай, какой вариант действует.",
             "Если в источниках нет Traction Summary с числами, не выдумывай значения: используй один период `Not provided`/`Не указано`, одну строку и пустые значения.",
             "Не добавляй Markdown вокруг JSON. Не добавляй пояснения вне JSON.",
             "## JSON Schema",
