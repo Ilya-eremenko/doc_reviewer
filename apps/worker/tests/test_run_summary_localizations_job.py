@@ -104,6 +104,34 @@ def test_new_summary_source_excerpt_prioritizes_selected_qualified_scenario():
     assert "Выбранный базовый сценарий" in excerpt
 
 
+def test_new_summary_source_excerpt_keeps_later_selection_within_large_bucket():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Neutral appendix text.\n" * 300
+        + "Previous selected scenario: Bank A was considered.\n"
+        + "Neutral appendix text.\n" * 50
+        + "Selected base scenario: Bank B is the active LTM partner.\n"
+        + "Neutral appendix text.\n" * 100000
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
+    assert "Selected base scenario: Bank B" in excerpt
+
+
+def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
+    source = (
+        "Executive Summary: case overview.\n"
+        + "Selected scenario: unconfirmed option.\n" * 400
+        + "Текущий охват: защита касается только TnS.\n"
+    )
+
+    excerpt = new_summary_generation._bounded_source_text(source)
+
+    assert "Текущий охват: защита касается только TnS" in excerpt
+
+
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
     source = "General background without decision markers.\n" * 1000
 

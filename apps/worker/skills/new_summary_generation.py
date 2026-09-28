@@ -520,30 +520,38 @@ def _bounded_source_text(value: str) -> str:
         (len(value) - head_end + SOURCE_DOCUMENT_MAX_BUCKETS - 1) // SOURCE_DOCUMENT_MAX_BUCKETS,
     )
     for bucket_start in range(head_end, len(value), bucket_size):
-        bucket = value[bucket_start:bucket_start + bucket_size]
-        matches = (
-            CURRENT_DEFENSE_MARKERS.search(bucket),
-            SELECTED_SCENARIO_MARKERS.search(bucket),
-            CURRENT_DECISION_MARKERS.search(bucket),
-            CONTEXT_CANDIDATE_MARKERS.search(bucket),
-        )
-        seen_positions: set[int] = set()
-        for match in matches:
-            if match is None or match.start() in seen_positions:
-                continue
-            seen_positions.add(match.start())
-            match_start = bucket_start + match.start()
-            match_end = bucket_start + match.end()
-            start = max(head_end, match_start - 250)
-            line_start = value.rfind("\n", start, match_start)
-            if line_start >= start:
-                start = line_start + 1
-            end = min(len(value), start + SOURCE_DOCUMENT_WINDOW_CHARS)
-            line_end = value.rfind("\n", match_end, end)
-            if line_end > match_end:
-                end = line_end
-            score = decision_context_score(value[start:end])
-            candidates.append((score, start, end))
+        bucket_end = min(len(value), bucket_start + bucket_size)
+        best_defense: tuple[int, int, int] | None = None
+        best_context: tuple[int, int, int] | None = None
+        for scan_start in range(bucket_start, bucket_end, SOURCE_DOCUMENT_WINDOW_CHARS):
+            scan = value[scan_start:min(bucket_end, scan_start + SOURCE_DOCUMENT_WINDOW_CHARS)]
+            defense_match = CURRENT_DEFENSE_MARKERS.search(scan)
+            context_match = (
+                SELECTED_SCENARIO_MARKERS.search(scan)
+                or CURRENT_DECISION_MARKERS.search(scan)
+                or CONTEXT_CANDIDATE_MARKERS.search(scan)
+            )
+            for match, is_defense in ((defense_match, True), (context_match, False)):
+                if match is None:
+                    continue
+                match_start = scan_start + match.start()
+                match_end = scan_start + match.end()
+                start = max(head_end, match_start - 250)
+                line_start = value.rfind("\n", start, match_start)
+                if line_start >= start:
+                    start = line_start + 1
+                end = min(len(value), start + SOURCE_DOCUMENT_WINDOW_CHARS)
+                line_end = value.rfind("\n", match_end, end)
+                if line_end > match_end:
+                    end = line_end
+                candidate = (decision_context_score(value[start:end]), start, end)
+                if is_defense:
+                    best_defense = max(best_defense, candidate) if best_defense else candidate
+                else:
+                    best_context = max(best_context, candidate) if best_context else candidate
+        for candidate in (best_defense, best_context):
+            if candidate is not None and candidate not in candidates[-1:]:
+                candidates.append(candidate)
 
     selected: list[tuple[int, int]] = []
     remaining = SOURCE_DOCUMENT_MAX_CHARS - len(head) - 120

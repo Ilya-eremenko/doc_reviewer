@@ -8,7 +8,7 @@ CURRENT_DECISION_MARKERS = re.compile(
     r"|\b(?:selected|chosen|approved|committed|updated|latest)\s+"
     r"(?:scenario|case|plan|ltm|bank|partner|scope|focus)\b"
     r"|\b(?:текущ\w*|выбран\w*|утвержд\w*|актуальн\w*|действующ\w*)\s+"
-    r"(?:защит\w*|гейт\w*|ревью|сценар\w*|план\w*|банк\w*|партн\w*|фокус\w*|вертикал\w*)",
+    r"(?:защит\w*|гейт\w*|ревью|сценар\w*|план\w*|банк\w*|партн\w*|фокус\w*|охват\w*|вертикал\w*)",
     re.IGNORECASE,
 )
 CURRENT_DEFENSE_MARKERS = re.compile(
@@ -18,7 +18,7 @@ CURRENT_DEFENSE_MARKERS = re.compile(
 )
 CONTEXT_TOPICS = re.compile(
     r"\b(?:ltm|scenario|bank|partner|vertical|focus|scope|current gate|current defense)\b"
-    r"|\b(?:сценар\w*|банк\w*|партн\w*|вертикал\w*|фокус\w*|защит\w*)",
+    r"|\b(?:сценар\w*|банк\w*|партн\w*|вертикал\w*|фокус\w*|охват\w*|защит\w*)",
     re.IGNORECASE,
 )
 NON_CURRENT_ALTERNATIVE_MARKERS = re.compile(
@@ -37,7 +37,7 @@ SELECTED_SCENARIO_MARKERS = re.compile(
 )
 CONTEXT_CANDIDATE_MARKERS = re.compile(
     r"\b(?:current|selected|chosen|approved|committed|updated|latest|ltm|scenario|bank|partner|vertical|focus|scope)\b"
-    r"|\b(?:текущ\w*|выбран\w*|утвержд\w*|актуальн\w*|действующ\w*|сценар\w*|банк\w*|партн\w*|вертикал\w*|фокус\w*)",
+    r"|\b(?:текущ\w*|выбран\w*|утвержд\w*|актуальн\w*|действующ\w*|сценар\w*|банк\w*|партн\w*|вертикал\w*|фокус\w*|охват\w*)",
     re.IGNORECASE,
 )
 
