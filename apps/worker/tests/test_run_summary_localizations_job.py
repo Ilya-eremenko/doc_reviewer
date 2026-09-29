@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -387,16 +388,24 @@ def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsup
         output["result"] = result
         analysis.structured_output = output
         report = _new_summary_report_payload(
-            ru_context="Неподтверждённая выручка 999.", en_context="Unsupported revenue is 999."
+            ru_context="Неподтверждённая выручка 999.", en_context="Revenue is 86."
         )
         check_run.run_parameters = {"new_summary_mock_provider_result": {
             "structured_text": json.dumps(report, ensure_ascii=False), "raw_output": "raw provider output", "latency_ms": 1,
         }}
+        document = db.get(Document, analysis.document_id)
+        document.parsed_text = "Current plan: Revenue is 86."
+        db.commit()
+        source, source_text, source_hash = new_summary_generation.build_new_summary_source_snapshot(
+            session=db, analysis=analysis, check_run=check_run,
+        )
+        document.parsed_text = "Reparsed source: revenue is 999."
+        document.file_hash_sha256 = "b" * 64
         db.commit()
 
         new_summary_generation.generate_and_persist_new_summary_report(
             session=db, analysis=analysis, check_run=check_run,
-            source_payload=new_summary_generation.build_new_summary_source(session=db, analysis=analysis, check_run=check_run),
+            source_payload=source, source_text_snapshot=source_text, source_file_sha256_snapshot=source_hash,
             provider=Provider.OPENAI_COMPATIBLE, model="gpt-test", api_key="sk-test", base_url=None,
         )
 
@@ -404,9 +413,12 @@ def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsup
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert "999" not in state["ru"]["payload"]["context"]
+        assert state["en"]["payload"]["context"] == "Revenue is 86."
         step = db.query(AnalysisCheckStep).filter_by(check_run_id=check_run.id, step_name="new_summary_bilingual").one()
         ledger = next(item["ledger"] for item in step.artifacts if item.get("key") == "new_summary_numeric_evidence")
         assert ledger["suppressed"]
+        assert ledger["parsed_text_sha256"] == hashlib.sha256(source_text.encode()).hexdigest()
+        assert ledger["source_file_sha256"] == "a" * 64
         assert step.raw_output == "raw provider output"
     finally:
         db.close()

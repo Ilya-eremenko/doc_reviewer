@@ -2873,3 +2873,7 @@ Exit criteria:
   A further review found missing spelled-out cardinal words (e.g. twenty /
   двадцать); the conservative numeric filter now includes common EN/RU
   cardinal forms through the hundreds as well as quantitative modifiers.
+  Source grounding now uses the immutable parsed-text/file-hash snapshot read
+  together with the prompt input, so a concurrent document reparse cannot
+  change the evidence base or fail the save step. A regression test reparses
+  the document between prompt preparation and result persistence.

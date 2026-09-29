@@ -83,6 +83,8 @@ def generate_and_persist_new_summary_report(
     analysis: Analysis,
     check_run: AnalysisCheckRun,
     source_payload: dict[str, Any],
+    source_text_snapshot: str,
+    source_file_sha256_snapshot: str,
     provider: Provider,
     model: str,
     api_key: str | None,
@@ -257,13 +259,10 @@ def generate_and_persist_new_summary_report(
             return {}
         mark_new_summary_progress(analysis=analysis, revision=revision, stage="saving")
         session.commit()
-        document = session.get(Document, analysis.document_id)
-        if document is None or not isinstance(document.parsed_text, str):
-            raise ValueError("new_summary_source_document_missing")
         payload, evidence_ledger = ground_new_summary_numbers(
             report=payload,
-            source_text=document.parsed_text,
-            source_file_sha256=document.file_hash_sha256 or "",
+            source_text=source_text_snapshot,
+            source_file_sha256=source_file_sha256_snapshot,
             source_tables=source_payload.get("source_traction_tables") or [],
             source_checklist=(source_payload.get("gate_challenger") or {}).get("stage_checklist") or [],
             response_schema=response_schema,
@@ -352,6 +351,18 @@ def build_new_summary_source(
     analysis: Analysis,
     check_run: AnalysisCheckRun,
 ) -> dict[str, Any]:
+    source, _text, _file_hash = build_new_summary_source_snapshot(
+        session=session, analysis=analysis, check_run=check_run,
+    )
+    return source
+
+
+def build_new_summary_source_snapshot(
+    *,
+    session: Session,
+    analysis: Analysis,
+    check_run: AnalysisCheckRun,
+) -> tuple[dict[str, Any], str, str]:
     document = session.get(Document, analysis.document_id)
     if document is None:
         raise ValueError("source_document_missing")
@@ -360,7 +371,7 @@ def build_new_summary_source(
     if stage is None:
         raise ValueError(f"unsupported_new_summary_stage:{document_type}")
     stage = progress_review_display_stage(document.parsed_text, document_type, title=document.title) or stage
-    return {
+    source = {
         "initiative_title": _initiative_title(analysis=analysis, document=document),
         "document_stage": stage,
         "document_type": document_type,
@@ -370,6 +381,7 @@ def build_new_summary_source(
         "gate_challenger_detail": _latest_detail_source(session=session, analysis=analysis),
         "ic_review": _ic_review_source(check_run.structured_output),
     }
+    return source, document.parsed_text if isinstance(document.parsed_text, str) else "", document.file_hash_sha256 or ""
 
 
 def new_summary_source_fingerprint(source_payload: dict[str, Any]) -> str:

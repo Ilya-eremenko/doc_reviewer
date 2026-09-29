@@ -33,7 +33,7 @@ from skills.summary_localization import (
 )
 from skills.new_summary_generation import (
     LANGUAGES as NEW_SUMMARY_LANGUAGES,
-    build_new_summary_source,
+    build_new_summary_source_snapshot,
     generate_and_persist_new_summary_report,
     new_summary_source_fingerprint,
     public_new_summary_error_message,
@@ -165,7 +165,7 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                         "phase": "preparing_sources",
                     },
                 )
-                new_summary_source = build_new_summary_source(
+                new_summary_source, source_text_snapshot, source_file_sha256_snapshot = build_new_summary_source_snapshot(
                     session=session,
                     analysis=analysis,
                     check_run=check_run,
@@ -211,6 +211,8 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                             analysis=analysis,
                             check_run=check_run,
                             source_payload=new_summary_source,
+                            source_text_snapshot=source_text_snapshot,
+                            source_file_sha256_snapshot=source_file_sha256_snapshot,
                             provider=provider,
                             model=model,
                             api_key=api_key,
