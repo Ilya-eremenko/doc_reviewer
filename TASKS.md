@@ -2848,3 +2848,18 @@ Exit criteria:
   horizons remain separate. Gate 3 and Progress Review required-element order
   follows the skill. Focused worker/API tests pass; production behavior still
   requires verification after merge.
+- 2026-09-29: After PR #81, New Summary accepts up to 100,000 characters of
+  parsed source text (still prioritizing current-defense/scenario excerpts).
+  Newly generated RU/EN reports remove numeric prose without a unique exact
+  quote in a non-retired source line, and do not publish model-authored traction
+  numbers without a hash-checked parsed table. The selected table's page,
+  block, header, source row/column, and value hash are kept in an internal
+  synthesis-step evidence ledger; ties between equally ranked source tables
+  are treated as ambiguous and hidden. Existing reports are not rewritten.
+  This is deliberately a conservative first stage, not semantic proof of
+  qualitative claims or workbook-derived formulas. Focused worker/API tests
+  pass; the full worker suite still has three unrelated PDF parser failures
+  because the local Python environment lacks optional `pdfplumber`.
+  The complete API suite passes with its expected Redis URL set (267 passed);
+  the first local run used a different Redis URL and failed only two URL
+  assertion tests.

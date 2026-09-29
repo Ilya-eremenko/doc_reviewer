@@ -46,6 +46,7 @@ from skills.context_relevance import (
     SELECTED_SCENARIO_MARKERS,
     decision_context_score,
 )
+from skills.new_summary_evidence import ground_new_summary_numbers
 from skills.result_synthesis_trace import (
     cancel_result_synthesis_step,
     complete_result_synthesis_step,
@@ -57,7 +58,7 @@ from skills.traction_tables import display_traction_tables, source_traction_tabl
 
 LANGUAGES = ("ru", "en")
 MAX_OUTPUT_TOKENS = 12000
-SOURCE_DOCUMENT_MAX_CHARS = 16000
+SOURCE_DOCUMENT_MAX_CHARS = 100000
 SOURCE_DOCUMENT_HEAD_CHARS = 4500
 SOURCE_DOCUMENT_WINDOW_CHARS = 1050
 SOURCE_DOCUMENT_MAX_BUCKETS = 512
@@ -256,6 +257,22 @@ def generate_and_persist_new_summary_report(
             return {}
         mark_new_summary_progress(analysis=analysis, revision=revision, stage="saving")
         session.commit()
+        document = session.get(Document, analysis.document_id)
+        if document is None or not isinstance(document.parsed_text, str):
+            raise ValueError("new_summary_source_document_missing")
+        payload, evidence_ledger = ground_new_summary_numbers(
+            report=payload,
+            source_text=document.parsed_text,
+            source_file_sha256=document.file_hash_sha256 or "",
+            source_tables=source_payload.get("source_traction_tables") or [],
+            source_checklist=(source_payload.get("gate_challenger") or {}).get("stage_checklist") or [],
+            response_schema=response_schema,
+        )
+        step.artifacts = [
+            *(step.artifacts or []),
+            {"key": "new_summary_numeric_evidence", "kind": "internal_evidence", "internal_only": True,
+             "ledger": evidence_ledger},
+        ]
         variants = _split_bilingual_report(payload)
         source_fingerprint = new_summary_source_fingerprint(source_payload)
         for language in LANGUAGES:
@@ -275,6 +292,8 @@ def generate_and_persist_new_summary_report(
                 "attempts": _provider_attempt_diagnostics(provider_results),
                 "ru_payload_keys": sorted(variants["ru"].keys()),
                 "en_payload_keys": sorted(variants["en"].keys()),
+                "numeric_evidence_count": len(evidence_ledger["verified"]),
+                "suppressed_numeric_claim_count": len(evidence_ledger["suppressed"]),
             },
         )
         complete_result_synthesis_step(

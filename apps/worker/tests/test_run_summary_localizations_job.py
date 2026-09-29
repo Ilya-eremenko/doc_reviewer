@@ -24,6 +24,7 @@ from providers.base import AnalysisProviderResult
 from skills import new_summary_generation
 from skills import summary_localization
 from skills.context_relevance import decision_context_score
+from skills.new_summary_evidence import ground_new_summary_numbers
 
 
 def test_context_priority_does_not_penalize_selected_plan_for_separate_alternative():
@@ -48,13 +49,13 @@ def test_context_priority_downranks_dated_or_retired_selected_scenarios():
 
 
 def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initial_limit():
-    beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 700
+    beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 3500
     historical = "Previous scenario: Bank A was considered for the original plan.\n"
     current = (
         "Current Defense: Progress Review.\n"
         "Selected LTM scenario: Bank B is the active partner; the maximum scenario is only illustrative.\n"
     )
-    source = beginning + historical + "Unrelated appendix material.\n" * 550 + current
+    source = beginning + historical + "Unrelated appendix material.\n" * 2500 + current
 
     excerpt = new_summary_generation._bounded_source_text(source)
 
@@ -201,12 +202,134 @@ def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
 
 
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
-    source = "General background without decision markers.\n" * 1000
+    source = "General background without decision markers.\n" * 4000
 
     excerpt = new_summary_generation._bounded_source_text(source)
 
     assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
     assert excerpt.endswith("[TRUNCATED: remaining source text was omitted.]")
+
+
+def test_numeric_summary_claims_require_a_unique_current_source_quote():
+    source = (
+        "Current plan: Incremental revenue is 86.\n"
+        "Текущий план: Инкрементальная выручка составляет 86.\n"
+        "Previous scenario: Revenue was 100.\n"
+    )
+    report = _new_summary_report_payload(
+        en_context="Incremental revenue is 86. Unsupported revenue is 999.",
+        ru_context="Инкрементальная выручка составляет 86. Неподтверждённая выручка 999.",
+    )
+    report["versions"][0]["critical_problems"] = ["The gap is 999%."]
+    report["versions"][0]["required_elements"][0]["evidence"] = "Reached 999 customers."
+    report["versions"][0]["other"] = ["Revenue was 100."]
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text=source, source_file_sha256="a" * 64,
+        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
+    )
+
+    assert clean["versions"][0]["context"] == "Incremental revenue is 86."
+    assert clean["versions"][1]["context"] == "Инкрементальная выручка составляет 86."
+    assert clean["versions"][0]["critical_problems"] == []
+    assert clean["versions"][0]["other"] == []
+    assert "999" not in clean["versions"][0]["required_elements"][0]["evidence"]
+    assert len([item for item in ledger["verified"] if item["kind"] == "exact_source_quote"]) == 2
+    assert ledger["source_file_sha256"] == "a" * 64
+
+
+def test_numeric_traction_uses_parser_cell_coordinates_not_model_table():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    for version in report["versions"]:
+        version["traction_summary"] = {
+            "metric_label": "Model revenue", "periods": ["2026"],
+            "rows": [{"label": "Wrong", "values": ["999"]}],
+        }
+    table = {
+        "metric": "revenue", "metric_label": "Revenue", "unit": "млн ₽",
+        "periods": ["2026", "Total"], "source_page": 5,
+        "source_block_id": "b42", "source_block_hash": "f" * 64,
+        "rows": [{"label": "Total incremental output uplifts", "values": ["86", "86"],
+                  "source_row_index": 3, "source_header_row_index": 2,
+                  "source_column_indices": [1, 2]}],
+    }
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Increment P&L: 2026, Total. Revenue: 86, 86.",
+        source_file_sha256="a" * 64, source_tables=[table],
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+
+    assert clean["versions"][0]["traction_summary"]["tables"][0]["rows"][0]["values"] == ["86", "86"]
+    cells = [item for item in ledger["verified"] if item["kind"] == "parsed_table_cell"]
+    assert len(cells) == 4  # two cells in each language
+    assert cells[0]["source_block_id"] == "b42"
+    assert cells[0]["source_row_index"] == 3
+    assert cells[0]["source_column_index"] == 1
+
+
+def test_numeric_table_without_parser_coordinates_is_not_published():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    table = {"metric": "revenue", "periods": ["2026"], "rows": [{"values": ["999"]}]}
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Source", source_file_sha256="a" * 64,
+        source_tables=[table], response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert clean["versions"][0]["traction_summary"] == {"tables": []}
+    assert any(item["reason"] == "table_cell_coordinates_missing" for item in ledger["suppressed"])
+
+
+def test_fraction_without_detail_uses_gate_checklist_status_instead_of_model_count():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    for version in report["versions"]:
+        version["required_elements"][0]["status"] = "2/3"
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Source", source_file_sha256="a" * 64,
+        source_tables=[], source_checklist=[{"id": "gate2_hypothesis_results", "status": "yellow"}],
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert clean["versions"][0]["required_elements"][0]["status"] == "частично подтверждено"
+    assert any(item["reason"] == "fraction_without_verifiable_detail_count" for item in ledger["suppressed"])
+
+
+def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsupported_claim(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
+    get_settings.cache_clear()
+    db = _session()
+    try:
+        analysis, check_run = _seed(db)
+        output = dict(analysis.structured_output)
+        result = dict(output["result"])
+        result["new_summary"] = {
+            "version": 2, "generation_mode": "new_summary_skill", "source_revision": str(check_run.id),
+            "ru": {"status": "queued", "payload": None, "error_message": None},
+            "en": {"status": "queued", "payload": None, "error_message": None},
+        }
+        output["result"] = result
+        analysis.structured_output = output
+        report = _new_summary_report_payload(
+            ru_context="Неподтверждённая выручка 999.", en_context="Unsupported revenue is 999."
+        )
+        check_run.run_parameters = {"new_summary_mock_provider_result": {
+            "structured_text": json.dumps(report, ensure_ascii=False), "raw_output": "raw provider output", "latency_ms": 1,
+        }}
+        db.commit()
+
+        new_summary_generation.generate_and_persist_new_summary_report(
+            session=db, analysis=analysis, check_run=check_run,
+            source_payload=new_summary_generation.build_new_summary_source(session=db, analysis=analysis, check_run=check_run),
+            provider=Provider.OPENAI_COMPATIBLE, model="gpt-test", api_key="sk-test", base_url=None,
+        )
+
+        db.refresh(analysis)
+        state = analysis.structured_output["result"]["new_summary"]
+        assert state["ru"]["status"] == "completed", state["ru"]
+        assert "999" not in state["ru"]["payload"]["context"]
+        step = db.query(AnalysisCheckStep).filter_by(check_run_id=check_run.id, step_name="new_summary_bilingual").one()
+        ledger = next(item["ledger"] for item in step.artifacts if item.get("key") == "new_summary_numeric_evidence")
+        assert ledger["suppressed"]
+        assert step.raw_output == "raw provider output"
+    finally:
+        db.close()
+        get_settings.cache_clear()
 
 
 def test_legacy_translation_job_is_skipped_without_enabling_language_variants(tmp_path, monkeypatch):
