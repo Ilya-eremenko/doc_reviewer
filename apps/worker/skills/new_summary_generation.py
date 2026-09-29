@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import traceback
 from copy import deepcopy
 from functools import lru_cache
@@ -17,8 +16,6 @@ from app.logging import worker_logger
 from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun
 from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
-from app.core.config import get_settings
-from app.storage.local import LocalDocumentStorage
 from app.services.document_type_detector import progress_review_display_stage
 from app.services.new_summaries import (
     NEW_SUMMARY_GENERATION_MODE,
@@ -49,7 +46,6 @@ from skills.context_relevance import (
     SELECTED_SCENARIO_MARKERS,
     decision_context_score,
 )
-from skills.new_summary_evidence import ground_new_summary_numbers
 from skills.result_synthesis_trace import (
     cancel_result_synthesis_step,
     complete_result_synthesis_step,
@@ -61,8 +57,7 @@ from skills.traction_tables import display_traction_tables, source_traction_tabl
 
 LANGUAGES = ("ru", "en")
 MAX_OUTPUT_TOKENS = 12000
-SOURCE_DOCUMENT_MAX_CHARS = 100000
-SOURCE_DOCUMENT_FALLBACK_CHARS = 16000
+SOURCE_DOCUMENT_MAX_CHARS = 16000
 SOURCE_DOCUMENT_HEAD_CHARS = 4500
 SOURCE_DOCUMENT_WINDOW_CHARS = 1050
 SOURCE_DOCUMENT_MAX_BUCKETS = 512
@@ -87,8 +82,6 @@ def generate_and_persist_new_summary_report(
     analysis: Analysis,
     check_run: AnalysisCheckRun,
     source_payload: dict[str, Any],
-    source_text_snapshot: str,
-    source_file_sha256_snapshot: str,
     provider: Provider,
     model: str,
     api_key: str | None,
@@ -171,23 +164,6 @@ def generate_and_persist_new_summary_report(
 
     provider_results: list[AnalysisProviderResult] = []
     try:
-        storage = LocalDocumentStorage(get_settings().storage_root)
-        source_snapshot_path = storage.save_summary_source_snapshot(
-            step_id=step.id, parsed_text=source_text_snapshot,
-        )
-        source_tables = source_payload.get("source_traction_tables") or []
-        table_snapshot_path = storage.save_summary_table_snapshot(step_id=step.id, tables=source_tables)
-        step.artifacts = [
-            *(step.artifacts or []),
-            {"key": "new_summary_source_snapshot", "kind": "internal_evidence", "internal_only": True,
-             "path": str(source_snapshot_path),
-             "parsed_text_sha256": hashlib.sha256(source_text_snapshot.encode("utf-8")).hexdigest(),
-             "source_file_sha256": source_file_sha256_snapshot},
-            {"key": "new_summary_table_snapshot", "kind": "internal_evidence", "internal_only": True,
-             "path": str(table_snapshot_path),
-             "tables_sha256": hashlib.sha256(json.dumps(source_tables, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()},
-        ]
-        session.commit()
         _log_new_summary_phase("generating", diagnostic_context)
         payload = _run_generation_with_json_retry(
             provider=provider,
@@ -280,21 +256,6 @@ def generate_and_persist_new_summary_report(
             return {}
         mark_new_summary_progress(analysis=analysis, revision=revision, stage="saving")
         session.commit()
-        payload, evidence_ledger = ground_new_summary_numbers(
-            report=payload,
-            source_text=source_text_snapshot,
-            source_file_sha256=source_file_sha256_snapshot,
-            source_tables=source_payload.get("source_traction_tables") or [],
-            source_checklist=(source_payload.get("gate_challenger") or {}).get("stage_checklist") or [],
-            response_schema=response_schema,
-        )
-        evidence_ledger["source_snapshot_path"] = str(source_snapshot_path)
-        evidence_ledger["source_table_snapshot_path"] = str(table_snapshot_path)
-        step.artifacts = [
-            *(step.artifacts or []),
-            {"key": "new_summary_numeric_evidence", "kind": "internal_evidence", "internal_only": True,
-             "ledger": evidence_ledger},
-        ]
         variants = _split_bilingual_report(payload)
         source_fingerprint = new_summary_source_fingerprint(source_payload)
         for language in LANGUAGES:
@@ -314,8 +275,6 @@ def generate_and_persist_new_summary_report(
                 "attempts": _provider_attempt_diagnostics(provider_results),
                 "ru_payload_keys": sorted(variants["ru"].keys()),
                 "en_payload_keys": sorted(variants["en"].keys()),
-                "numeric_evidence_count": len(evidence_ledger["verified"]),
-                "suppressed_numeric_claim_count": len(evidence_ledger["suppressed"]),
             },
         )
         complete_result_synthesis_step(
@@ -374,19 +333,6 @@ def build_new_summary_source(
     analysis: Analysis,
     check_run: AnalysisCheckRun,
 ) -> dict[str, Any]:
-    source, _text, _file_hash = build_new_summary_source_snapshot(
-        session=session, analysis=analysis, check_run=check_run,
-    )
-    return source
-
-
-def build_new_summary_source_snapshot(
-    *,
-    session: Session,
-    analysis: Analysis,
-    check_run: AnalysisCheckRun,
-    model: str | None = None,
-) -> tuple[dict[str, Any], str, str]:
     document = session.get(Document, analysis.document_id)
     if document is None:
         raise ValueError("source_document_missing")
@@ -395,17 +341,16 @@ def build_new_summary_source_snapshot(
     if stage is None:
         raise ValueError(f"unsupported_new_summary_stage:{document_type}")
     stage = progress_review_display_stage(document.parsed_text, document_type, title=document.title) or stage
-    source = {
+    return {
         "initiative_title": _initiative_title(analysis=analysis, document=document),
         "document_stage": stage,
         "document_type": document_type,
-        "source_document": _source_document_payload(document, limit_chars=_source_limit_for_model(model)),
+        "source_document": _source_document_payload(document),
         "source_traction_tables": source_traction_tables(document),
         "gate_challenger": _gate_challenger_source(analysis.structured_output),
         "gate_challenger_detail": _latest_detail_source(session=session, analysis=analysis),
         "ic_review": _ic_review_source(check_run.structured_output),
     }
-    return source, document.parsed_text if isinstance(document.parsed_text, str) else "", document.file_hash_sha256 or ""
 
 
 def new_summary_source_fingerprint(source_payload: dict[str, Any]) -> str:
@@ -555,26 +500,19 @@ def _ic_review_source(value: dict[str, Any] | None) -> dict[str, Any]:
     return {key: _copy_jsonish(value.get(key)) for key in keys if key in value}
 
 
-def _source_document_payload(document: Document, *, limit_chars: int = SOURCE_DOCUMENT_MAX_CHARS) -> dict[str, Any]:
+def _source_document_payload(document: Document) -> dict[str, Any]:
     parsed_text = document.parsed_text.strip() if isinstance(document.parsed_text, str) else ""
     return {
         "title": document.title,
         "original_filename": document.original_filename,
         "detected_document_type": document.detected_document_type,
         "manual_document_type": document.manual_document_type,
-        "parsed_text_excerpt": _bounded_source_text(parsed_text, limit_chars=limit_chars),
+        "parsed_text_excerpt": _bounded_source_text(parsed_text),
     }
 
 
-def _source_limit_for_model(model: str | None) -> int:
-    if model is None or re.search(r"(?:claude-(?:opus|sonnet)-4|gpt-(?:4o|4\.1|5|6))", model, re.IGNORECASE):
-        return SOURCE_DOCUMENT_MAX_CHARS
-    return SOURCE_DOCUMENT_FALLBACK_CHARS
-
-
-def _bounded_source_text(value: str, *, limit_chars: int = SOURCE_DOCUMENT_MAX_CHARS) -> str:
-    max_chars = min(limit_chars, SOURCE_DOCUMENT_MAX_CHARS)
-    if len(value) <= max_chars:
+def _bounded_source_text(value: str) -> str:
+    if len(value) <= SOURCE_DOCUMENT_MAX_CHARS:
         return value
 
     head_end = _source_line_end(value, SOURCE_DOCUMENT_HEAD_CHARS)
@@ -623,7 +561,7 @@ def _bounded_source_text(value: str, *, limit_chars: int = SOURCE_DOCUMENT_MAX_C
                 candidates.append(candidate)
 
     selected: list[tuple[int, int]] = []
-    remaining = max_chars - len(head) - 120
+    remaining = SOURCE_DOCUMENT_MAX_CHARS - len(head) - 120
     defense_candidates = [
         candidate for candidate in candidates
         if CURRENT_DEFENSE_MARKERS.search(value[candidate[1]:candidate[2]])
@@ -659,9 +597,9 @@ def _bounded_source_text(value: str, *, limit_chars: int = SOURCE_DOCUMENT_MAX_C
 
     if not selected:
         suffix = "\n\n[TRUNCATED: remaining source text was omitted.]"
-        excerpt = value[: max_chars - len(suffix)]
+        excerpt = value[: SOURCE_DOCUMENT_MAX_CHARS - len(suffix)]
         boundary = excerpt.rfind("\n")
-        if boundary > max_chars // 2:
+        if boundary > SOURCE_DOCUMENT_MAX_CHARS // 2:
             excerpt = excerpt[:boundary]
         return excerpt.rstrip() + suffix
 
@@ -893,7 +831,9 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
     )
     normalized.setdefault("schema_version", "new-summary-v1")
     normalized.setdefault("language", "en")
-    normalized["title"] = f"AI Summary {_source_initiative_title(source_payload)}"
+    title = normalized.get("title")
+    if not isinstance(title, str) or not title.strip():
+        normalized["title"] = f"AI Summary {_source_initiative_title(source_payload)}"
 
     versions = normalized.get("versions")
     if not isinstance(versions, list):
