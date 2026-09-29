@@ -7,12 +7,24 @@ from typing import Any
 
 from jsonschema import validate
 
-from skills.context_relevance import decision_context_score
+from skills.context_relevance import (
+    CURRENT_DECISION_MARKERS,
+    NON_CURRENT_ALTERNATIVE_MARKERS,
+    decision_context_score,
+)
 from skills.traction_tables import display_traction_tables
 
 
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
 _STRUCTURAL_NUMBER = re.compile(r"\b(?:Gate|Гейт|Stream Review|Progress Review|FAQ|Appendix|Приложение)\s*\d+\+?\b", re.IGNORECASE)
+_QUANTIFIED_WORD = re.compile(
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|hundreds?|thousands?|millions?|billions?|"
+    r"doubled?|tripled?|quadrupled?|halved?|twice|threefold|tenfold|percent|percentage|dozens?|several|"
+    r"ноль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|"
+    r"сотн\w*|десятк\w*|тысяч\w*|миллион\w*|миллиард\w*|процент\w*|половин\w*|несколько|"
+    r"удво\w*|утро\w*|вдвое|втрое|двукрат\w*|трехкрат\w*)\b",
+    re.IGNORECASE,
+)
 _NARRATIVE_LISTS = ("confirmed", "insufficiently_confirmed", "critical_problems", "other")
 
 
@@ -30,6 +42,7 @@ def ground_new_summary_numbers(
     parsed_sha256 = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
     evidence: list[dict[str, Any]] = []
     suppressed: list[dict[str, str]] = []
+    evidence.append({"path": "title", "kind": "initiative_metadata", "source_file_sha256": source_file_sha256})
     for version_index, version in enumerate(result["versions"]):
         language = version["language"]
         prefix = f"versions[{version_index}]"
@@ -174,7 +187,7 @@ def _verify_numbered_quote(
     evidence: list[dict[str, Any]],
     suppressed: list[dict[str, str]],
 ) -> bool:
-    has_number = bool(re.search(r"\d", _STRUCTURAL_NUMBER.sub("", value)))
+    has_number = bool(re.search(r"\d", _STRUCTURAL_NUMBER.sub("", value)) or _QUANTIFIED_WORD.search(value))
     if not has_number and len(value.strip()) < 24:
         return True
     words = re.split(r"\s+", value.strip())
@@ -185,10 +198,7 @@ def _verify_numbered_quote(
     matches = list(pattern.finditer(source_text)) if words else []
     if len(matches) == 1:
         match = matches[0]
-        line_start = source_text.rfind("\n", 0, match.start()) + 1
-        line_end = source_text.find("\n", match.end())
-        context = source_text[line_start:line_end if line_end >= 0 else len(source_text)]
-        if decision_context_score(context) >= 0:
+        if _is_current_source_span(source_text, match.start(), match.end()):
             evidence.append({
                 "path": path,
                 "kind": "exact_source_quote",
@@ -201,3 +211,17 @@ def _verify_numbered_quote(
         suppressed.append({"path": path, "reason": "numeric_claim_without_unique_current_source_quote"})
         return False
     return True
+
+
+def _is_current_source_span(source_text: str, start: int, end: int) -> bool:
+    line_start = source_text.rfind("\n", 0, start) + 1
+    line_end = source_text.find("\n", end)
+    line = source_text[line_start:line_end if line_end >= 0 else len(source_text)]
+    if decision_context_score(line) < 0:
+        return False
+    if CURRENT_DECISION_MARKERS.search(line) and not NON_CURRENT_ALTERNATIVE_MARKERS.search(line):
+        return True
+    preceding = source_text[max(0, line_start - 500):line_start]
+    retired = list(NON_CURRENT_ALTERNATIVE_MARKERS.finditer(preceding))
+    current = list(CURRENT_DECISION_MARKERS.finditer(preceding))
+    return not retired or bool(current and current[-1].start() > retired[-1].start())

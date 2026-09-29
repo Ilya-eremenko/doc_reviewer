@@ -288,6 +288,41 @@ def test_numeric_quote_does_not_match_part_of_a_different_value():
     assert len(ledger["suppressed"]) == 2
 
 
+def test_numeric_quote_under_historical_heading_is_suppressed():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Revenue: 100")
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Historical plan\nRevenue: 100\n",
+        source_file_sha256="a" * 64, source_tables=[],
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert "100" not in clean["versions"][0]["context"]
+    assert any(item["reason"] == "numeric_claim_without_unique_current_source_quote" for item in ledger["suppressed"])
+
+
+def test_spelled_out_quantities_need_source_evidence_too():
+    report = _new_summary_report_payload(
+        ru_context="Выручка удвоилась. Конверсия выросла на сто пользователей.",
+        en_context="Revenue doubled. One hundred customers converted.",
+    )
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Current plan: Revenue doubled.\n",
+        source_file_sha256="a" * 64, source_tables=[],
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert clean["versions"][0]["context"] == "Revenue doubled."
+    assert "сто" not in clean["versions"][1]["context"]
+    assert len(ledger["suppressed"]) >= 3
+
+
+def test_generated_title_is_replaced_with_source_initiative_title():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    report["title"] = "AI Summary Revenue grows 999%"
+    normalized = new_summary_generation._normalize_generated_report_shell(
+        payload=report, source_payload={"initiative_title": "Auction", "document_stage": "Gate 2"},
+    )
+    assert normalized["title"] == "AI Summary Auction"
+
+
 def test_fraction_without_detail_uses_gate_checklist_status_instead_of_model_count():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
     for version in report["versions"]:

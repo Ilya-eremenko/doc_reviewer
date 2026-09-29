@@ -2863,3 +2863,6 @@ Exit criteria:
   The complete API suite passes with its expected Redis URL set (267 passed);
   the first local run used a different Redis URL and failed only two URL
   assertion tests.
+  PR #82 review hardening rejects values under historical/alternative headings,
+  treats common spelled-out quantities as numeric claims, and always derives
+  the report title from source initiative metadata rather than model text.

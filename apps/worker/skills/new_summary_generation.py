@@ -850,9 +850,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
     )
     normalized.setdefault("schema_version", "new-summary-v1")
     normalized.setdefault("language", "en")
-    title = normalized.get("title")
-    if not isinstance(title, str) or not title.strip():
-        normalized["title"] = f"AI Summary {_source_initiative_title(source_payload)}"
+    normalized["title"] = f"AI Summary {_source_initiative_title(source_payload)}"
 
     versions = normalized.get("versions")
     if not isinstance(versions, list):
