@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import traceback
 from copy import deepcopy
 from functools import lru_cache
@@ -16,6 +17,8 @@ from app.logging import worker_logger
 from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun
 from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
+from app.core.config import get_settings
+from app.storage.local import LocalDocumentStorage
 from app.services.document_type_detector import progress_review_display_stage
 from app.services.new_summaries import (
     NEW_SUMMARY_GENERATION_MODE,
@@ -59,6 +62,7 @@ from skills.traction_tables import display_traction_tables, source_traction_tabl
 LANGUAGES = ("ru", "en")
 MAX_OUTPUT_TOKENS = 12000
 SOURCE_DOCUMENT_MAX_CHARS = 100000
+SOURCE_DOCUMENT_FALLBACK_CHARS = 16000
 SOURCE_DOCUMENT_HEAD_CHARS = 4500
 SOURCE_DOCUMENT_WINDOW_CHARS = 1050
 SOURCE_DOCUMENT_MAX_BUCKETS = 512
@@ -167,6 +171,17 @@ def generate_and_persist_new_summary_report(
 
     provider_results: list[AnalysisProviderResult] = []
     try:
+        source_snapshot_path = LocalDocumentStorage(get_settings().storage_root).save_summary_source_snapshot(
+            step_id=step.id, parsed_text=source_text_snapshot,
+        )
+        step.artifacts = [
+            *(step.artifacts or []),
+            {"key": "new_summary_source_snapshot", "kind": "internal_evidence", "internal_only": True,
+             "path": str(source_snapshot_path),
+             "parsed_text_sha256": hashlib.sha256(source_text_snapshot.encode("utf-8")).hexdigest(),
+             "source_file_sha256": source_file_sha256_snapshot},
+        ]
+        session.commit()
         _log_new_summary_phase("generating", diagnostic_context)
         payload = _run_generation_with_json_retry(
             provider=provider,
@@ -267,6 +282,7 @@ def generate_and_persist_new_summary_report(
             source_checklist=(source_payload.get("gate_challenger") or {}).get("stage_checklist") or [],
             response_schema=response_schema,
         )
+        evidence_ledger["source_snapshot_path"] = str(source_snapshot_path)
         step.artifacts = [
             *(step.artifacts or []),
             {"key": "new_summary_numeric_evidence", "kind": "internal_evidence", "internal_only": True,
@@ -362,6 +378,7 @@ def build_new_summary_source_snapshot(
     session: Session,
     analysis: Analysis,
     check_run: AnalysisCheckRun,
+    model: str | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     document = session.get(Document, analysis.document_id)
     if document is None:
@@ -375,7 +392,7 @@ def build_new_summary_source_snapshot(
         "initiative_title": _initiative_title(analysis=analysis, document=document),
         "document_stage": stage,
         "document_type": document_type,
-        "source_document": _source_document_payload(document),
+        "source_document": _source_document_payload(document, limit_chars=_source_limit_for_model(model)),
         "source_traction_tables": source_traction_tables(document),
         "gate_challenger": _gate_challenger_source(analysis.structured_output),
         "gate_challenger_detail": _latest_detail_source(session=session, analysis=analysis),
@@ -531,19 +548,26 @@ def _ic_review_source(value: dict[str, Any] | None) -> dict[str, Any]:
     return {key: _copy_jsonish(value.get(key)) for key in keys if key in value}
 
 
-def _source_document_payload(document: Document) -> dict[str, Any]:
+def _source_document_payload(document: Document, *, limit_chars: int = SOURCE_DOCUMENT_MAX_CHARS) -> dict[str, Any]:
     parsed_text = document.parsed_text.strip() if isinstance(document.parsed_text, str) else ""
     return {
         "title": document.title,
         "original_filename": document.original_filename,
         "detected_document_type": document.detected_document_type,
         "manual_document_type": document.manual_document_type,
-        "parsed_text_excerpt": _bounded_source_text(parsed_text),
+        "parsed_text_excerpt": _bounded_source_text(parsed_text, limit_chars=limit_chars),
     }
 
 
-def _bounded_source_text(value: str) -> str:
-    if len(value) <= SOURCE_DOCUMENT_MAX_CHARS:
+def _source_limit_for_model(model: str | None) -> int:
+    if model is None or re.search(r"(?:claude-(?:opus|sonnet)-4|gpt-(?:4o|4\.1|5|6))", model, re.IGNORECASE):
+        return SOURCE_DOCUMENT_MAX_CHARS
+    return SOURCE_DOCUMENT_FALLBACK_CHARS
+
+
+def _bounded_source_text(value: str, *, limit_chars: int = SOURCE_DOCUMENT_MAX_CHARS) -> str:
+    max_chars = min(limit_chars, SOURCE_DOCUMENT_MAX_CHARS)
+    if len(value) <= max_chars:
         return value
 
     head_end = _source_line_end(value, SOURCE_DOCUMENT_HEAD_CHARS)
@@ -592,7 +616,7 @@ def _bounded_source_text(value: str) -> str:
                 candidates.append(candidate)
 
     selected: list[tuple[int, int]] = []
-    remaining = SOURCE_DOCUMENT_MAX_CHARS - len(head) - 120
+    remaining = max_chars - len(head) - 120
     defense_candidates = [
         candidate for candidate in candidates
         if CURRENT_DEFENSE_MARKERS.search(value[candidate[1]:candidate[2]])
@@ -628,9 +652,9 @@ def _bounded_source_text(value: str) -> str:
 
     if not selected:
         suffix = "\n\n[TRUNCATED: remaining source text was omitted.]"
-        excerpt = value[: SOURCE_DOCUMENT_MAX_CHARS - len(suffix)]
+        excerpt = value[: max_chars - len(suffix)]
         boundary = excerpt.rfind("\n")
-        if boundary > SOURCE_DOCUMENT_MAX_CHARS // 2:
+        if boundary > max_chars // 2:
             excerpt = excerpt[:boundary]
         return excerpt.rstrip() + suffix
 

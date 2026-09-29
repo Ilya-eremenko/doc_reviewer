@@ -211,6 +211,15 @@ def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
     assert excerpt.endswith("[TRUNCATED: remaining source text was omitted.]")
 
 
+def test_new_summary_source_limit_uses_model_profile():
+    assert new_summary_generation._source_limit_for_model("openai_compatible/anthropic/claude-opus-4.8") == 100000
+    assert new_summary_generation._source_limit_for_model("custom/small-model") == 16000
+    source = "Executive Summary.\n" + "Background.\n" * 12000 + "Current Defense: Gate 2.\n"
+    excerpt = new_summary_generation._bounded_source_text(source, limit_chars=16000)
+    assert len(excerpt) <= 16000
+    assert "Current Defense: Gate 2" in excerpt
+
+
 def test_numeric_summary_claims_require_a_unique_current_source_quote():
     source = (
         "Current plan: Incremental revenue is 86.\n"
@@ -416,9 +425,12 @@ def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsup
         assert state["en"]["payload"]["context"] == "Revenue is 86."
         step = db.query(AnalysisCheckStep).filter_by(check_run_id=check_run.id, step_name="new_summary_bilingual").one()
         ledger = next(item["ledger"] for item in step.artifacts if item.get("key") == "new_summary_numeric_evidence")
+        snapshot = next(item for item in step.artifacts if item.get("key") == "new_summary_source_snapshot")
         assert ledger["suppressed"]
         assert ledger["parsed_text_sha256"] == hashlib.sha256(source_text.encode()).hexdigest()
         assert ledger["source_file_sha256"] == "a" * 64
+        assert ledger["source_snapshot_path"] == snapshot["path"]
+        assert Path(snapshot["path"]).read_text(encoding="utf-8") == source_text
         assert step.raw_output == "raw provider output"
     finally:
         db.close()

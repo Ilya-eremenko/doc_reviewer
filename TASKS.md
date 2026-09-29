@@ -2877,3 +2877,8 @@ Exit criteria:
   together with the prompt input, so a concurrent document reparse cannot
   change the evidence base or fail the save step. A regression test reparses
   the document between prompt preparation and result persistence.
+  To keep that evidence resolvable after later reparses, the exact parsed-text
+  snapshot is now stored under the synthesis step's owned rendered-prompt
+  directory and referenced only from internal artifacts. Source excerpt length
+  is model-aware: 100,000 characters for an allowlist of large-context model
+  families, the previous 16,000-character limit for unknown/smaller models.

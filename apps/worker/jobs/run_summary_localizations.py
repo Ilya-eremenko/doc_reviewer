@@ -150,6 +150,8 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                 )
                 return
             try:
+                if generation_provider is None:
+                    generation_provider = _resolve_summary_provider(session=session, check_run=check_run)
                 mark_new_summary_progress(
                     analysis=analysis,
                     revision=str(check_run.id),
@@ -169,6 +171,7 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                     session=session,
                     analysis=analysis,
                     check_run=check_run,
+                    model=generation_provider[1],
                 )
                 new_summary_fingerprint = new_summary_source_fingerprint(new_summary_source)
             except Exception as exc:
@@ -202,8 +205,6 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                     if target.get("status") in runnable_statuses:
                         needs_new_summary = True
                 if needs_new_summary:
-                    if generation_provider is None:
-                        generation_provider = _resolve_summary_provider(session=session, check_run=check_run)
                     provider, model, api_key, base_url = generation_provider
                     try:
                         generate_and_persist_new_summary_report(
