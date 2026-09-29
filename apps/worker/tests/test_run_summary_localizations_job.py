@@ -408,6 +408,15 @@ def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsup
         source, source_text, source_hash = new_summary_generation.build_new_summary_source_snapshot(
             session=db, analysis=analysis, check_run=check_run,
         )
+        source["source_traction_tables"] = [{
+            "metric": "revenue", "metric_label": "Revenue", "unit": "млн ₽",
+            "periods": ["2026"], "source_page": 5, "source_block_id": "b42",
+            "source_header_text": "Increment P&L", "rows": [{
+                "label": "Total incremental output uplifts", "values": ["86"],
+                "source_row_label": "Revenue", "source_row_index": 3,
+                "source_header_row_index": 2, "source_column_indices": [1],
+            }],
+        }]
         document.parsed_text = "Reparsed source: revenue is 999."
         document.file_hash_sha256 = "b" * 64
         db.commit()
@@ -423,14 +432,19 @@ def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsup
         assert state["ru"]["status"] == "completed", state["ru"]
         assert "999" not in state["ru"]["payload"]["context"]
         assert state["en"]["payload"]["context"] == "Revenue is 86."
+        assert state["en"]["payload"]["traction_summary"]["tables"][0]["rows"][0]["values"] == ["86"]
         step = db.query(AnalysisCheckStep).filter_by(check_run_id=check_run.id, step_name="new_summary_bilingual").one()
         ledger = next(item["ledger"] for item in step.artifacts if item.get("key") == "new_summary_numeric_evidence")
         snapshot = next(item for item in step.artifacts if item.get("key") == "new_summary_source_snapshot")
+        tables_snapshot = next(item for item in step.artifacts if item.get("key") == "new_summary_table_snapshot")
         assert ledger["suppressed"]
         assert ledger["parsed_text_sha256"] == hashlib.sha256(source_text.encode()).hexdigest()
         assert ledger["source_file_sha256"] == "a" * 64
         assert ledger["source_snapshot_path"] == snapshot["path"]
         assert Path(snapshot["path"]).read_text(encoding="utf-8") == source_text
+        assert ledger["source_table_snapshot_path"] == tables_snapshot["path"]
+        assert json.loads(Path(tables_snapshot["path"]).read_text(encoding="utf-8")) == source["source_traction_tables"]
+        assert any(item.get("source_block_id") == "b42" for item in ledger["verified"])
         assert step.raw_output == "raw provider output"
     finally:
         db.close()

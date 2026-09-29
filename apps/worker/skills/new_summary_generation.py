@@ -171,15 +171,21 @@ def generate_and_persist_new_summary_report(
 
     provider_results: list[AnalysisProviderResult] = []
     try:
-        source_snapshot_path = LocalDocumentStorage(get_settings().storage_root).save_summary_source_snapshot(
+        storage = LocalDocumentStorage(get_settings().storage_root)
+        source_snapshot_path = storage.save_summary_source_snapshot(
             step_id=step.id, parsed_text=source_text_snapshot,
         )
+        source_tables = source_payload.get("source_traction_tables") or []
+        table_snapshot_path = storage.save_summary_table_snapshot(step_id=step.id, tables=source_tables)
         step.artifacts = [
             *(step.artifacts or []),
             {"key": "new_summary_source_snapshot", "kind": "internal_evidence", "internal_only": True,
              "path": str(source_snapshot_path),
              "parsed_text_sha256": hashlib.sha256(source_text_snapshot.encode("utf-8")).hexdigest(),
              "source_file_sha256": source_file_sha256_snapshot},
+            {"key": "new_summary_table_snapshot", "kind": "internal_evidence", "internal_only": True,
+             "path": str(table_snapshot_path),
+             "tables_sha256": hashlib.sha256(json.dumps(source_tables, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()},
         ]
         session.commit()
         _log_new_summary_phase("generating", diagnostic_context)
@@ -283,6 +289,7 @@ def generate_and_persist_new_summary_report(
             response_schema=response_schema,
         )
         evidence_ledger["source_snapshot_path"] = str(source_snapshot_path)
+        evidence_ledger["source_table_snapshot_path"] = str(table_snapshot_path)
         step.artifacts = [
             *(step.artifacts or []),
             {"key": "new_summary_numeric_evidence", "kind": "internal_evidence", "internal_only": True,

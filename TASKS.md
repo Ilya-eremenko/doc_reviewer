@@ -2882,3 +2882,5 @@ Exit criteria:
   directory and referenced only from internal artifacts. Source excerpt length
   is model-aware: 100,000 characters for an allowlist of large-context model
   families, the previous 16,000-character limit for unknown/smaller models.
+  Selected source traction rows are snapshotted beside the parsed text so
+  cell coordinates and values remain resolvable after a later reparse.
