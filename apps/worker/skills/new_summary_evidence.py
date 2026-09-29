@@ -192,7 +192,7 @@ def _verify_numbered_quote(
         return True
     words = re.split(r"\s+", value.strip())
     pattern = re.compile(
-        r"(?<!\d)" + r"\s+".join(re.escape(word) for word in words) + r"(?!\d|[.,]\d)",
+        r"(?<![\d+\-−–])" + r"\s+".join(re.escape(word) for word in words) + r"(?!\d|[.,]\d)",
         re.IGNORECASE,
     )
     matches = list(pattern.finditer(source_text)) if words else []
@@ -221,7 +221,7 @@ def _is_current_source_span(source_text: str, start: int, end: int) -> bool:
         return False
     if CURRENT_DECISION_MARKERS.search(line) and not NON_CURRENT_ALTERNATIVE_MARKERS.search(line):
         return True
-    preceding = source_text[max(0, line_start - 500):line_start]
+    preceding = source_text[:line_start]
     retired = list(NON_CURRENT_ALTERNATIVE_MARKERS.finditer(preceding))
     current = list(CURRENT_DECISION_MARKERS.finditer(preceding))
     return not retired or bool(current and current[-1].start() > retired[-1].start())

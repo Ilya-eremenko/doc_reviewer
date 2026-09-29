@@ -2866,3 +2866,7 @@ Exit criteria:
   PR #82 review hardening rejects values under historical/alternative headings,
   treats common spelled-out quantities as numeric claims, and always derives
   the report title from source initiative metadata rather than model text.
+  A second review pass also closed signed-value matching and distant retired
+  headings: numeric quotes cannot match opposite-sign values, and the latest
+  current/retired marker is checked across the preceding document, not only
+  within a short fixed window.

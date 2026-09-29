@@ -299,6 +299,26 @@ def test_numeric_quote_under_historical_heading_is_suppressed():
     assert any(item["reason"] == "numeric_claim_without_unique_current_source_quote" for item in ledger["suppressed"])
 
 
+def test_numeric_quote_under_distant_historical_heading_is_suppressed():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Revenue: 100")
+    source = "Historical plan\n" + "Neutral background. " * 70 + "\nRevenue: 100\n"
+    clean, _ledger = ground_new_summary_numbers(
+        report=report, source_text=source, source_file_sha256="a" * 64,
+        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert "100" not in clean["versions"][0]["context"]
+
+
+def test_unsigned_claim_does_not_match_signed_source_value():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="86%")
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Current plan: -86%", source_file_sha256="a" * 64,
+        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert "86" not in clean["versions"][0]["context"]
+    assert any(item["reason"] == "numeric_claim_without_unique_current_source_quote" for item in ledger["suppressed"])
+
+
 def test_spelled_out_quantities_need_source_evidence_too():
     report = _new_summary_report_payload(
         ru_context="Выручка удвоилась. Конверсия выросла на сто пользователей.",
