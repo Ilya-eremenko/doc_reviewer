@@ -1704,6 +1704,26 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     assert "2028" in all_cells
 
 
+def test_new_summary_export_combines_only_matching_traction_horizons():
+    from app.services.new_summary_exports import _traction_tables
+
+    tables = [
+        {"metric": "revenue", "metric_label": "Revenue (incr), mR", "periods": ["2026", "2027", "Total"],
+         "rows": [{"label": "Total incremental output uplifts", "values": ["10", "20", "30"]}]},
+        {"metric": "dtb", "metric_label": "DTB (incr), %", "periods": ["2026", "2027", "Total"],
+         "rows": [{"label": "Total incremental output uplifts", "values": ["1%", "2%", "2%"]}]},
+    ]
+    combined = _traction_tables({"tables": tables})
+    assert len(combined) == 1
+    assert [row["label"] for row in combined[0]["rows"]] == ["Revenue (incr), mR", "DTB (incr), %"]
+    assert combined[0]["rows"][1]["values"] == ["1%", "2%", "2%"]
+    assert _traction_tables({"tables": tables}, language="ru")[0]["metric_label"] == "Метрика"
+    assert _traction_tables({"tables": tables}, language="en")[0]["metric_label"] == "Metric"
+
+    tables[1]["periods"] = ["2026", "2027", "2028", "Total"]
+    assert len(_traction_tables({"tables": tables})) == 2
+
+
 def test_existing_progress_review_displays_correct_stage_without_changing_analysis(client, db_session, tmp_path):
     user = create_user(db_session, "progress-review-author", "secret")
     skills = seed_baseline_skills(db_session)

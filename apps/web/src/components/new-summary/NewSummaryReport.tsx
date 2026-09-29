@@ -162,9 +162,11 @@ export function NewSummaryReportView({
         </ul>
       </section>
 
-      <section className="new-summary-panel new-summary-critical">
-        <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
-      </section>
+      {content.critical_problems.length ? (
+        <section className="new-summary-panel new-summary-critical">
+          <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
+        </section>
+      ) : null}
 
       {content.other.length ? (
         <section className="new-summary-panel new-summary-other">
@@ -201,7 +203,7 @@ function TractionSummaryTable({
   return (
     <section className="new-summary-panel new-summary-traction">
       <h2>{text.traction}</h2>
-      {tractionTables(traction).map((table) => (
+      {tractionTables(traction, text.metric).map((table) => (
         <div className="new-summary-table-scroll" key={table.metric ?? table.metric_label}>
           <table>
             <thead>
@@ -400,9 +402,22 @@ function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value
   return tractionTables(value).some((table) => table.periods.length > 0 && table.rows.length > 0);
 }
 
-function tractionTables(value: NewSummaryTractionSummary | undefined): NewSummaryTractionTable[] {
+function tractionTables(value: NewSummaryTractionSummary | undefined, metricHeading = "Metric"): NewSummaryTractionTable[] {
   if (!value) return [];
-  return "tables" in value ? value.tables : [value];
+  const tables = "tables" in value ? value.tables : [value];
+  if (
+    tables.length !== 2 ||
+    !tables[0].metric || !tables[1].metric || tables[0].metric === tables[1].metric ||
+    JSON.stringify(tables[0].periods) !== JSON.stringify(tables[1].periods)
+  ) return tables;
+  return [{
+    metric_label: metricHeading,
+    periods: tables[0].periods,
+    rows: tables.flatMap((table) => table.rows.map((row) => ({
+      label: table.rows.length === 1 ? table.metric_label : `${table.metric_label} · ${row.label}`,
+      values: row.values,
+    }))),
+  }];
 }
 
 function requiredElementTone(item: NewSummaryRequiredElement): "present" | "partial" | "missing" | "fraction" {

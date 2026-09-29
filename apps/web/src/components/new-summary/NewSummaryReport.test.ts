@@ -14,3 +14,17 @@ describe("AI Summary required elements", () => {
     expect(source).toContain('background: var(--danger-bg)');
   });
 });
+
+describe("AI Summary identified problems", () => {
+  it("omits the panel when no confirmed problems exist", () => {
+    expect(source).toContain("{content.critical_problems.length ? (");
+  });
+});
+
+describe("AI Summary traction", () => {
+  it("combines only matching Revenue and DTB horizons", () => {
+    expect(source).toContain("JSON.stringify(tables[0].periods) !== JSON.stringify(tables[1].periods)");
+    expect(source).toContain("tractionTables(traction, text.metric)");
+    expect(source).toContain("metric_label: metricHeading");
+  });
+});
