@@ -2848,3 +2848,39 @@ Exit criteria:
   horizons remain separate. Gate 3 and Progress Review required-element order
   follows the skill. Focused worker/API tests pass; production behavior still
   requires verification after merge.
+- 2026-09-29: After PR #81, New Summary accepts up to 100,000 characters of
+  parsed source text (still prioritizing current-defense/scenario excerpts).
+  Newly generated RU/EN reports remove numeric prose without a unique exact
+  quote in a non-retired source line, and do not publish model-authored traction
+  numbers without a hash-checked parsed table. The selected table's page,
+  block, header, source row/column, and value hash are kept in an internal
+  synthesis-step evidence ledger; ties between equally ranked source tables
+  are treated as ambiguous and hidden. Existing reports are not rewritten.
+  This is deliberately a conservative first stage, not semantic proof of
+  qualitative claims or workbook-derived formulas. Focused worker/API tests
+  pass; the full worker suite still has three unrelated PDF parser failures
+  because the local Python environment lacks optional `pdfplumber`.
+  The complete API suite passes with its expected Redis URL set (267 passed);
+  the first local run used a different Redis URL and failed only two URL
+  assertion tests.
+  PR #82 review hardening rejects values under historical/alternative headings,
+  treats common spelled-out quantities as numeric claims, and always derives
+  the report title from source initiative metadata rather than model text.
+  A second review pass also closed signed-value matching and distant retired
+  headings: numeric quotes cannot match opposite-sign values, and the latest
+  current/retired marker is checked across the preceding document, not only
+  within a short fixed window.
+  A further review found missing spelled-out cardinal words (e.g. twenty /
+  двадцать); the conservative numeric filter now includes common EN/RU
+  cardinal forms through the hundreds as well as quantitative modifiers.
+  Source grounding now uses the immutable parsed-text/file-hash snapshot read
+  together with the prompt input, so a concurrent document reparse cannot
+  change the evidence base or fail the save step. A regression test reparses
+  the document between prompt preparation and result persistence.
+  To keep that evidence resolvable after later reparses, the exact parsed-text
+  snapshot is now stored under the synthesis step's owned rendered-prompt
+  directory and referenced only from internal artifacts. Source excerpt length
+  is model-aware: 100,000 characters for an allowlist of large-context model
+  families, the previous 16,000-character limit for unknown/smaller models.
+  Selected source traction rows are snapshotted beside the parsed text so
+  cell coordinates and values remain resolvable after a later reparse.

@@ -82,3 +82,47 @@ def test_source_tables_use_matching_owned_artifact_and_ignore_stale_parse(tmp_pa
     assert tables[0]["rows"][0]["values"] == ["86", "379", "465"]
     document.file_hash_sha256 = "b" * 64
     assert source_traction_tables(document) == []
+
+
+def test_equal_priority_competing_incremental_tables_are_not_selected(tmp_path, monkeypatch):
+    import app.core.config as config
+
+    monkeypatch.setattr(config, "get_settings", lambda: SimpleNamespace(storage_root=tmp_path))
+    document = SimpleNamespace(
+        owner_id=uuid4(), id=uuid4(), parsed_text="Two scenarios", file_hash_sha256="a" * 64
+    )
+    parsed_dir = tmp_path / "documents" / str(document.owner_id) / str(document.id) / "parsed"
+    parsed_dir.mkdir(parents=True)
+    artifact = {
+        "source": {"sha256": document.file_hash_sha256},
+        "outputs": {"plain_text_sha256": hashlib.sha256(document.parsed_text.encode()).hexdigest()},
+        "blocks": [
+            {"id": f"b{index}", "type": "table", "page": index,
+             "metadata": {"rows": [["Increment P&L, mR", "2026", "2027", "Total"],
+                                   ["Revenue", str(value), "20", "30"]]}}
+            for index, value in enumerate((10, 15), start=1)
+        ],
+    }
+    (parsed_dir / "structured.json").write_text(json.dumps(artifact))
+
+    assert source_traction_tables(document) == []
+
+
+def test_conflicting_same_metric_rows_in_one_block_are_not_selected(tmp_path, monkeypatch):
+    import app.core.config as config
+
+    monkeypatch.setattr(config, "get_settings", lambda: SimpleNamespace(storage_root=tmp_path))
+    document = SimpleNamespace(owner_id=uuid4(), id=uuid4(), parsed_text="Parsed", file_hash_sha256="a" * 64)
+    parsed_dir = tmp_path / "documents" / str(document.owner_id) / str(document.id) / "parsed"
+    parsed_dir.mkdir(parents=True)
+    artifact = {
+        "source": {"sha256": document.file_hash_sha256},
+        "outputs": {"plain_text_sha256": hashlib.sha256(document.parsed_text.encode()).hexdigest()},
+        "blocks": [{"id": "b1", "type": "table", "page": 2,
+                    "metadata": {"rows": [["Increment P&L, mR", "2026", "2027", "Total"],
+                                          ["Revenue", "10", "20", "30"],
+                                          ["Revenue", "15", "25", "40"]]}}],
+    }
+    (parsed_dir / "structured.json").write_text(json.dumps(artifact))
+
+    assert source_traction_tables(document) == []

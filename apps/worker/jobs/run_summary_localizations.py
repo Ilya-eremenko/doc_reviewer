@@ -33,7 +33,7 @@ from skills.summary_localization import (
 )
 from skills.new_summary_generation import (
     LANGUAGES as NEW_SUMMARY_LANGUAGES,
-    build_new_summary_source,
+    build_new_summary_source_snapshot,
     generate_and_persist_new_summary_report,
     new_summary_source_fingerprint,
     public_new_summary_error_message,
@@ -150,6 +150,8 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                 )
                 return
             try:
+                if generation_provider is None:
+                    generation_provider = _resolve_summary_provider(session=session, check_run=check_run)
                 mark_new_summary_progress(
                     analysis=analysis,
                     revision=str(check_run.id),
@@ -165,10 +167,11 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                         "phase": "preparing_sources",
                     },
                 )
-                new_summary_source = build_new_summary_source(
+                new_summary_source, source_text_snapshot, source_file_sha256_snapshot = build_new_summary_source_snapshot(
                     session=session,
                     analysis=analysis,
                     check_run=check_run,
+                    model=generation_provider[1],
                 )
                 new_summary_fingerprint = new_summary_source_fingerprint(new_summary_source)
             except Exception as exc:
@@ -202,8 +205,6 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                     if target.get("status") in runnable_statuses:
                         needs_new_summary = True
                 if needs_new_summary:
-                    if generation_provider is None:
-                        generation_provider = _resolve_summary_provider(session=session, check_run=check_run)
                     provider, model, api_key, base_url = generation_provider
                     try:
                         generate_and_persist_new_summary_report(
@@ -211,6 +212,8 @@ def run_summary_localizations(analysis_id: str, *, db: Session | None = None) ->
                             analysis=analysis,
                             check_run=check_run,
                             source_payload=new_summary_source,
+                            source_text_snapshot=source_text_snapshot,
+                            source_file_sha256_snapshot=source_file_sha256_snapshot,
                             provider=provider,
                             model=model,
                             api_key=api_key,

@@ -211,6 +211,22 @@ class LocalDocumentStorage:
         prompt_path.write_text(prompt, encoding="utf-8")
         return prompt_path
 
+    def save_summary_source_snapshot(self, *, step_id: UUID, parsed_text: str) -> Path:
+        snapshot_path = self._ensure_under_root(
+            self.storage_root / "rendered-prompts" / str(step_id) / "source-parsed.txt"
+        )
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(parsed_text, encoding="utf-8")
+        return snapshot_path
+
+    def save_summary_table_snapshot(self, *, step_id: UUID, tables: list[dict]) -> Path:
+        snapshot_path = self._ensure_under_root(
+            self.storage_root / "rendered-prompts" / str(step_id) / "source-traction-tables.json"
+        )
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(json.dumps(tables, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        return snapshot_path
+
     def save_provider_attempt_output(self, *, analysis_id: UUID, attempt: int, raw_output: str) -> Path:
         output_path = self._ensure_under_root(
             self.storage_root / "rendered-prompts" / str(analysis_id) / f"provider-attempt-{attempt}.txt"
