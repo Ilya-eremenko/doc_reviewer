@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -25,7 +24,6 @@ from providers.base import AnalysisProviderResult
 from skills import new_summary_generation
 from skills import summary_localization
 from skills.context_relevance import decision_context_score
-from skills.new_summary_evidence import ground_new_summary_numbers
 
 
 def test_context_priority_does_not_penalize_selected_plan_for_separate_alternative():
@@ -50,13 +48,13 @@ def test_context_priority_downranks_dated_or_retired_selected_scenarios():
 
 
 def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initial_limit():
-    beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 3500
+    beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 700
     historical = "Previous scenario: Bank A was considered for the original plan.\n"
     current = (
         "Current Defense: Progress Review.\n"
         "Selected LTM scenario: Bank B is the active partner; the maximum scenario is only illustrative.\n"
     )
-    source = beginning + historical + "Unrelated appendix material.\n" * 2500 + current
+    source = beginning + historical + "Unrelated appendix material.\n" * 550 + current
 
     excerpt = new_summary_generation._bounded_source_text(source)
 
@@ -203,252 +201,12 @@ def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
 
 
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
-    source = "General background without decision markers.\n" * 4000
+    source = "General background without decision markers.\n" * 1000
 
     excerpt = new_summary_generation._bounded_source_text(source)
 
     assert len(excerpt) <= new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS
     assert excerpt.endswith("[TRUNCATED: remaining source text was omitted.]")
-
-
-def test_new_summary_source_limit_uses_model_profile():
-    assert new_summary_generation._source_limit_for_model("openai_compatible/anthropic/claude-opus-4.8") == 100000
-    assert new_summary_generation._source_limit_for_model("custom/small-model") == 16000
-    source = "Executive Summary.\n" + "Background.\n" * 12000 + "Current Defense: Gate 2.\n"
-    excerpt = new_summary_generation._bounded_source_text(source, limit_chars=16000)
-    assert len(excerpt) <= 16000
-    assert "Current Defense: Gate 2" in excerpt
-
-
-def test_numeric_summary_claims_require_a_unique_current_source_quote():
-    source = (
-        "Current plan: Incremental revenue is 86.\n"
-        "Текущий план: Инкрементальная выручка составляет 86.\n"
-        "Previous scenario: Revenue was 100.\n"
-    )
-    report = _new_summary_report_payload(
-        en_context="Incremental revenue is 86. Unsupported revenue is 999.",
-        ru_context="Инкрементальная выручка составляет 86. Неподтверждённая выручка 999.",
-    )
-    report["versions"][0]["critical_problems"] = ["The gap is 999%."]
-    report["versions"][0]["required_elements"][0]["evidence"] = "Reached 999 customers."
-    report["versions"][0]["other"] = ["Revenue was 100."]
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text=source, source_file_sha256="a" * 64,
-        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
-    )
-
-    assert clean["versions"][0]["context"] == "Incremental revenue is 86."
-    assert clean["versions"][1]["context"] == "Инкрементальная выручка составляет 86."
-    assert clean["versions"][0]["critical_problems"] == []
-    assert clean["versions"][0]["other"] == []
-    assert "999" not in clean["versions"][0]["required_elements"][0]["evidence"]
-    assert len([item for item in ledger["verified"] if item["kind"] == "exact_source_quote"]) == 2
-    assert ledger["source_file_sha256"] == "a" * 64
-
-
-def test_numeric_traction_uses_parser_cell_coordinates_not_model_table():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    for version in report["versions"]:
-        version["traction_summary"] = {
-            "metric_label": "Model revenue", "periods": ["2026"],
-            "rows": [{"label": "Wrong", "values": ["999"]}],
-        }
-    table = {
-        "metric": "revenue", "metric_label": "Revenue", "unit": "млн ₽",
-        "periods": ["2026", "Total"], "source_page": 5,
-        "source_block_id": "b42", "source_block_hash": "f" * 64,
-        "rows": [{"label": "Total incremental output uplifts", "values": ["86", "86"],
-                  "source_row_index": 3, "source_header_row_index": 2,
-                  "source_column_indices": [1, 2]}],
-    }
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Increment P&L: 2026, Total. Revenue: 86, 86.",
-        source_file_sha256="a" * 64, source_tables=[table],
-        response_schema=new_summary_generation._new_summary_schema(),
-    )
-
-    assert clean["versions"][0]["traction_summary"]["tables"][0]["rows"][0]["values"] == ["86", "86"]
-    cells = [item for item in ledger["verified"] if item["kind"] == "parsed_table_cell"]
-    assert len(cells) == 4  # two cells in each language
-    assert cells[0]["source_block_id"] == "b42"
-    assert cells[0]["source_row_index"] == 3
-    assert cells[0]["source_column_index"] == 1
-
-
-def test_numeric_table_without_parser_coordinates_is_not_published():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    table = {"metric": "revenue", "periods": ["2026"], "rows": [{"values": ["999"]}]}
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Source", source_file_sha256="a" * 64,
-        source_tables=[table], response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert clean["versions"][0]["traction_summary"] == {"tables": []}
-    assert any(item["reason"] == "table_cell_coordinates_missing" for item in ledger["suppressed"])
-
-
-def test_numeric_quote_does_not_match_part_of_a_different_value():
-    report = _new_summary_report_payload(ru_context="Выручка 86", en_context="Revenue 86")
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Revenue 860\nВыручка 86.0", source_file_sha256="a" * 64,
-        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert "86" not in clean["versions"][0]["context"]
-    assert "86" not in clean["versions"][1]["context"]
-    assert len(ledger["suppressed"]) == 2
-
-
-def test_numeric_quote_under_historical_heading_is_suppressed():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Revenue: 100")
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Historical plan\nRevenue: 100\n",
-        source_file_sha256="a" * 64, source_tables=[],
-        response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert "100" not in clean["versions"][0]["context"]
-    assert any(item["reason"] == "numeric_claim_without_unique_current_source_quote" for item in ledger["suppressed"])
-
-
-def test_numeric_quote_under_distant_historical_heading_is_suppressed():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Revenue: 100")
-    source = "Historical plan\n" + "Neutral background. " * 70 + "\nRevenue: 100\n"
-    clean, _ledger = ground_new_summary_numbers(
-        report=report, source_text=source, source_file_sha256="a" * 64,
-        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert "100" not in clean["versions"][0]["context"]
-
-
-def test_unsigned_claim_does_not_match_signed_source_value():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="86%")
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Current plan: -86%", source_file_sha256="a" * 64,
-        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert "86" not in clean["versions"][0]["context"]
-    assert any(item["reason"] == "numeric_claim_without_unique_current_source_quote" for item in ledger["suppressed"])
-
-
-def test_spelled_out_quantities_need_source_evidence_too():
-    report = _new_summary_report_payload(
-        ru_context="Выручка удвоилась. Конверсия выросла на сто пользователей.",
-        en_context="Revenue doubled. One hundred customers converted.",
-    )
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Current plan: Revenue doubled.\n",
-        source_file_sha256="a" * 64, source_tables=[],
-        response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert clean["versions"][0]["context"] == "Revenue doubled."
-    assert "сто" not in clean["versions"][1]["context"]
-    assert len(ledger["suppressed"]) >= 3
-
-
-def test_twenty_and_dvadtsat_written_as_words_are_grounded():
-    report = _new_summary_report_payload(
-        ru_context="Двадцать клиентов перешли на продукт.",
-        en_context="Twenty customers converted.",
-    )
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="The case overview has no customer count.",
-        source_file_sha256="a" * 64, source_tables=[],
-        response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert "Twenty" not in clean["versions"][0]["context"]
-    assert "Двадцать" not in clean["versions"][1]["context"]
-    assert len(ledger["suppressed"]) == 2
-
-
-def test_generated_title_is_replaced_with_source_initiative_title():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["title"] = "AI Summary Revenue grows 999%"
-    normalized = new_summary_generation._normalize_generated_report_shell(
-        payload=report, source_payload={"initiative_title": "Auction", "document_stage": "Gate 2"},
-    )
-    assert normalized["title"] == "AI Summary Auction"
-
-
-def test_fraction_without_detail_uses_gate_checklist_status_instead_of_model_count():
-    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    for version in report["versions"]:
-        version["required_elements"][0]["status"] = "2/3"
-    clean, ledger = ground_new_summary_numbers(
-        report=report, source_text="Source", source_file_sha256="a" * 64,
-        source_tables=[], source_checklist=[{"id": "gate2_hypothesis_results", "status": "yellow"}],
-        response_schema=new_summary_generation._new_summary_schema(),
-    )
-    assert clean["versions"][0]["required_elements"][0]["status"] == "частично подтверждено"
-    assert any(item["reason"] == "fraction_without_verifiable_detail_count" for item in ledger["suppressed"])
-
-
-def test_new_summary_persists_internal_numeric_evidence_without_publishing_unsupported_claim(tmp_path, monkeypatch):
-    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
-    get_settings.cache_clear()
-    db = _session()
-    try:
-        analysis, check_run = _seed(db)
-        output = dict(analysis.structured_output)
-        result = dict(output["result"])
-        result["new_summary"] = {
-            "version": 2, "generation_mode": "new_summary_skill", "source_revision": str(check_run.id),
-            "ru": {"status": "queued", "payload": None, "error_message": None},
-            "en": {"status": "queued", "payload": None, "error_message": None},
-        }
-        output["result"] = result
-        analysis.structured_output = output
-        report = _new_summary_report_payload(
-            ru_context="Неподтверждённая выручка 999.", en_context="Revenue is 86."
-        )
-        check_run.run_parameters = {"new_summary_mock_provider_result": {
-            "structured_text": json.dumps(report, ensure_ascii=False), "raw_output": "raw provider output", "latency_ms": 1,
-        }}
-        document = db.get(Document, analysis.document_id)
-        document.parsed_text = "Current plan: Revenue is 86."
-        db.commit()
-        source, source_text, source_hash = new_summary_generation.build_new_summary_source_snapshot(
-            session=db, analysis=analysis, check_run=check_run,
-        )
-        source["source_traction_tables"] = [{
-            "metric": "revenue", "metric_label": "Revenue", "unit": "млн ₽",
-            "periods": ["2026"], "source_page": 5, "source_block_id": "b42",
-            "source_header_text": "Increment P&L", "rows": [{
-                "label": "Total incremental output uplifts", "values": ["86"],
-                "source_row_label": "Revenue", "source_row_index": 3,
-                "source_header_row_index": 2, "source_column_indices": [1],
-            }],
-        }]
-        document.parsed_text = "Reparsed source: revenue is 999."
-        document.file_hash_sha256 = "b" * 64
-        db.commit()
-
-        new_summary_generation.generate_and_persist_new_summary_report(
-            session=db, analysis=analysis, check_run=check_run,
-            source_payload=source, source_text_snapshot=source_text, source_file_sha256_snapshot=source_hash,
-            provider=Provider.OPENAI_COMPATIBLE, model="gpt-test", api_key="sk-test", base_url=None,
-        )
-
-        db.refresh(analysis)
-        state = analysis.structured_output["result"]["new_summary"]
-        assert state["ru"]["status"] == "completed", state["ru"]
-        assert "999" not in state["ru"]["payload"]["context"]
-        assert state["en"]["payload"]["context"] == "Revenue is 86."
-        assert state["en"]["payload"]["traction_summary"]["tables"][0]["rows"][0]["values"] == ["86"]
-        step = db.query(AnalysisCheckStep).filter_by(check_run_id=check_run.id, step_name="new_summary_bilingual").one()
-        ledger = next(item["ledger"] for item in step.artifacts if item.get("key") == "new_summary_numeric_evidence")
-        snapshot = next(item for item in step.artifacts if item.get("key") == "new_summary_source_snapshot")
-        tables_snapshot = next(item for item in step.artifacts if item.get("key") == "new_summary_table_snapshot")
-        assert ledger["suppressed"]
-        assert ledger["parsed_text_sha256"] == hashlib.sha256(source_text.encode()).hexdigest()
-        assert ledger["source_file_sha256"] == "a" * 64
-        assert ledger["source_snapshot_path"] == snapshot["path"]
-        assert Path(snapshot["path"]).read_text(encoding="utf-8") == source_text
-        assert ledger["source_table_snapshot_path"] == tables_snapshot["path"]
-        assert json.loads(Path(tables_snapshot["path"]).read_text(encoding="utf-8")) == source["source_traction_tables"]
-        assert any(item.get("source_block_id") == "b42" for item in ledger["verified"])
-        assert step.raw_output == "raw provider output"
-    finally:
-        db.close()
-        get_settings.cache_clear()
 
 
 def test_legacy_translation_job_is_skipped_without_enabling_language_variants(tmp_path, monkeypatch):

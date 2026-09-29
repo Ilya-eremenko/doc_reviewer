@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 _PERIOD = re.compile(r"(?:^|\b)(?:20\d{2}|CY\s*['’]?\d{2}|Q[1-4])(?:\b|$)", re.IGNORECASE)
 _TOTAL = re.compile(r"\b(?:total|ttl|итого|всего)\b", re.IGNORECASE)
 _INCREMENT = re.compile(r"\b(?:increment(?:al)?|incr\.?|uplift|прирост|инкремент)\b", re.IGNORECASE)
-_EXCLUDED = re.compile(r"\b(?:tobe|to.be|baseline|before|previous|prior|historical|alternative|illustrative|maximum|diff|delta|разниц|до\s+изменен|предыдущ|прошл|альтернативн|иллюстративн)\w*\b", re.IGNORECASE)
+_EXCLUDED = re.compile(r"\b(?:tobe|to.be|baseline|before|previous|prior|diff|delta|разниц|до\s+изменен)\b", re.IGNORECASE)
 _METRICS = {"revenue": re.compile(r"\b(?:revenue|выручк[а-я]*)\b", re.IGNORECASE), "dtb": re.compile(r"\bDTB\b", re.IGNORECASE)}
 
 
@@ -38,7 +38,6 @@ def source_traction_tables(document: Document) -> list[dict[str, Any]]:
         return []
 
     best: dict[str, tuple[int, dict[str, Any]]] = {}
-    ambiguous: set[str] = set()
     for block in artifact.get("blocks") or []:
         if not isinstance(block, dict) or block.get("type") != "table":
             continue
@@ -51,24 +50,16 @@ def source_traction_tables(document: Document) -> list[dict[str, Any]]:
                 **table,
                 "source_page": block.get("page"),
                 "source_block_id": block.get("id"),
-                "source_block_hash": block.get("hash"),
             }
             if metric not in best or score > best[metric][0]:
                 best[metric] = (score, candidate)
-                ambiguous.discard(metric)
             elif score == best[metric][0]:
                 selected = best[metric][1]
                 if selected["source_block_id"] == block.get("id") and selected["periods"] == table["periods"]:
                     for row in table["rows"]:
-                        if any(existing["label"] == row["label"] and existing["values"] != row["values"]
-                               for existing in selected["rows"]):
-                            ambiguous.add(metric)
-                            continue
                         if row not in selected["rows"]:
                             selected["rows"].append(row)
-                else:
-                    ambiguous.add(metric)
-    return [best[metric][1] for metric in ("revenue", "dtb") if metric in best and metric not in ambiguous]
+    return [best[metric][1] for metric in ("revenue", "dtb") if metric in best]
 
 
 def _block_rows(block: dict[str, Any]) -> list[list[str]]:
@@ -94,8 +85,7 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
     found: list[tuple[int, dict[str, Any]]] = []
     active_header: list[str] = []
     active_context = ""
-    header_row_index = -1
-    for row_index, row in enumerate(rows):
+    for row in rows:
         if not row:
             continue
         first = row[0].strip()
@@ -105,7 +95,6 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
         if len(period_cells) >= 2:
             active_header = row
             active_context = first
-            header_row_index = row_index
             continue
         if not active_header or _EXCLUDED.search(active_context):
             continue
@@ -138,15 +127,10 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
             "metric": metric,
             "metric_label": metric.upper() if metric == "dtb" else "Revenue",
             "unit": _unit(active_context, first),
-            "source_header_text": active_context,
             "periods": periods,
             "rows": [{
                 "label": "Total incremental output uplifts" if _TOTAL.search(first) or first.lower() in {"revenue", "dtb"} else first,
                 "values": values,
-                "source_row_label": first,
-                "source_row_index": row_index,
-                "source_header_row_index": header_row_index,
-                "source_column_indices": indices,
             }],
         }))
     return found
