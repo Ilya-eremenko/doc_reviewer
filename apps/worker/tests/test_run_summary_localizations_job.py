@@ -277,6 +277,17 @@ def test_numeric_table_without_parser_coordinates_is_not_published():
     assert any(item["reason"] == "table_cell_coordinates_missing" for item in ledger["suppressed"])
 
 
+def test_numeric_quote_does_not_match_part_of_a_different_value():
+    report = _new_summary_report_payload(ru_context="Выручка 86", en_context="Revenue 86")
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="Revenue 860\nВыручка 86.0", source_file_sha256="a" * 64,
+        source_tables=[], response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert "86" not in clean["versions"][0]["context"]
+    assert "86" not in clean["versions"][1]["context"]
+    assert len(ledger["suppressed"]) == 2
+
+
 def test_fraction_without_detail_uses_gate_checklist_status_instead_of_model_count():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
     for version in report["versions"]:

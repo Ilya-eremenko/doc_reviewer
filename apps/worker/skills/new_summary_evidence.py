@@ -178,7 +178,10 @@ def _verify_numbered_quote(
     if not has_number and len(value.strip()) < 24:
         return True
     words = re.split(r"\s+", value.strip())
-    pattern = re.compile(r"\s+".join(re.escape(word) for word in words), re.IGNORECASE)
+    pattern = re.compile(
+        r"(?<!\d)" + r"\s+".join(re.escape(word) for word in words) + r"(?!\d|[.,]\d)",
+        re.IGNORECASE,
+    )
     matches = list(pattern.finditer(source_text)) if words else []
     if len(matches) == 1:
         match = matches[0]
