@@ -32,9 +32,12 @@ Primary plan index:
   verification: 265 API tests and 26 parsing/renderer worker
   tests pass; production CI/deploy and metadata-only backfill remain pending.
 - [~] Improve source-context selection without changing external skill rubrics:
-  keep the New Summary document excerpt within 16,000 characters while sampling
-  current defense, selected scenario, and scope evidence from the entire parsed
-  document; rank explicitly current/selected IC Review evidence above historical
+  increase the New Summary parsed-document excerpt ceiling from 16,000 to
+  100,000 characters. Documents up to that ceiling are included in full; longer
+  documents retain the existing selection of current defense, selected scenario,
+  and scope evidence from the entire parsed text. The prompt still distinguishes
+  current evidence from historical and alternative material. Rank explicitly
+  current/selected IC Review evidence above historical
   alternatives without dropping prior-period comparisons. Keep source offsets,
   fingerprints, and existing analysis outputs intact. Focused regression tests
   cover late-document context, short documents, bounded scanning, and evidence

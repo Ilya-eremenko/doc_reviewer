@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from jsonschema import validate
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -23,6 +24,11 @@ from providers.base import AnalysisProviderResult
 from skills import new_summary_generation
 from skills import summary_localization
 from skills.context_relevance import decision_context_score
+
+
+@pytest.fixture
+def original_excerpt_limit(monkeypatch):
+    monkeypatch.setattr(new_summary_generation, "SOURCE_DOCUMENT_MAX_CHARS", 16000)
 
 
 def test_context_priority_does_not_penalize_selected_plan_for_separate_alternative():
@@ -46,6 +52,7 @@ def test_context_priority_downranks_dated_or_retired_selected_scenarios():
         assert decision_context_score(active + " " + historical) == decision_context_score(active)
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initial_limit():
     beginning = "Executive Summary: the initiative serves business customers.\n" + "Background only.\n" * 700
     historical = "Previous scenario: Bank A was considered for the original plan.\n"
@@ -66,6 +73,7 @@ def test_new_summary_source_excerpt_keeps_selected_current_context_beyond_initia
     assert source != excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_prefers_active_plan_over_dated_selections():
     source = (
         "Executive Summary: case overview.\n"
@@ -85,6 +93,21 @@ def test_new_summary_source_excerpt_keeps_short_document_unchanged():
     assert new_summary_generation._bounded_source_text(source) == source
 
 
+def test_new_summary_source_excerpt_uses_100k_limit_and_keeps_late_defense():
+    assert new_summary_generation.SOURCE_DOCUMENT_MAX_CHARS == 100000
+    source = "Background only.\n" * 5600
+    assert 90000 < len(source) < 100000
+    assert new_summary_generation._bounded_source_text(source) == source
+
+    longer_source = source + "More background.\n" * 1000 + "Current Defense: Gate 3.\n"
+    excerpt = new_summary_generation._bounded_source_text(longer_source)
+
+    assert len(longer_source) > 100000
+    assert len(excerpt) <= 100000
+    assert "Current Defense: Gate 3" in excerpt
+
+
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_reserves_late_current_defense():
     source = (
         "Executive Summary: case overview.\n"
@@ -99,6 +122,7 @@ def test_new_summary_source_excerpt_reserves_late_current_defense():
     assert "Current Defense: Gate 3" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_backfills_unused_context_before_late_window():
     source = (
         "Executive Summary: case overview.\n"
@@ -115,6 +139,7 @@ def test_new_summary_source_excerpt_backfills_unused_context_before_late_window(
     assert "Selected LTM scenario" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_handles_dense_large_document():
     source = "Executive Summary: case overview.\n" + "scenario " * 120000
     source += "\nCurrent Defense: Gate 3 with selected LTM base scenario.\n"
@@ -125,6 +150,7 @@ def test_new_summary_source_excerpt_handles_dense_large_document():
     assert "Current Defense: Gate 3" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_prioritizes_selected_qualified_scenario():
     source = (
         "Executive Summary: case overview.\n"
@@ -140,6 +166,7 @@ def test_new_summary_source_excerpt_prioritizes_selected_qualified_scenario():
     assert "Выбранный базовый сценарий" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_keeps_later_selection_within_large_bucket():
     source = (
         "Executive Summary: case overview.\n"
@@ -156,6 +183,7 @@ def test_new_summary_source_excerpt_keeps_later_selection_within_large_bucket():
     assert "Selected base scenario: Bank B" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_keeps_distinct_scope_in_same_large_bucket(monkeypatch):
     monkeypatch.setattr(new_summary_generation, "SOURCE_DOCUMENT_MAX_BUCKETS", 8)
     source = (
@@ -174,6 +202,7 @@ def test_new_summary_source_excerpt_keeps_distinct_scope_in_same_large_bucket(mo
     assert "Current scope: only SMB customers" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_reserves_scope_among_many_selected_scenarios():
     source = (
         "Executive Summary: case overview.\n"
@@ -187,6 +216,7 @@ def test_new_summary_source_excerpt_reserves_scope_among_many_selected_scenarios
     assert "Current scope: only SMB customers" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
     source = (
         "Executive Summary: case overview.\n"
@@ -199,6 +229,7 @@ def test_new_summary_source_excerpt_prioritizes_russian_current_scope():
     assert "Текущий охват: защита касается только TnS" in excerpt
 
 
+@pytest.mark.usefixtures("original_excerpt_limit")
 def test_new_summary_source_excerpt_without_context_markers_stays_bounded():
     source = "General background without decision markers.\n" * 1000
 
