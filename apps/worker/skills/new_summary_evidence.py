@@ -18,9 +18,15 @@ from skills.traction_tables import display_traction_tables
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
 _STRUCTURAL_NUMBER = re.compile(r"\b(?:Gate|Гейт|Stream Review|Progress Review|FAQ|Appendix|Приложение)\s*\d+\+?\b", re.IGNORECASE)
 _QUANTIFIED_WORD = re.compile(
-    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|hundreds?|thousands?|millions?|billions?|"
+    r"\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|"
+    r"fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|"
+    r"hundreds?|thousands?|millions?|billions?|"
     r"doubled?|tripled?|quadrupled?|halved?|twice|threefold|tenfold|percent|percentage|dozens?|several|"
-    r"ноль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|сто|"
+    r"ноль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|"
+    r"одиннадцат\w*|двенадцат\w*|тринадцат\w*|четырнадцат\w*|пятнадцат\w*|"
+    r"шестнадцат\w*|семнадцат\w*|восемнадцат\w*|девятнадцат\w*|"
+    r"двадцат\w*|тридцат\w*|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|"
+    r"сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|"
     r"сотн\w*|десятк\w*|тысяч\w*|миллион\w*|миллиард\w*|процент\w*|половин\w*|несколько|"
     r"удво\w*|утро\w*|вдвое|втрое|двукрат\w*|трехкрат\w*)\b",
     re.IGNORECASE,

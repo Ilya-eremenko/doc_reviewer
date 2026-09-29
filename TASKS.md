@@ -2870,3 +2870,6 @@ Exit criteria:
   headings: numeric quotes cannot match opposite-sign values, and the latest
   current/retired marker is checked across the preceding document, not only
   within a short fixed window.
+  A further review found missing spelled-out cardinal words (e.g. twenty /
+  двадцать); the conservative numeric filter now includes common EN/RU
+  cardinal forms through the hundreds as well as quantitative modifiers.

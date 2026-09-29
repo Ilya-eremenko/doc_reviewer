@@ -334,6 +334,21 @@ def test_spelled_out_quantities_need_source_evidence_too():
     assert len(ledger["suppressed"]) >= 3
 
 
+def test_twenty_and_dvadtsat_written_as_words_are_grounded():
+    report = _new_summary_report_payload(
+        ru_context="Двадцать клиентов перешли на продукт.",
+        en_context="Twenty customers converted.",
+    )
+    clean, ledger = ground_new_summary_numbers(
+        report=report, source_text="The case overview has no customer count.",
+        source_file_sha256="a" * 64, source_tables=[],
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert "Twenty" not in clean["versions"][0]["context"]
+    assert "Двадцать" not in clean["versions"][1]["context"]
+    assert len(ledger["suppressed"]) == 2
+
+
 def test_generated_title_is_replaced_with_source_initiative_title():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
     report["title"] = "AI Summary Revenue grows 999%"
