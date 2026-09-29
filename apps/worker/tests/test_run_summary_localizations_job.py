@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from jsonschema import validate
+from jsonschema import ValidationError, validate
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -532,8 +533,8 @@ def test_native_progress_review_summary_keeps_its_own_checklist_and_stage(tmp_pa
             payload = state[language]["payload"]
             assert payload["stage"] == "Progress Review"
             assert [item["id"] for item in payload["required_elements"]] == [
-                "progress_review_next_half_year_plan", "progress_review_stop_criteria",
-                "progress_review_plan_fact_last_half_year",
+                "progress_review_next_half_year_plan", "progress_review_plan_fact_last_half_year",
+                "progress_review_stop_criteria",
             ]
             assert all(item["status"] == "частично подтверждено" for item in payload["required_elements"])
     finally:
@@ -594,7 +595,7 @@ def test_new_summary_generation_tolerates_optional_sections_and_stray_appendices
         get_settings.cache_clear()
 
 
-def test_new_summary_schema_retry_handles_empty_critical_problems(tmp_path, monkeypatch):
+def test_new_summary_accepts_empty_critical_problems_without_retry(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
     get_settings.cache_clear()
     db = _session()
@@ -611,26 +612,17 @@ def test_new_summary_schema_retry_handles_empty_critical_problems(tmp_path, monk
         }
         output["result"] = result
         analysis.structured_output = output
-        invalid_payload = _new_summary_report_payload(
+        empty_payload = _new_summary_report_payload(
             ru_context="Команда проверяет новый продукт.",
             en_context="The team is validating a new product.",
         )
-        for version in invalid_payload["versions"]:
+        for version in empty_payload["versions"]:
             version["critical_problems"] = []
-        retry_payload = _new_summary_report_payload(
-            ru_context="Команда проверяет новый продукт после retry.",
-            en_context="The team is validating a new product after retry.",
-        )
         check_run.run_parameters = {
             "new_summary_mock_provider_result": {
-                "structured_text": json.dumps(invalid_payload, ensure_ascii=False),
-                "raw_output": "raw new summary with empty critical problems",
+                "structured_text": json.dumps(empty_payload, ensure_ascii=False),
+                "raw_output": "raw new summary with no critical problems",
                 "latency_ms": 1,
-            },
-            "new_summary_json_retry_mock_provider_result": {
-                "structured_text": json.dumps(retry_payload, ensure_ascii=False),
-                "raw_output": "raw new summary retry",
-                "latency_ms": 2,
             },
         }
         db.commit()
@@ -641,11 +633,26 @@ def test_new_summary_schema_retry_handles_empty_critical_problems(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт после retry."
-        assert state["en"]["payload"]["critical_problems"] == ["Stop criteria are missing."]
+        assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
+        assert state["ru"]["payload"]["critical_problems"] == []
+        assert state["en"]["payload"]["critical_problems"] == []
     finally:
         db.close()
         get_settings.cache_clear()
+
+
+def test_new_summary_schema_accepts_ten_problems_and_rejects_eleven():
+    report = _new_summary_report_payload(
+        ru_context="Команда проверяет новый продукт.",
+        en_context="The team is validating a new product.",
+    )
+    for version in report["versions"]:
+        version["critical_problems"] = [f"Problem {index}" for index in range(10)]
+    validate(instance=report, schema=new_summary_generation._new_summary_schema())
+
+    report["versions"][0]["critical_problems"].append("Problem 11")
+    with pytest.raises(ValidationError):
+        validate(instance=report, schema=new_summary_generation._new_summary_schema())
 
 
 def test_new_summary_traction_summary_filters_blank_period_values_together():
@@ -1261,7 +1268,7 @@ def test_new_summary_failure_persists_public_error_code_only(tmp_path, monkeypat
             en_context="Sensitive text must not leak into the public error.",
         )
         for version in invalid_payload["versions"]:
-            version["critical_problems"] = []
+            version["critical_problems"] = [f"Sensitive problem {index}" for index in range(11)]
         check_run.run_parameters = {
             "new_summary_mock_provider_result": {
                 "structured_text": json.dumps(invalid_payload, ensure_ascii=False),

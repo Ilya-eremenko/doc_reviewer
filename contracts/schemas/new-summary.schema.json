@@ -107,7 +107,10 @@
           "description": "What is not sufficiently confirmed. Do not duplicate required elements or identified problems."
         },
         "critical_problems": {
-          "$ref": "#/$defs/optional_finding_list",
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10,
+          "items": { "$ref": "#/$defs/non_empty_string" },
           "description": "Decision-critical problems only; do not include recommendations or action plans."
         },
         "other": {
@@ -116,22 +119,7 @@
           "items": { "$ref": "#/$defs/non_empty_string" },
           "description": "Optional cross-functional observations that do not belong in previous sections."
         }
-      },
-      "allOf": [
-        {
-          "if": {
-            "required": ["stage"],
-            "properties": {
-              "stage": { "not": { "const": "Unknown" } }
-            }
-          },
-          "then": {
-            "properties": {
-              "critical_problems": { "$ref": "#/$defs/finding_list" }
-            }
-          }
-        }
-      ]
+      }
     },
     "traction_summary": {
       "oneOf": [
@@ -361,12 +349,6 @@
           "items": { "$ref": "#/$defs/non_empty_string" }
         }
       }
-    },
-    "finding_list": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 5,
-      "items": { "$ref": "#/$defs/non_empty_string" }
     },
     "optional_finding_list": {
       "type": "array",

@@ -2841,3 +2841,10 @@ Exit criteria:
   Focused Python and web tests cover both shapes, metric horizons, exports,
   authorization, and parser provenance. Production deployment and targeted
   regeneration remain to be verified after PR merge.
+- 2026-09-29: PR #81 follow-up aligns its New Summary instructions with the
+  application contract: known-stage reports may have no critical problems,
+  problems are capped at ten, and empty problem sections are hidden. Revenue
+  and DTB share a displayed table only when their source periods match; distinct
+  horizons remain separate. Gate 3 and Progress Review required-element order
+  follows the skill. Focused worker/API tests pass; production behavior still
+  requires verification after merge.

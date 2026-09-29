@@ -162,9 +162,11 @@ export function NewSummaryReportView({
         </ul>
       </section>
 
-      <section className="new-summary-panel new-summary-critical">
-        <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
-      </section>
+      {content.critical_problems.length ? (
+        <section className="new-summary-panel new-summary-critical">
+          <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
+        </section>
+      ) : null}
 
       {content.other.length ? (
         <section className="new-summary-panel new-summary-other">
@@ -402,7 +404,20 @@ function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value
 
 function tractionTables(value: NewSummaryTractionSummary | undefined): NewSummaryTractionTable[] {
   if (!value) return [];
-  return "tables" in value ? value.tables : [value];
+  const tables = "tables" in value ? value.tables : [value];
+  if (
+    tables.length !== 2 ||
+    !tables[0].metric || !tables[1].metric || tables[0].metric === tables[1].metric ||
+    JSON.stringify(tables[0].periods) !== JSON.stringify(tables[1].periods)
+  ) return tables;
+  return [{
+    metric_label: "Метрика / Metric",
+    periods: tables[0].periods,
+    rows: tables.flatMap((table) => table.rows.map((row) => ({
+      label: table.rows.length === 1 ? table.metric_label : `${table.metric_label} · ${row.label}`,
+      values: row.values,
+    }))),
+  }];
 }
 
 function requiredElementTone(item: NewSummaryRequiredElement): "present" | "partial" | "missing" | "fraction" {

@@ -630,12 +630,31 @@ def _traction_tables(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, dict):
         return []
     candidates = value.get("tables") if isinstance(value.get("tables"), list) else [value]
-    return [
+    tables = [
         table for table in candidates
         if isinstance(table, dict)
         and isinstance(table.get("periods"), list) and table["periods"]
         and isinstance(table.get("rows"), list) and table["rows"]
     ]
+    if (
+        len(tables) == 2
+        and tables[0].get("metric") in {"revenue", "dtb"}
+        and tables[1].get("metric") in {"revenue", "dtb"}
+        and tables[0]["metric"] != tables[1]["metric"]
+        and tables[0]["periods"] == tables[1]["periods"]
+    ):
+        return [{
+            "metric_label": "Метрика / Metric",
+            "periods": tables[0]["periods"],
+            "rows": [
+                {
+                    "label": table.get("metric_label") if len(table["rows"]) == 1 else f"{table.get('metric_label')} · {row.get('label')}",
+                    "values": row.get("values", []),
+                }
+                for table in tables for row in table["rows"]
+            ],
+        }]
+    return tables
 
 
 def _ordered_details(content: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
