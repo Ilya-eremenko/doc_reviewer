@@ -1717,6 +1717,8 @@ def test_new_summary_export_combines_only_matching_traction_horizons():
     assert len(combined) == 1
     assert [row["label"] for row in combined[0]["rows"]] == ["Revenue (incr), mR", "DTB (incr), %"]
     assert combined[0]["rows"][1]["values"] == ["1%", "2%", "2%"]
+    assert _traction_tables({"tables": tables}, language="ru")[0]["metric_label"] == "Метрика"
+    assert _traction_tables({"tables": tables}, language="en")[0]["metric_label"] == "Metric"
 
     tables[1]["periods"] = ["2026", "2027", "2028", "Total"]
     assert len(_traction_tables({"tables": tables})) == 2

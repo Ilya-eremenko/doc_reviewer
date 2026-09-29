@@ -216,7 +216,7 @@ def _append_docx_list_section(document: DocxDocument, title: str, items: list[st
 
 
 def _append_docx_traction(document: DocxDocument, content: dict[str, Any], labels: dict[str, str]) -> None:
-    tables = _traction_tables(content.get("traction_summary"))
+    tables = _traction_tables(content.get("traction_summary"), language=content.get("language"))
     if not tables:
         return
     _append_docx_heading(document, labels["traction"])
@@ -430,7 +430,7 @@ def _append_pdf_traction(
     styles: dict[str, ParagraphStyle],
     frame_width: float,
 ) -> None:
-    tables = _traction_tables(content.get("traction_summary"))
+    tables = _traction_tables(content.get("traction_summary"), language=content.get("language"))
     if not tables:
         return
     _append_pdf_heading(story, labels["traction"], styles)
@@ -626,7 +626,7 @@ def _labels(language: str) -> dict[str, str]:
     }
 
 
-def _traction_tables(value: Any) -> list[dict[str, Any]]:
+def _traction_tables(value: Any, *, language: str | None = None) -> list[dict[str, Any]]:
     if not isinstance(value, dict):
         return []
     candidates = value.get("tables") if isinstance(value.get("tables"), list) else [value]
@@ -644,7 +644,7 @@ def _traction_tables(value: Any) -> list[dict[str, Any]]:
         and tables[0]["periods"] == tables[1]["periods"]
     ):
         return [{
-            "metric_label": "Метрика / Metric",
+            "metric_label": "Метрика" if language == "ru" else "Metric",
             "periods": tables[0]["periods"],
             "rows": [
                 {

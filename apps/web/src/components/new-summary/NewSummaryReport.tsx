@@ -203,7 +203,7 @@ function TractionSummaryTable({
   return (
     <section className="new-summary-panel new-summary-traction">
       <h2>{text.traction}</h2>
-      {tractionTables(traction).map((table) => (
+      {tractionTables(traction, text.metric).map((table) => (
         <div className="new-summary-table-scroll" key={table.metric ?? table.metric_label}>
           <table>
             <thead>
@@ -402,7 +402,7 @@ function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value
   return tractionTables(value).some((table) => table.periods.length > 0 && table.rows.length > 0);
 }
 
-function tractionTables(value: NewSummaryTractionSummary | undefined): NewSummaryTractionTable[] {
+function tractionTables(value: NewSummaryTractionSummary | undefined, metricHeading = "Metric"): NewSummaryTractionTable[] {
   if (!value) return [];
   const tables = "tables" in value ? value.tables : [value];
   if (
@@ -411,7 +411,7 @@ function tractionTables(value: NewSummaryTractionSummary | undefined): NewSummar
     JSON.stringify(tables[0].periods) !== JSON.stringify(tables[1].periods)
   ) return tables;
   return [{
-    metric_label: "Метрика / Metric",
+    metric_label: metricHeading,
     periods: tables[0].periods,
     rows: tables.flatMap((table) => table.rows.map((row) => ({
       label: table.rows.length === 1 ? table.metric_label : `${table.metric_label} · ${row.label}`,

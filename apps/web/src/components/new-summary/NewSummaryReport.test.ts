@@ -24,6 +24,7 @@ describe("AI Summary identified problems", () => {
 describe("AI Summary traction", () => {
   it("combines only matching Revenue and DTB horizons", () => {
     expect(source).toContain("JSON.stringify(tables[0].periods) !== JSON.stringify(tables[1].periods)");
-    expect(source).toContain('metric_label: "Метрика / Metric"');
+    expect(source).toContain("tractionTables(traction, text.metric)");
+    expect(source).toContain("metric_label: metricHeading");
   });
 });
