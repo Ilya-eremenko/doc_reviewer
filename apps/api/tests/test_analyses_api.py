@@ -1673,6 +1673,7 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     assert f"document_id={analysis.document_id}" in text
     assert "Что подтверждено" not in text
     assert "Что недостаточно подтверждено" not in text
+    assert "Appendix 1" in text
 
     output = dict(analysis.structured_output)
     result = dict(output["result"])
@@ -1702,6 +1703,75 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     assert "Revenue (incr), mR" in all_cells
     assert "DTB (incr), %" in all_cells
     assert "2028" in all_cells
+
+    output = dict(analysis.structured_output)
+    result = dict(output["result"])
+    state = dict(result["new_summary"])
+    for language in ("ru", "en"):
+        variant = dict(state[language])
+        payload = dict(variant["payload"])
+        payload.pop("required_details", None)
+        elements = [dict(item) for item in payload["required_elements"]]
+        elements[0]["detail"] = {
+            "type": "solution_validation",
+            "items": [{"text": "Потребность проверена" if language == "ru" else "Need validated", "verdict": "confirmed"}],
+        }
+        elements.append({
+            "id": "gate2_metric_linkage",
+            "label": "Связь Input/Output метрик продукта с УТП" if language == "ru" else "Product metric linkage",
+            "status": "есть",
+            "evidence": "Метрики связаны с продуктом." if language == "ru" else "Metrics link to the product.",
+            "detail": {
+                "type": "metric_binding",
+                "input_metrics": [{"metric": "Activation", "binding": "confirmed", "evidence": "Из пилота" if language == "ru" else "From the pilot"}],
+                "output_metrics": [],
+            },
+        })
+        elements.append({
+            "id": "gate2_commitments",
+            "label": "Commitments к Gate 3: список функционала и метрики" if language == "ru" else "Gate 3 commitments: feature scope and metrics",
+            "status": "частично подтверждено",
+            "evidence": "Есть план поставки." if language == "ru" else "A delivery plan exists.",
+            "detail": {
+                "type": "next_review_plan",
+                "outputs_until_next_review": ["Запустить MVP" if language == "ru" else "Launch MVP"],
+                "metrics_until_next_review": [{"metric": "Activation", "current": "", "next_review": "20%"}],
+            },
+        })
+        elements.append({
+            "id": "gate2_stop_criteria",
+            "label": "Stop-критерии" if language == "ru" else "Stop criteria",
+            "status": "частично подтверждено",
+            "evidence": "Указан порог остановки." if language == "ru" else "A stop threshold is stated.",
+            "detail": {
+                "type": "stop_criteria",
+                "criteria": ["Остановить при провале пилота" if language == "ru" else "Stop when the pilot fails"],
+            },
+        })
+        payload["required_elements"] = elements
+        variant["payload"] = payload
+        state[language] = variant
+    result["new_summary"] = state
+    output["result"] = result
+    analysis.structured_output = output
+    db_session.commit()
+
+    inline_pdf = client.get(f"/analyses/{analysis.id}/new-summary/export/pdf")
+    inline_docx = client.get(f"/analyses/{analysis.id}/new-summary/export/docx")
+    assert inline_pdf.status_code == 200 and inline_pdf.content.startswith(b"%PDF")
+    assert inline_docx.status_code == 200
+    exported.write_bytes(inline_docx.content)
+    document = DocxDocument(exported)
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    assert "Appendices" not in paragraphs
+    assert paragraphs.index("Потребность проверена — Подтверждено") < paragraphs.index("Описание MVP/целевого продукта — Нет")
+    metric_detail_index = next(index for index, text in enumerate(paragraphs) if "Activation - Из пилота" in text)
+    assert paragraphs.index("Связь Input/Output метрик продукта с УТП — Есть") < metric_detail_index
+    assert metric_detail_index < paragraphs.index("Commitments к Gate 3: список функционала и метрики — Частично подтверждено")
+    assert paragraphs.index("Запустить MVP") < paragraphs.index(
+        "Metrics until Gate 3", paragraphs.index("Запустить MVP")
+    )
+    assert paragraphs.index("Stop-критерии — Частично подтверждено") < paragraphs.index("Остановить при провале пилота")
 
 
 def test_existing_progress_review_displays_correct_stage_without_changing_analysis(client, db_session, tmp_path):

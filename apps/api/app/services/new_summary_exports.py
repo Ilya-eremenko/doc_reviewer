@@ -277,6 +277,9 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         for run in evidence.runs:
             run.font.size = Pt(8)
             run.font.color.rgb = RGBColor(93, 102, 117)
+        detail = item.get("detail")
+        if isinstance(detail, dict):
+            _append_docx_detail(document, detail, labels, inline_item_id=item.get("id"))
 
 
 def _append_docx_details(document: DocxDocument, content: dict[str, Any], labels: dict[str, str]) -> None:
@@ -289,7 +292,13 @@ def _append_docx_details(document: DocxDocument, content: dict[str, Any], labels
         _append_docx_detail(document, detail, labels)
 
 
-def _append_docx_detail(document: DocxDocument, detail: dict[str, Any], labels: dict[str, str]) -> None:
+def _append_docx_detail(
+    document: DocxDocument,
+    detail: dict[str, Any],
+    labels: dict[str, str],
+    *,
+    inline_item_id: str | None = None,
+) -> None:
     detail_type = detail.get("type")
     if detail_type == "solution_validation":
         for item in _dict_list(detail.get("items")):
@@ -317,9 +326,12 @@ def _append_docx_detail(document: DocxDocument, detail: dict[str, Any], labels: 
                 status_run.font.color.rgb = RGBColor(15, 163, 107) if item.get("binding") == "confirmed" else RGBColor(199, 120, 0)
         return
     if detail_type == "next_review_plan":
-        _append_docx_list_section(document, labels["outputs_until_next"], _string_list(detail.get("outputs_until_next_review")), RGBColor(17, 24, 39))
+        outputs_title = labels["outputs_until_gate3"] if inline_item_id == "gate2_commitments" else labels["outputs_until_next"]
+        _append_docx_list_section(document, outputs_title, _string_list(detail.get("outputs_until_next_review")), RGBColor(17, 24, 39))
         metrics = _dict_list(detail.get("metrics_until_next_review"))
         if metrics:
+            if inline_item_id == "gate2_commitments":
+                _append_docx_heading(document, labels["metrics_until_gate3"])
             table = document.add_table(rows=1 + len(metrics), cols=3)
             table.style = "Table Grid"
             table.rows[0].cells[0].text = labels["metric"]
@@ -383,7 +395,7 @@ def _append_pdf_version(
     story.append(Spacer(1, 8))
     _append_pdf_traction(story, content, labels, styles, frame_width)
     _append_pdf_text_section(story, labels["context"], [_clean_text(content.get("context"))], styles)
-    _append_pdf_required(story, content, labels, styles)
+    _append_pdf_required(story, content, labels, styles, frame_width)
     _append_pdf_list_section(story, labels["critical"], _string_list(content.get("critical_problems")), "#B91C1C", styles)
     _append_pdf_list_section(story, labels["other"], _string_list(content.get("other")), _MUTED, styles)
     _append_pdf_details(story, content, labels, styles, frame_width)
@@ -467,7 +479,13 @@ def _append_pdf_traction_table(
     story.append(Spacer(1, 8))
 
 
-def _append_pdf_required(story: list[Any], content: dict[str, Any], labels: dict[str, str], styles: dict[str, ParagraphStyle]) -> None:
+def _append_pdf_required(
+    story: list[Any],
+    content: dict[str, Any],
+    labels: dict[str, str],
+    styles: dict[str, ParagraphStyle],
+    frame_width: float = A4[0] - (2 * 1.35 * cm),
+) -> None:
     items = content.get("required_elements")
     if not isinstance(items, list) or not items:
         return
@@ -489,6 +507,9 @@ def _append_pdf_required(story: list[Any], content: dict[str, Any], labels: dict
             )
         )
         story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
+        detail = item.get("detail")
+        if isinstance(detail, dict):
+            _append_pdf_detail(story, detail, labels, styles, frame_width, inline_item_id=item.get("id"))
 
 
 def _append_pdf_details(
@@ -513,6 +534,8 @@ def _append_pdf_detail(
     labels: dict[str, str],
     styles: dict[str, ParagraphStyle],
     frame_width: float,
+    *,
+    inline_item_id: str | None = None,
 ) -> None:
     detail_type = detail.get("type")
     if detail_type == "solution_validation":
@@ -543,9 +566,12 @@ def _append_pdf_detail(
             story.append(ListFlowable([ListItem(item) for item in entries], bulletType="bullet", leftIndent=15))
         return
     if detail_type == "next_review_plan":
-        _append_pdf_list_section(story, labels["outputs_until_next"], _string_list(detail.get("outputs_until_next_review")), _TEXT, styles)
+        outputs_title = labels["outputs_until_gate3"] if inline_item_id == "gate2_commitments" else labels["outputs_until_next"]
+        _append_pdf_list_section(story, outputs_title, _string_list(detail.get("outputs_until_next_review")), _TEXT, styles)
         metrics = _dict_list(detail.get("metrics_until_next_review"))
         if metrics:
+            if inline_item_id == "gate2_commitments":
+                story.append(Paragraph(_xml(labels["metrics_until_gate3"]), styles["subheading"]))
             rows = [
                 [
                     Paragraph(_xml(labels["metric"]), styles["table_header"]),
@@ -595,6 +621,8 @@ def _labels(language: str) -> dict[str, str]:
             "other": "Other observations",
             "output_metrics": "Output metrics",
             "outputs_until_next": "Outputs until the next review",
+            "outputs_until_gate3": "Outputs until Gate 3",
+            "metrics_until_gate3": "Metrics until Gate 3",
             "present": "Present",
             "required": "Required document elements",
             "stage": "Initiative stage",
@@ -617,6 +645,8 @@ def _labels(language: str) -> dict[str, str]:
         "other": "Другие наблюдения",
         "output_metrics": "Output metrics",
         "outputs_until_next": "Outputs until the next Review",
+        "outputs_until_gate3": "Outputs until Gate 3",
+        "metrics_until_gate3": "Metrics until Gate 3",
         "present": "Есть",
         "required": "Обязательные элементы документа",
         "stage": "Стадия инициативы",

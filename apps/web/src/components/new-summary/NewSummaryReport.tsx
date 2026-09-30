@@ -17,7 +17,10 @@ const labels = {
     appendices: "Appendices",
     bindingConfirmed: "Связь подтверждена",
     bindingInsufficient: "Связь недостаточно подтверждена",
+    verdictConfirmed: "Подтверждено",
+    verdictInsufficient: "Недостаточно подтверждено",
     context: "Краткий контекст инициативы",
+    current: "Текущее значение",
     critical: "Выявленные проблемы",
     downloadPdf: "Скачать PDF",
     downloadWord: "Скачать Word",
@@ -27,6 +30,8 @@ const labels = {
     missing: "Нет",
     partial: "Частично подтверждено",
     nextReview: "Значение к следующему ревью",
+    outputsUntilGate3: "Outputs until Gate 3",
+    metricsUntilGate3: "Metrics until Gate 3",
     other: "Другие наблюдения",
     outputMetrics: "Output metrics",
     present: "Есть",
@@ -42,7 +47,10 @@ const labels = {
     appendices: "Appendices",
     bindingConfirmed: "Binding confirmed",
     bindingInsufficient: "Binding not sufficiently confirmed",
+    verdictConfirmed: "Confirmed",
+    verdictInsufficient: "Not sufficiently confirmed",
     context: "Initiative context",
+    current: "Current value",
     critical: "Identified problems",
     downloadPdf: "Download PDF",
     downloadWord: "Download Word",
@@ -52,6 +60,8 @@ const labels = {
     missing: "Missing",
     partial: "Partially confirmed",
     nextReview: "Next review value",
+    outputsUntilGate3: "Outputs until Gate 3",
+    metricsUntilGate3: "Metrics until Gate 3",
     other: "Other observations",
     outputMetrics: "Output metrics",
     present: "Present",
@@ -155,6 +165,11 @@ export function NewSummaryReportView({
                     <span>{tone === "fraction" ? item.status : text[tone]}</span>
                   </div>
                   <p>{item.evidence}</p>
+                  {item.detail ? (
+                    <div className="new-summary-required__detail">
+                      <RequiredDetailContent detail={item.detail} labels={text} inlineItemId={item.id} />
+                    </div>
+                  ) : null}
                 </div>
               </li>
             );
@@ -284,9 +299,11 @@ function RequiredDetailsPanel({
 function RequiredDetailContent({
   detail,
   labels: text,
+  inlineItemId,
 }: {
   detail: NewSummaryRequiredDetails;
   labels: (typeof labels)[NewSummaryLanguage];
+  inlineItemId?: string;
 }) {
   if (detail.type === "solution_validation") {
     return (
@@ -294,7 +311,7 @@ function RequiredDetailContent({
         {detail.items.map((item) => (
           <li key={item.text}>
             <span>{item.text}</span>
-            <StatusChip status={item.verdict} labels={text} />
+            <StatusChip status={item.verdict} labels={text} kind="hypothesis" />
           </li>
         ))}
       </ul>
@@ -311,33 +328,44 @@ function RequiredDetailContent({
   }
 
   if (detail.type === "next_review_plan") {
+    const gate2 = inlineItemId === "gate2_commitments";
     return (
       <div className="new-summary-plan-detail">
-        <ul className="new-summary-appendix-list">
-          {detail.outputs_until_next_review.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-        <div className="new-summary-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>{text.metric}</th>
-                <th>Current</th>
-                <th>{text.nextReview}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.metrics_until_next_review.map((row) => (
-                <tr key={`${row.metric}-${row.current}-${row.next_review}`}>
-                  <th>{row.metric}</th>
-                  <td>{row.current}</td>
-                  <td>{row.next_review}</td>
-                </tr>
+        {detail.outputs_until_next_review.length ? (
+          <>
+            {gate2 ? <h4>{text.outputsUntilGate3}</h4> : null}
+            <ul className="new-summary-appendix-list">
+              {detail.outputs_until_next_review.map((item) => (
+                <li key={item}>{item}</li>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </ul>
+          </>
+        ) : null}
+        {detail.metrics_until_next_review.length ? (
+          <>
+            {gate2 ? <h4>{text.metricsUntilGate3}</h4> : null}
+            <div className="new-summary-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{text.metric}</th>
+                    <th>{text.current}</th>
+                    <th>{text.nextReview}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.metrics_until_next_review.map((row) => (
+                    <tr key={`${row.metric}-${row.current}-${row.next_review}`}>
+                      <th>{row.metric}</th>
+                      <td>{row.current}</td>
+                      <td>{row.next_review}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : null}
       </div>
     );
   }
@@ -384,14 +412,19 @@ function MetricBindingGroup({
 function StatusChip({
   labels: text,
   status,
+  kind = "binding",
 }: {
   labels: (typeof labels)[NewSummaryLanguage];
   status: "confirmed" | "insufficient";
+  kind?: "binding" | "hypothesis";
 }) {
   const confirmed = status === "confirmed";
+  const label = kind === "hypothesis"
+    ? confirmed ? text.verdictConfirmed : text.verdictInsufficient
+    : confirmed ? text.bindingConfirmed : text.bindingInsufficient;
   return (
     <span className={confirmed ? "new-summary-status-chip confirmed" : "new-summary-status-chip insufficient"}>
-      {confirmed ? text.bindingConfirmed : text.bindingInsufficient}
+      {label}
     </span>
   );
 }
@@ -694,6 +727,20 @@ const newSummaryStyles = `
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.new-summary-required__detail {
+  margin-top: 14px;
+}
+
+.new-summary-required__detail h4 {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.new-summary-required__detail .new-summary-table-scroll {
+  margin-top: 10px;
 }
 
 .new-summary-evidence-grid {

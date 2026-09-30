@@ -75,6 +75,17 @@ STAGE_LABELS = {
     "unknown": "Unknown",
 }
 
+INLINE_REQUIRED_DETAIL_TYPES = {
+    "gate2_hypothesis_results": "solution_validation",
+    "gate2_metric_linkage": "metric_binding",
+    "gate2_commitments": "next_review_plan",
+    "gate2_stop_criteria": "stop_criteria",
+    "gate3_stop_criteria": "stop_criteria",
+    "progress_review_stop_criteria": "stop_criteria",
+    "stream_review_1_stop_criteria": "stop_criteria",
+    "stream_review_2_plus_stop_criteria": "stop_criteria",
+}
+
 
 def generate_and_persist_new_summary_report(
     *,
@@ -807,6 +818,11 @@ def _validated_source_dependent_report(
             generated_payload=version,
             required_details=normalized_version["required_details"],
         )
+        for element in normalized_version["required_elements"]:
+            if "detail" in element:
+                normalized_version["required_details"].pop(element["id"], None)
+        if source_payload.get("document_type") == "gate_2":
+            normalized_version["required_details"] = {}
         source_tables = source_payload.get("source_traction_tables")
         if isinstance(source_tables, list) and source_tables:
             normalized_version["traction_summary"] = display_traction_tables(
@@ -993,7 +1009,7 @@ def _required_elements_from_source(
     target_language: str,
     generated_payload: dict[str, Any],
     required_details: dict[str, Any],
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     document_type = source_payload.get("document_type")
     expected = _new_summary_stage_checklist_items(
         str(document_type) if isinstance(document_type, str) else None,
@@ -1001,24 +1017,33 @@ def _required_elements_from_source(
     )
     by_id = _gate_stage_checklist_by_id(source_payload)
     generated_by_id = _generated_required_elements_by_id(generated_payload)
-    return [
-        {
+    elements: list[dict[str, Any]] = []
+    for item_id, label in expected:
+        generated_item = generated_by_id.get(item_id)
+        detail = _normalized_required_detail((generated_item or {}).get("detail"))
+        if detail is None:
+            detail = required_details.get(item_id)
+        if not isinstance(detail, dict) or detail.get("type") != INLINE_REQUIRED_DETAIL_TYPES.get(item_id):
+            detail = None
+        element: dict[str, Any] = {
             "id": item_id,
             "label": label,
             "status": _required_element_status(
                 by_id.get(item_id),
                 item_id=item_id,
-                generated_item=generated_by_id.get(item_id),
-                required_details=required_details,
+                generated_item=generated_item,
+                required_details={**required_details, item_id: detail} if detail is not None else required_details,
             ),
             "evidence": _required_element_evidence(
                 by_id.get(item_id),
-                generated_by_id.get(item_id),
+                generated_item,
                 target_language=target_language,
             ),
         }
-        for item_id, label in expected
-    ]
+        if detail is not None:
+            element["detail"] = detail
+        elements.append(element)
+    return elements
 
 
 def _normalized_required_details(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1061,7 +1086,7 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
     if detail_type == "next_review_plan":
         outputs = _non_empty_strings(detail.get("outputs_until_next_review"))
         metrics = _normalized_metric_plan_rows(detail.get("metrics_until_next_review"))
-        if not outputs or not metrics:
+        if not outputs and not metrics:
             return None
         return {
             "type": detail_type,
@@ -1096,9 +1121,9 @@ def _normalized_metric_plan_rows(value: Any) -> list[dict[str, str]]:
         for item in value
         if isinstance(item, dict)
         for metric in [_non_empty_string(item.get("metric"))]
-        for current in [_non_empty_string(item.get("current"))]
-        for next_review in [_non_empty_string(item.get("next_review"))]
-        if metric is not None and current is not None and next_review is not None
+        for current in [item.get("current")]
+        for next_review in [item.get("next_review")]
+        if metric is not None and isinstance(current, str) and isinstance(next_review, str)
     ]
 
 

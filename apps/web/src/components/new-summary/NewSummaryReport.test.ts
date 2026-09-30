@@ -13,4 +13,10 @@ describe("AI Summary required elements", () => {
     expect(source).toContain('new-summary-required li.fraction .new-summary-required__title span');
     expect(source).toContain('background: var(--danger-bg)');
   });
+
+  it("shows new structured details below their required element while retaining old appendices", () => {
+    expect(source).toContain("item.detail ? (");
+    expect(source).toContain("<RequiredDetailContent detail={item.detail}");
+    expect(source).toContain("<RequiredDetailsPanel content={content}");
+  });
 });

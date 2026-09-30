@@ -21,6 +21,16 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Align the user-edited New Summary skill with the site contract: Gate 2
+  hypothesis, metric-linkage, commitment, and stop-criterion details now live
+  inside their matching `required_elements[].detail` entries and render there
+  in the web page and PDF/Word exports. Legacy `required_details` appendices
+  remain readable for historical reports and other stages. Match the edited
+  Gate 3 and Progress Review checklist order/labels without changing Gate
+  Challenger or IC Review execution. Local verification: 266 API tests, 162
+  web tests, production web build, and 286 worker tests pass; three unrelated
+  PDF parser tests require `pdfplumber`, absent from this local Python runtime.
+  PR, CI, and production merge/deploy are pending.
 - [~] Detect Progress Review from PDF table cells whose line breaks become
   `<br>` in the stored parsed text. Read only the current-review cell, retain
   explicit-stage precedence, and return unknown instead of a high-confidence

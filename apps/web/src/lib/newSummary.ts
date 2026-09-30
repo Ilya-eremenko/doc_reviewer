@@ -14,6 +14,7 @@ export type NewSummaryRequiredElement = {
   label: string;
   status: "есть" | "частично подтверждено" | "нет" | "present" | "partially confirmed" | "missing" | `${number}/${number}`;
   evidence: string;
+  detail?: NewSummaryRequiredDetails;
 };
 
 export type NewSummaryTractionTable = {
