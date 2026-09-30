@@ -236,7 +236,19 @@ def _append_docx_traction(document: DocxDocument, content: dict[str, Any], label
             values = row.get("values") if isinstance(row.get("values"), list) else []
             for cell_index, _period in enumerate(periods, start=1):
                 cells[cell_index].text = _clean_text(values[cell_index - 1] if cell_index - 1 < len(values) else "")
+        _set_docx_traction_table_widths(table, document)
         _style_docx_table(table)
+
+
+def _set_docx_traction_table_widths(table, document: DocxDocument) -> None:
+    section = document.sections[0]
+    page_width = section.page_width - section.left_margin - section.right_margin
+    widths = _pdf_table_widths(len(table.columns), page_width)
+    table.autofit = False
+    for column, width in zip(table.columns, widths, strict=True):
+        column.width = int(width)
+        for cell in column.cells:
+            cell.width = int(width)
 
 
 def _style_docx_table(table) -> None:
@@ -271,12 +283,13 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
             "missing": RGBColor(217, 45, 32),
             "fraction": RGBColor(17, 24, 39),
         }[_required_status_kind(item)]
-        evidence = document.add_paragraph(_clean_text(item.get("evidence")))
-        evidence.paragraph_format.left_indent = Inches(0.22)
-        evidence.paragraph_format.space_after = Pt(5)
-        for run in evidence.runs:
-            run.font.size = Pt(8)
-            run.font.color.rgb = RGBColor(93, 102, 117)
+        if item.get("evidence"):
+            evidence = document.add_paragraph(_clean_text(item.get("evidence")))
+            evidence.paragraph_format.left_indent = Inches(0.22)
+            evidence.paragraph_format.space_after = Pt(5)
+            for run in evidence.runs:
+                run.font.size = Pt(8)
+                run.font.color.rgb = RGBColor(93, 102, 117)
         detail = item.get("detail")
         if isinstance(detail, dict):
             _append_docx_detail(document, detail, labels, inline_item_id=item.get("id"))
@@ -300,6 +313,12 @@ def _append_docx_detail(
     inline_item_id: str | None = None,
 ) -> None:
     detail_type = detail.get("type")
+    if detail_type == "hypotheses_with_thresholds":
+        for item in _dict_list(detail.get("items")):
+            paragraph = document.add_paragraph(style="List Bullet")
+            paragraph.add_run(_clean_text(item.get("hypothesis"))).bold = True
+            paragraph.add_run(f" - {_clean_text(item.get('confirmation_condition'))}")
+        return
     if detail_type == "solution_validation":
         for item in _dict_list(detail.get("items")):
             paragraph = document.add_paragraph(style="List Bullet")
@@ -330,8 +349,8 @@ def _append_docx_detail(
         _append_docx_list_section(document, outputs_title, _string_list(detail.get("outputs_until_next_review")), RGBColor(17, 24, 39))
         metrics = _dict_list(detail.get("metrics_until_next_review"))
         if metrics:
-            if inline_item_id == "gate2_commitments":
-                _append_docx_heading(document, labels["metrics_until_gate3"])
+            if inline_item_id:
+                _append_docx_heading(document, labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"])
             table = document.add_table(rows=1 + len(metrics), cols=3)
             table.style = "Table Grid"
             table.rows[0].cells[0].text = labels["metric"]
@@ -506,7 +525,8 @@ def _append_pdf_required(
                 styles["required"],
             )
         )
-        story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
+        if item.get("evidence"):
+            story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
         detail = item.get("detail")
         if isinstance(detail, dict):
             _append_pdf_detail(story, detail, labels, styles, frame_width, inline_item_id=item.get("id"))
@@ -538,6 +558,14 @@ def _append_pdf_detail(
     inline_item_id: str | None = None,
 ) -> None:
     detail_type = detail.get("type")
+    if detail_type == "hypotheses_with_thresholds":
+        items = [
+            Paragraph(f"<b>{_xml(item.get('hypothesis'))}</b> - {_xml(item.get('confirmation_condition'))}", styles["body"])
+            for item in _dict_list(detail.get("items"))
+        ]
+        if items:
+            story.append(ListFlowable([ListItem(item) for item in items], bulletType="bullet", leftIndent=15))
+        return
     if detail_type == "solution_validation":
         items = []
         for item in _dict_list(detail.get("items")):
@@ -570,8 +598,8 @@ def _append_pdf_detail(
         _append_pdf_list_section(story, outputs_title, _string_list(detail.get("outputs_until_next_review")), _TEXT, styles)
         metrics = _dict_list(detail.get("metrics_until_next_review"))
         if metrics:
-            if inline_item_id == "gate2_commitments":
-                story.append(Paragraph(_xml(labels["metrics_until_gate3"]), styles["subheading"]))
+            if inline_item_id:
+                story.append(Paragraph(_xml(labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"]), styles["subheading"]))
             rows = [
                 [
                     Paragraph(_xml(labels["metric"]), styles["table_header"]),

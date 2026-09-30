@@ -21,7 +21,16 @@ Primary plan index:
 
 ## Current Focus
 
-- [~] Align the user-edited New Summary skill with the site contract: Gate 2
+- [~] Align the latest user-edited New Summary skill with the site contract:
+  Gate 1 hypothesis thresholds; Gate 2 and Stream Review 1 inline detail;
+  Progress Review and Stream Review 2+ next-plan detail inline; optional
+  required-element evidence, problems, and Other; explicit missing Traction
+  Summary cell reasons; consistent web and PDF/Word rendering. Historical
+  saved reports keep their appendix presentation. Focused API/worker tests,
+  full API/web tests, and a production web build pass; the local worker suite
+  has three known PDF parser failures because `pdfplumber` is not installed in
+  this local Python runtime. PR, CI, and production merge/deploy are pending.
+- [x] Align the prior user-edited New Summary skill with the site contract: Gate 2
   hypothesis, metric-linkage, commitment, and stop-criterion details now live
   inside their matching `required_elements[].detail` entries and render there
   in the web page and PDF/Word exports. Legacy `required_details` appendices
@@ -30,7 +39,7 @@ Primary plan index:
   Challenger or IC Review execution. Local verification: 266 API tests, 162
   web tests, production web build, and 286 worker tests pass; three unrelated
   PDF parser tests require `pdfplumber`, absent from this local Python runtime.
-  PR, CI, and production merge/deploy are pending.
+  PR #86 was merged and deployed as `a73603c70b994305e50b85d3ece36794a1aa5c7c`.
 - [~] Detect Progress Review from PDF table cells whose line breaks become
   `<br>` in the stored parsed text. Read only the current-review cell, retain
   explicit-stage precedence, and return unknown instead of a high-confidence

@@ -32,6 +32,8 @@ const labels = {
     nextReview: "Значение к следующему ревью",
     outputsUntilGate3: "Outputs until Gate 3",
     metricsUntilGate3: "Metrics until Gate 3",
+    outputsUntilNextReview: "Outputs until the next Review",
+    metricsUntilNextReview: "Metrics until the next Review",
     other: "Другие наблюдения",
     outputMetrics: "Output metrics",
     present: "Есть",
@@ -62,6 +64,8 @@ const labels = {
     nextReview: "Next review value",
     outputsUntilGate3: "Outputs until Gate 3",
     metricsUntilGate3: "Metrics until Gate 3",
+    outputsUntilNextReview: "Outputs until the next Review",
+    metricsUntilNextReview: "Metrics until the next Review",
     other: "Other observations",
     outputMetrics: "Output metrics",
     present: "Present",
@@ -164,7 +168,7 @@ export function NewSummaryReportView({
                     <strong>{item.label}</strong>
                     <span>{tone === "fraction" ? item.status : text[tone]}</span>
                   </div>
-                  <p>{item.evidence}</p>
+                  {item.evidence ? <p>{item.evidence}</p> : null}
                   {item.detail ? (
                     <div className="new-summary-required__detail">
                       <RequiredDetailContent detail={item.detail} labels={text} inlineItemId={item.id} />
@@ -177,11 +181,13 @@ export function NewSummaryReportView({
         </ul>
       </section>
 
-      <section className="new-summary-panel new-summary-critical">
-        <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
-      </section>
+      {content.critical_problems?.length ? (
+        <section className="new-summary-panel new-summary-critical">
+          <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
+        </section>
+      ) : null}
 
-      {content.other.length ? (
+      {content.other?.length ? (
         <section className="new-summary-panel new-summary-other">
           <SummarySection items={content.other} title={text.other} />
         </section>
@@ -250,10 +256,10 @@ function SummarySection({
   title,
 }: {
   className?: string;
-  items: string[];
+  items?: string[];
   title: string;
 }) {
-  if (!items.length) {
+  if (!items?.length) {
     return null;
   }
 
@@ -305,6 +311,18 @@ function RequiredDetailContent({
   labels: (typeof labels)[NewSummaryLanguage];
   inlineItemId?: string;
 }) {
+  if (detail.type === "hypotheses_with_thresholds") {
+    return (
+      <ul className="new-summary-appendix-list">
+        {detail.items.map((item) => (
+          <li key={`${item.hypothesis}-${item.confirmation_condition}`}>
+            <strong>{item.hypothesis}</strong> - {item.confirmation_condition}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
   if (detail.type === "solution_validation") {
     return (
       <ul className="new-summary-appendix-list">
@@ -329,11 +347,12 @@ function RequiredDetailContent({
 
   if (detail.type === "next_review_plan") {
     const gate2 = inlineItemId === "gate2_commitments";
+    const inline = Boolean(inlineItemId);
     return (
       <div className="new-summary-plan-detail">
         {detail.outputs_until_next_review.length ? (
           <>
-            {gate2 ? <h4>{text.outputsUntilGate3}</h4> : null}
+            {inline ? <h4>{gate2 ? text.outputsUntilGate3 : text.outputsUntilNextReview}</h4> : null}
             <ul className="new-summary-appendix-list">
               {detail.outputs_until_next_review.map((item) => (
                 <li key={item}>{item}</li>
@@ -343,7 +362,7 @@ function RequiredDetailContent({
         ) : null}
         {detail.metrics_until_next_review.length ? (
           <>
-            {gate2 ? <h4>{text.metricsUntilGate3}</h4> : null}
+            {inline ? <h4>{gate2 ? text.metricsUntilGate3 : text.metricsUntilNextReview}</h4> : null}
             <div className="new-summary-table-scroll">
               <table>
                 <thead>
@@ -619,8 +638,11 @@ const newSummaryStyles = `
   min-width: 560px;
   margin-top: 14px;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 13px;
 }
+
+.new-summary-table-scroll th:first-child { width: 32%; }
 
 .new-summary-table-scroll th,
 .new-summary-table-scroll td {
@@ -639,6 +661,8 @@ const newSummaryStyles = `
 .new-summary-table-scroll td {
   color: var(--muted-strong);
 }
+
+.new-summary-traction td { overflow-wrap: anywhere; }
 
 .new-summary-section-heading {
   display: grid;

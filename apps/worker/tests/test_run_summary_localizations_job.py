@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from jsonschema import validate
+from jsonschema import ValidationError, validate
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -598,6 +598,8 @@ def test_new_summary_generation_tolerates_optional_sections_and_stray_appendices
         for version in payload["versions"]:
             version.pop("confirmed")
             version.pop("insufficiently_confirmed")
+            version.pop("critical_problems")
+            version.pop("other")
             version["appendices"] = [{"title": "Appendix 1", "body": "legacy free-form appendix"}]
         check_run.run_parameters = {
             "new_summary_mock_provider_result": {
@@ -614,9 +616,11 @@ def test_new_summary_generation_tolerates_optional_sections_and_stray_appendices
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["confirmed"] == []
+        assert "confirmed" not in state["ru"]["payload"]
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
-        assert state["en"]["payload"]["insufficiently_confirmed"] == []
+        assert "insufficiently_confirmed" not in state["en"]["payload"]
+        assert state["ru"]["payload"]["critical_problems"] == []
+        assert state["en"]["payload"]["other"] == []
         assert "appendices" not in state["ru"]["payload"]
         assert "appendices" not in state["en"]["payload"]
         assert state["progress"]["stage"] == "completed"
@@ -625,7 +629,7 @@ def test_new_summary_generation_tolerates_optional_sections_and_stray_appendices
         get_settings.cache_clear()
 
 
-def test_new_summary_schema_retry_handles_empty_critical_problems(tmp_path, monkeypatch):
+def test_new_summary_accepts_empty_critical_problems_without_retry(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_ROOT", str(tmp_path / "storage"))
     get_settings.cache_clear()
     db = _session()
@@ -642,26 +646,17 @@ def test_new_summary_schema_retry_handles_empty_critical_problems(tmp_path, monk
         }
         output["result"] = result
         analysis.structured_output = output
-        invalid_payload = _new_summary_report_payload(
+        payload = _new_summary_report_payload(
             ru_context="Команда проверяет новый продукт.",
             en_context="The team is validating a new product.",
         )
-        for version in invalid_payload["versions"]:
+        for version in payload["versions"]:
             version["critical_problems"] = []
-        retry_payload = _new_summary_report_payload(
-            ru_context="Команда проверяет новый продукт после retry.",
-            en_context="The team is validating a new product after retry.",
-        )
         check_run.run_parameters = {
             "new_summary_mock_provider_result": {
-                "structured_text": json.dumps(invalid_payload, ensure_ascii=False),
+                "structured_text": json.dumps(payload, ensure_ascii=False),
                 "raw_output": "raw new summary with empty critical problems",
                 "latency_ms": 1,
-            },
-            "new_summary_json_retry_mock_provider_result": {
-                "structured_text": json.dumps(retry_payload, ensure_ascii=False),
-                "raw_output": "raw new summary retry",
-                "latency_ms": 2,
             },
         }
         db.commit()
@@ -672,8 +667,8 @@ def test_new_summary_schema_retry_handles_empty_critical_problems(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт после retry."
-        assert state["en"]["payload"]["critical_problems"] == ["Stop criteria are missing."]
+        assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
+        assert state["en"]["payload"]["critical_problems"] == []
     finally:
         db.close()
         get_settings.cache_clear()
@@ -694,6 +689,15 @@ def test_new_summary_traction_summary_filters_blank_period_values_together():
         "periods": ["2025", "2027"],
         "rows": [{"label": "Total", "values": ["1", "3"]}],
     }
+
+
+def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
+    normalized = new_summary_generation._normalize_traction_summary(
+        {"metric_label": "Revenue", "periods": ["2026", "2027"],
+         "rows": [{"label": "Total", "values": ["10", ""]}]},
+        language="ru",
+    )
+    assert normalized["rows"][0]["values"] == ["10", "Не смог получить данные"]
 
 
 def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
@@ -770,12 +774,100 @@ def test_gate2_details_are_saved_below_their_required_elements():
 
     for version in normalized["versions"]:
         elements = {item["id"]: item for item in version["required_elements"]}
-        assert version["required_details"] == {}
+        assert "required_details" not in version
         assert elements["gate2_hypothesis_results"]["status"] == "1/2"
         assert elements["gate2_hypothesis_results"]["detail"]["items"][1]["verdict"] == "insufficient"
         assert elements["gate2_metric_linkage"]["detail"]["input_metrics"][0]["metric"] == "Activation"
         assert elements["gate2_commitments"]["detail"]["metrics_until_next_review"][0]["current"] == ""
         assert elements["gate2_stop_criteria"]["detail"]["criteria"] == ["Stop if pilot fails"]
+
+
+@pytest.mark.parametrize(
+    ("document_type", "stage", "item_id", "detail"),
+    [
+        (
+            "gate_1", "Gate 1", "gate1_hypotheses_with_metrics",
+            {"type": "hypotheses_with_thresholds", "items": [
+                {"hypothesis": "Demand exists", "confirmation_condition": "At least 20 qualified leads"}
+            ]},
+        ),
+        (
+            "stream_review_1", "Stream Review 1", "stream_review_1_solution_validation",
+            {"type": "solution_validation", "items": [
+                {"text": "Prototype demand", "verdict": "confirmed"}
+            ]},
+        ),
+        (
+            "stream_review_1", "Stream Review 1", "stream_review_1_input_output_metric_link",
+            {"type": "metric_binding", "input_metrics": [
+                {"metric": "Activation", "binding": "confirmed", "evidence": "Pilot result"}
+            ], "output_metrics": []},
+        ),
+        (
+            "stream_review_1", "Stream Review 1", "stream_review_1_half_year_plan_with_metrics",
+            {"type": "next_review_plan", "outputs_until_next_review": ["Launch pilot"],
+             "metrics_until_next_review": [{"metric": "Activation", "current": "", "next_review": "20%"}]},
+        ),
+        (
+            "progress_review", "Progress Review", "progress_review_next_half_year_plan",
+            {"type": "next_review_plan", "outputs_until_next_review": ["Launch pilot"],
+             "metrics_until_next_review": [{"metric": "Activation", "current": "", "next_review": "20%"}]},
+        ),
+        (
+            "stream_review_2_plus", "Stream Review 2+", "stream_review_2_plus_next_half_year_plan",
+            {"type": "next_review_plan", "outputs_until_next_review": ["Launch pilot"],
+             "metrics_until_next_review": [{"metric": "Activation", "current": "", "next_review": "20%"}]},
+        ),
+    ],
+)
+def test_new_stage_details_are_saved_inline_without_generic_evidence(document_type, stage, item_id, detail):
+    checklist = new_summary_generation._new_summary_stage_checklists()[document_type]
+    report = _new_summary_report_payload(
+        ru_context="Контекст.", en_context="Context.", stage=stage, required_elements=checklist,
+    )
+    for version in report["versions"]:
+        by_id = {item["id"]: item for item in version["required_elements"]}
+        by_id[item_id]["detail"] = detail
+        version["required_details"] = {item_id: detail}
+        version["critical_problems"] = []
+    source_payload = {
+        "document_type": document_type,
+        "document_stage": stage,
+        "gate_challenger": {"stage_checklist": [
+            {"id": item["id"], "status": "yellow", "evidence": "Source evidence"} for item in checklist
+        ]},
+    }
+    normalized = new_summary_generation._validated_source_dependent_report(
+        payload=report, source_payload=source_payload,
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+    for version in normalized["versions"]:
+        element = next(item for item in version["required_elements"] if item["id"] == item_id)
+        assert element["detail"] == detail
+        assert "evidence" not in element
+        assert "required_details" not in version
+        assert version["critical_problems"] == []
+        assert "confirmed" not in version
+        assert "insufficiently_confirmed" not in version
+
+
+def test_new_summary_schema_allows_zero_to_ten_critical_problems():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    for version in report["versions"]:
+        version.pop("confirmed")
+        version.pop("insufficiently_confirmed")
+        version.pop("other")
+        version["critical_problems"] = []
+        for element in version["required_elements"]:
+            element.pop("evidence", None)
+    schema = new_summary_generation._new_summary_schema()
+    validate(instance=report, schema=schema)
+    for version in report["versions"]:
+        version["critical_problems"] = [f"Problem {index}" for index in range(10)]
+    validate(instance=report, schema=schema)
+    report["versions"][0]["critical_problems"].append("Problem 11")
+    with pytest.raises(ValidationError):
+        validate(instance=report, schema=schema)
 
 
 def test_new_summary_checklist_order_matches_updated_skill():
@@ -804,7 +896,24 @@ def test_new_summary_required_elements_preserve_three_gate_checklist_statuses():
         ) == summary_status
 
 
-def test_new_summary_hypothesis_fraction_comes_from_appendix_not_traffic_light():
+def test_explicit_stop_criterion_is_partial_when_gate_checklist_missed_it():
+    assert new_summary_generation._required_element_status(
+        {"status": "red"},
+        item_id="progress_review_stop_criteria",
+        generated_item=None,
+        required_details={"progress_review_stop_criteria": {
+            "type": "stop_criteria", "criteria": ["Stop after failed pilot"],
+        }},
+    ) == "частично подтверждено"
+    assert new_summary_generation._required_element_status(
+        {"status": "red"},
+        item_id="progress_review_stop_criteria",
+        generated_item=None,
+        required_details={},
+    ) == "нет"
+
+
+def test_new_summary_hypothesis_fraction_comes_from_structured_detail_not_traffic_light():
     assert new_summary_generation._required_element_status(
         {"status": "yellow"},
         item_id="gate2_hypothesis_results",
@@ -1361,8 +1470,7 @@ def test_new_summary_failure_persists_public_error_code_only(tmp_path, monkeypat
             ru_context="Очень чувствительный текст не должен попасть в публичную ошибку.",
             en_context="Sensitive text must not leak into the public error.",
         )
-        for version in invalid_payload["versions"]:
-            version["critical_problems"] = []
+        invalid_payload["title"] = "Sensitive title missing the required prefix"
         check_run.run_parameters = {
             "new_summary_mock_provider_result": {
                 "structured_text": json.dumps(invalid_payload, ensure_ascii=False),

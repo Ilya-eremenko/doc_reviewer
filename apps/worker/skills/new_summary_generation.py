@@ -76,15 +76,23 @@ STAGE_LABELS = {
 }
 
 INLINE_REQUIRED_DETAIL_TYPES = {
+    "gate1_hypotheses_with_metrics": "hypotheses_with_thresholds",
     "gate2_hypothesis_results": "solution_validation",
     "gate2_metric_linkage": "metric_binding",
     "gate2_commitments": "next_review_plan",
     "gate2_stop_criteria": "stop_criteria",
     "gate3_stop_criteria": "stop_criteria",
     "progress_review_stop_criteria": "stop_criteria",
+    "progress_review_next_half_year_plan": "next_review_plan",
     "stream_review_1_stop_criteria": "stop_criteria",
+    "stream_review_1_solution_validation": "solution_validation",
+    "stream_review_1_input_output_metric_link": "metric_binding",
+    "stream_review_1_half_year_plan_with_metrics": "next_review_plan",
     "stream_review_2_plus_stop_criteria": "stop_criteria",
+    "stream_review_2_plus_next_half_year_plan": "next_review_plan",
 }
+
+INLINE_EVIDENCE_ITEM_IDS = {"gate2_value_proposition", "stream_review_1_confirmed_problem"}
 
 
 def generate_and_persist_new_summary_report(
@@ -654,7 +662,8 @@ def _generation_prompt(
             "Первая версия в `versions[]` должна быть английской, вторая — русской.",
             "`document_stage` — текущая стадия инициативы для заголовка и контекста; `document_type` задаёт только набор правил проверки. Если они отличаются, не называй текущую стадию по `document_type`.",
             "Фрагменты `source_document.parsed_text_excerpt` взяты из разных частей исходного документа и не являются полным текстом. Отличай явно выбранный текущий сценарий и фокус инициативы от старых, расчётных и альтернативных вариантов; при неразрешённом противоречии не угадывай, какой вариант действует.",
-            "Если в источниках нет Traction Summary с числами, не выдумывай значения: используй один период `Not provided`/`Не указано`, одну строку и пустые значения.",
+            "В фоновом запуске нет MCP или браузера: не утверждай, что открыл внешнюю ссылку. Оценивай её содержимое только если оно уже присутствует во входных результатах.",
+            "Если ни Revenue, ни DTB нельзя достоверно выделить из источников, верни `traction_summary: {\"tables\": []}`. Не создавай фиктивную строку или период.",
             "Не добавляй Markdown вокруг JSON. Не добавляй пояснения вне JSON.",
             "## JSON Schema",
             json.dumps(response_schema, ensure_ascii=False, indent=2),
@@ -821,8 +830,8 @@ def _validated_source_dependent_report(
         for element in normalized_version["required_elements"]:
             if "detail" in element:
                 normalized_version["required_details"].pop(element["id"], None)
-        if source_payload.get("document_type") == "gate_2":
-            normalized_version["required_details"] = {}
+        # Historical reports are read from storage unchanged; new reports never create appendices.
+        normalized_version.pop("required_details", None)
         source_tables = source_payload.get("source_traction_tables")
         if isinstance(source_tables, list) and source_tables:
             normalized_version["traction_summary"] = display_traction_tables(
@@ -897,8 +906,6 @@ def _normalize_generated_version_shell(
             "context",
             "required_elements",
             "required_details",
-            "confirmed",
-            "insufficiently_confirmed",
             "critical_problems",
             "other",
         },
@@ -911,7 +918,7 @@ def _normalize_generated_version_shell(
         normalized.get("traction_summary"),
         language=language,
     )
-    for key in ("required_elements", "confirmed", "insufficiently_confirmed", "critical_problems", "other"):
+    for key in ("required_elements", "critical_problems", "other"):
         if not isinstance(normalized.get(key), list):
             normalized[key] = []
     return normalized
@@ -934,17 +941,17 @@ def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
         for table in value["tables"]:
             if not isinstance(table, dict) or table.get("metric") not in {"revenue", "dtb"}:
                 continue
-            normalized = _normalize_single_traction_table(table)
+            normalized = _normalize_single_traction_table(table, language=language)
             if normalized is not None:
                 tables.append({"metric": table["metric"], **normalized})
         return {"tables": tables}
-    normalized = _normalize_single_traction_table(value)
+    normalized = _normalize_single_traction_table(value, language=language)
     if normalized is not None:
         return normalized
     return {"tables": []}
 
 
-def _normalize_single_traction_table(value: Any) -> dict[str, Any] | None:
+def _normalize_single_traction_table(value: Any, *, language: str) -> dict[str, Any] | None:
     if isinstance(value, dict):
         metric_label = value.get("metric_label")
         periods = value.get("periods")
@@ -960,9 +967,12 @@ def _normalize_single_traction_table(value: Any) -> dict[str, Any] | None:
                 {
                     "label": str(row.get("label") or "").strip(),
                     "values": [
-                        str(row.get("values", [])[index])
-                        if isinstance(row.get("values"), list) and index < len(row.get("values", []))
-                        else ""
+                        _traction_cell(
+                            row["values"][index]
+                            if isinstance(row.get("values"), list) and index < len(row["values"])
+                            else None,
+                            language=language,
+                        )
                         for index, _ in period_pairs
                     ],
                 }
@@ -976,6 +986,11 @@ def _normalize_single_traction_table(value: Any) -> dict[str, Any] | None:
                     "rows": normalized_rows,
                 }
     return None
+
+
+def _traction_cell(value: Any, *, language: str) -> str:
+    text = str(value).strip() if value is not None else ""
+    return text or ("Не смог получить данные" if language == "ru" else "Could not extract data")
 
 
 def _missing_text(language: str, field: str) -> str:
@@ -1034,12 +1049,15 @@ def _required_elements_from_source(
                 generated_item=generated_item,
                 required_details={**required_details, item_id: detail} if detail is not None else required_details,
             ),
-            "evidence": _required_element_evidence(
+        }
+        if item_id in INLINE_EVIDENCE_ITEM_IDS:
+            evidence = _required_element_evidence(
                 by_id.get(item_id),
                 generated_item,
                 target_language=target_language,
-            ),
-        }
+            )
+            if evidence:
+                element["evidence"] = evidence
         if detail is not None:
             element["detail"] = detail
         elements.append(element)
@@ -1064,6 +1082,19 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
     if not isinstance(detail, dict):
         return None
     detail_type = detail.get("type")
+    if detail_type == "hypotheses_with_thresholds":
+        detail_items = detail.get("items")
+        if not isinstance(detail_items, list):
+            return None
+        items = [
+            {"hypothesis": hypothesis, "confirmation_condition": condition}
+            for item in detail_items
+            if isinstance(item, dict)
+            for hypothesis in [_non_empty_string(item.get("hypothesis"))]
+            for condition in [_non_empty_string(item.get("confirmation_condition"))]
+            if hypothesis is not None and condition is not None
+        ]
+        return {"type": detail_type, "items": items} if items else None
     if detail_type == "solution_validation":
         detail_items = detail.get("items")
         if not isinstance(detail_items, list):
@@ -1221,6 +1252,10 @@ def _required_element_status(
         return "есть"
     if status in {"yellow", "partial", "partially_confirmed", "частично подтверждено"}:
         return "частично подтверждено"
+    if item_id.endswith("_stop_criteria"):
+        detail = required_details.get(item_id)
+        if isinstance(detail, dict) and detail.get("type") == "stop_criteria" and detail.get("criteria"):
+            return "частично подтверждено"
     return "нет"
 
 
@@ -1229,14 +1264,14 @@ def _required_element_evidence(
     generated_item: dict[str, Any] | None,
     *,
     target_language: str,
-) -> str:
+) -> str | None:
     generated_evidence = (generated_item or {}).get("evidence")
     if isinstance(generated_evidence, str) and generated_evidence.strip():
         return generated_evidence.strip()
     evidence = (item or {}).get("evidence")
     if target_language == "ru" and isinstance(evidence, str) and evidence.strip():
         return evidence.strip()
-    return "Не найдено в чеклисте Gate Challenger." if target_language == "ru" else "Not found in the Gate Challenger checklist."
+    return None
 
 
 def _canonical_required_element_id(item_id: str) -> str:
