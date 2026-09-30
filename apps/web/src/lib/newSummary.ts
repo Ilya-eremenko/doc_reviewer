@@ -7,13 +7,14 @@ export type NewSummaryStage =
   | "Progress Review"
   | "Stream Review 1"
   | "Stream Review 2+"
-  | "Stream Review 2+ / Progress Review";
+  | "Stream Review 2+ / Progress Review"
+  | "Unknown";
 
 export type NewSummaryRequiredElement = {
   id: string;
   label: string;
   status: "есть" | "частично подтверждено" | "нет" | "present" | "partially confirmed" | "missing" | `${number}/${number}`;
-  evidence: string;
+  evidence?: string;
   detail?: NewSummaryRequiredDetails;
 };
 
@@ -30,6 +31,10 @@ export type NewSummaryTractionTable = {
 export type NewSummaryTractionSummary = NewSummaryTractionTable | { tables: NewSummaryTractionTable[] };
 
 export type NewSummaryRequiredDetails =
+  | {
+      type: "hypotheses_with_thresholds";
+      items: Array<{ hypothesis: string; confirmation_condition: string }>;
+    }
   | {
       type: "solution_validation";
       items: Array<{ text: string; verdict: "confirmed" | "insufficient" }>;
@@ -60,10 +65,10 @@ export type NewSummaryContent = {
   context: string;
   required_elements: NewSummaryRequiredElement[];
   required_details?: NewSummaryRequiredDetailsById;
-  confirmed: string[];
-  insufficiently_confirmed: string[];
-  critical_problems: string[];
-  other: string[];
+  confirmed?: string[];
+  insufficiently_confirmed?: string[];
+  critical_problems?: string[];
+  other?: string[];
 };
 
 export type NewSummaryReport = {

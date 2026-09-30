@@ -38,6 +38,19 @@ def test_dtb_and_revenue_keep_independent_periods():
     assert rendered["tables"][1]["rows"][0]["values"] == ["1%", "2%", "3%", "2%"]
 
 
+def test_source_table_blank_cell_is_explained_without_changing_real_values():
+    table = _incremental_rows([
+        ["Incremental revenue, mR", "2026", "2027", "Total"],
+        ["Revenue", "10", "", "30"],
+    ])[0][1]
+    assert display_traction_tables([table], language="ru")["tables"][0]["rows"][0]["values"] == [
+        "10", "Нет данных в документе", "30",
+    ]
+    assert display_traction_tables([table], language="en")["tables"][0]["rows"][0]["values"] == [
+        "10", "No data in the document", "30",
+    ]
+
+
 def test_legacy_markdown_table_rows_are_read_without_reparse():
     block = {
         "markdown": "| Increment P&L, mR | 2026 | 2027 | 2026-27 total |\n"

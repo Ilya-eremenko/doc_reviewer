@@ -1773,6 +1773,45 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     )
     assert paragraphs.index("Stop-критерии — Частично подтверждено") < paragraphs.index("Остановить при провале пилота")
 
+    output = dict(analysis.structured_output)
+    result = dict(output["result"])
+    state = dict(result["new_summary"])
+    for language in ("ru", "en"):
+        variant = dict(state[language])
+        payload = dict(variant["payload"])
+        payload["stage"] = "Gate 1"
+        payload["required_elements"] = [{
+            "id": "gate1_hypotheses_with_metrics",
+            "label": "Гипотезы к Gate 2" if language == "ru" else "Hypotheses before Gate 2",
+            "status": "частично подтверждено",
+            "detail": {"type": "hypotheses_with_thresholds", "items": [{
+                "hypothesis": "Есть спрос" if language == "ru" else "Demand exists",
+                "confirmation_condition": "20 лидов" if language == "ru" else "20 leads",
+            }]},
+        }]
+        payload.pop("required_details", None)
+        payload["critical_problems"] = []
+        payload["other"] = []
+        variant["payload"] = payload
+        state[language] = variant
+    result["new_summary"] = state
+    output["result"] = result
+    analysis.structured_output = output
+    db_session.commit()
+
+    gate1_docx = client.get(f"/analyses/{analysis.id}/new-summary/export/docx")
+    gate1_pdf = client.get(f"/analyses/{analysis.id}/new-summary/export/pdf")
+    assert gate1_docx.status_code == 200
+    assert gate1_pdf.status_code == 200 and gate1_pdf.content.startswith(b"%PDF")
+    exported.write_bytes(gate1_docx.content)
+    document = DocxDocument(exported)
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    assert paragraphs.index("Гипотезы к Gate 2 — Частично подтверждено") < paragraphs.index("Есть спрос - 20 лидов")
+    assert "Выявленные проблемы" not in paragraphs
+    assert "Другие наблюдения" not in paragraphs
+    assert "Appendices" not in paragraphs
+    assert document.tables[0].columns[0].width == document.tables[1].columns[0].width
+
 
 def test_existing_progress_review_displays_correct_stage_without_changing_analysis(client, db_session, tmp_path):
     user = create_user(db_session, "progress-review-author", "secret")

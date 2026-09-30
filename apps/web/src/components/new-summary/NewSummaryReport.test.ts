@@ -19,4 +19,12 @@ describe("AI Summary required elements", () => {
     expect(source).toContain("<RequiredDetailContent detail={item.detail}");
     expect(source).toContain("<RequiredDetailsPanel content={content}");
   });
+
+  it("keeps optional sections and evidence hidden when no content is present", () => {
+    expect(source).toContain("{item.evidence ? <p>{item.evidence}</p> : null}");
+    expect(source).toContain("{content.critical_problems?.length ? (");
+    expect(source).toContain("{content.other?.length ? (");
+    expect(source).toContain('detail.type === "hypotheses_with_thresholds"');
+    expect(source).toContain("table-layout: fixed;");
+  });
 });

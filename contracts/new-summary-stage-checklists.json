@@ -61,7 +61,7 @@
     },
     {
       "id": "gate3_solution_hypothesis_validation",
-      "label_ru": "Подтверждает ли MVP гипотезу решения: уточнили ли core-assumptions трекшн-модели",
+      "label_ru": "Подтверждает ли MVP гипотезу решения: уточнили ли мы core-assumptions трекшн-модели",
       "label_en": "Whether the MVP validates the solution hypothesis and refines the traction-model core assumptions"
     },
     {

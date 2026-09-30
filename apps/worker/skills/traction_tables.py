@@ -162,7 +162,10 @@ def display_traction_tables(source_tables: list[dict[str, Any]], *, language: st
                 "label": (
                     "Итоговый инкрементальный прирост" if language == "ru" else "Total incremental output uplifts"
                 ) if row["label"] == "Total incremental output uplifts" else row["label"],
-                "values": row["values"],
+                "values": [
+                    value if value else ("Нет данных в документе" if language == "ru" else "No data in the document")
+                    for value in row["values"]
+                ],
             } for row in source["rows"]],
         })
     return {"tables": tables}
