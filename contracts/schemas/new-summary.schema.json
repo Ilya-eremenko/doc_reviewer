@@ -85,7 +85,7 @@
         "context": {
           "type": "string",
           "minLength": 1,
-          "description": "Short initiative context. Use the source document only to improve readability here."
+          "description": "Short initiative context. The source document may also supply the Traction Summary tables."
         },
         "required_elements": {
           "type": "array",
@@ -96,7 +96,7 @@
         },
         "required_details": {
           "$ref": "#/$defs/required_details",
-          "description": "Structured appendix/details payload used for required elements that point to an Appendix."
+          "description": "Legacy appendix payload and details for stages that still use Appendices. New inline details belong on the matching required_elements item."
         },
         "confirmed": {
           "$ref": "#/$defs/optional_finding_list",
@@ -196,7 +196,7 @@
         "values": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Values must be in the same order as periods; use an empty string for a missing source value."
+          "description": "Values must be in the same order as periods. Do not invent missing source values; older reports may use an empty string."
         }
       }
     },
@@ -253,18 +253,25 @@
         "evidence": {
           "type": "string",
           "minLength": 1
+        },
+        "detail": {
+          "$ref": "#/$defs/required_detail",
+          "description": "Structured details displayed immediately below this required element, not in Appendices."
         }
       }
+    },
+    "required_detail": {
+      "oneOf": [
+        { "$ref": "#/$defs/solution_validation_detail" },
+        { "$ref": "#/$defs/metric_binding_detail" },
+        { "$ref": "#/$defs/next_review_plan_detail" },
+        { "$ref": "#/$defs/stop_criteria_detail" }
+      ]
     },
     "required_details": {
       "type": "object",
       "additionalProperties": {
-        "oneOf": [
-          { "$ref": "#/$defs/solution_validation_detail" },
-          { "$ref": "#/$defs/metric_binding_detail" },
-          { "$ref": "#/$defs/next_review_plan_detail" },
-          { "$ref": "#/$defs/stop_criteria_detail" }
-        ]
+        "$ref": "#/$defs/required_detail"
       }
     },
     "solution_validation_detail": {
@@ -329,12 +336,10 @@
         "type": { "const": "next_review_plan" },
         "outputs_until_next_review": {
           "type": "array",
-          "minItems": 1,
           "items": { "$ref": "#/$defs/non_empty_string" }
         },
         "metrics_until_next_review": {
           "type": "array",
-          "minItems": 1,
           "items": { "$ref": "#/$defs/metric_plan_row" }
         }
       }
@@ -345,8 +350,8 @@
       "required": ["metric", "current", "next_review"],
       "properties": {
         "metric": { "$ref": "#/$defs/non_empty_string" },
-        "current": { "$ref": "#/$defs/non_empty_string" },
-        "next_review": { "$ref": "#/$defs/non_empty_string" }
+        "current": { "type": "string" },
+        "next_review": { "type": "string" }
       }
     },
     "stop_criteria_detail": {

@@ -563,8 +563,8 @@ def test_native_progress_review_summary_keeps_its_own_checklist_and_stage(tmp_pa
             payload = state[language]["payload"]
             assert payload["stage"] == "Progress Review"
             assert [item["id"] for item in payload["required_elements"]] == [
-                "progress_review_next_half_year_plan", "progress_review_stop_criteria",
-                "progress_review_plan_fact_last_half_year",
+                "progress_review_next_half_year_plan", "progress_review_plan_fact_last_half_year",
+                "progress_review_stop_criteria",
             ]
             assert all(item["status"] == "частично подтверждено" for item in payload["required_elements"])
     finally:
@@ -717,6 +717,76 @@ def test_new_summary_solution_validation_detail_ignores_non_list_items():
         )
         is None
     )
+
+
+def test_gate2_details_are_saved_below_their_required_elements():
+    checklist = new_summary_generation._new_summary_stage_checklists()["gate_2"]
+    report = _new_summary_report_payload(
+        ru_context="Контекст.",
+        en_context="Context.",
+        required_elements=checklist,
+    )
+    for version in report["versions"]:
+        by_id = {item["id"]: item for item in version["required_elements"]}
+        by_id["gate2_hypothesis_results"]["detail"] = {
+            "type": "solution_validation",
+            "items": [
+                {"text": "Validated need", "verdict": "confirmed"},
+                {"text": "Unproven growth", "verdict": "insufficient"},
+            ],
+        }
+        by_id["gate2_metric_linkage"]["detail"] = {
+            "type": "metric_binding",
+            "input_metrics": [{"metric": "Activation", "binding": "confirmed", "evidence": "Measured in pilot"}],
+            "output_metrics": [],
+        }
+        by_id["gate2_commitments"]["detail"] = {
+            "type": "next_review_plan",
+            "outputs_until_next_review": ["Launch MVP"],
+            "metrics_until_next_review": [{"metric": "Activation", "current": "", "next_review": "20%"}],
+        }
+        by_id["gate2_stop_criteria"]["detail"] = {"type": "stop_criteria", "criteria": ["Stop if pilot fails"]}
+        version["required_details"] = {
+            "gate2_hypothesis_results": by_id["gate2_hypothesis_results"]["detail"]
+        }
+        if version["language"] == "ru":
+            del by_id["gate2_hypothesis_results"]["detail"]
+
+    source_payload = {
+        "document_type": "gate_2",
+        "document_stage": "Gate 2",
+        "gate_challenger": {
+            "stage_checklist": [
+                {"id": item["id"], "status": "yellow", "evidence": "Source evidence"}
+                for item in checklist
+            ]
+        },
+    }
+    normalized = new_summary_generation._validated_source_dependent_report(
+        payload=report,
+        source_payload=source_payload,
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+
+    for version in normalized["versions"]:
+        elements = {item["id"]: item for item in version["required_elements"]}
+        assert version["required_details"] == {}
+        assert elements["gate2_hypothesis_results"]["status"] == "1/2"
+        assert elements["gate2_hypothesis_results"]["detail"]["items"][1]["verdict"] == "insufficient"
+        assert elements["gate2_metric_linkage"]["detail"]["input_metrics"][0]["metric"] == "Activation"
+        assert elements["gate2_commitments"]["detail"]["metrics_until_next_review"][0]["current"] == ""
+        assert elements["gate2_stop_criteria"]["detail"]["criteria"] == ["Stop if pilot fails"]
+
+
+def test_new_summary_checklist_order_matches_updated_skill():
+    checklists = new_summary_generation._new_summary_stage_checklists()
+    assert [item["id"] for item in checklists["gate_3"]][-2:] == [
+        "gate3_performance_vs_gate2_plan", "gate3_stop_criteria"
+    ]
+    assert [item["id"] for item in checklists["progress_review"]][-2:] == [
+        "progress_review_plan_fact_last_half_year", "progress_review_stop_criteria"
+    ]
+    assert checklists["progress_review"][-1]["label_ru"].endswith("над продуктом")
 
 
 def test_new_summary_required_elements_preserve_three_gate_checklist_statuses():
