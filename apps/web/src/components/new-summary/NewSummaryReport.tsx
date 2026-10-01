@@ -37,7 +37,7 @@ const labels = {
     other: "Другие наблюдения",
     outputMetrics: "Output metrics",
     present: "Есть",
-    prototype: "AI Summary · скилл new-summary",
+    quality: "Качество документа",
     required: "Обязательные элементы документа",
     requiredIntro:
       "Обязательные элементы соответствующей стадии сопоставлены с доказательствами в документе.",
@@ -69,7 +69,7 @@ const labels = {
     other: "Other observations",
     outputMetrics: "Output metrics",
     present: "Present",
-    prototype: "AI Summary · new-summary skill",
+    quality: "Document quality",
     required: "Required document elements",
     requiredIntro:
       "Stage-required elements are matched against the evidence in the document.",
@@ -101,9 +101,7 @@ export function NewSummaryReportView({
           <a className="new-summary-list-link" href={report.route}>
             {text.list}
           </a>
-        ) : (
-          <span aria-hidden="true" />
-        )}
+        ) : null}
         <div className="new-summary-toolbar__actions">
           <div className="new-summary-language-switch" aria-label="Summary language">
             <button
@@ -137,12 +135,14 @@ export function NewSummaryReportView({
       </div>
 
       <header className="new-summary-header">
-        <p>{text.prototype}</p>
         <h1>{content.title}</h1>
         <div className="new-summary-stage">
           <span>{text.stage}</span>
           <strong>{content.stage}</strong>
         </div>
+        {typeof content.document_quality_percent === "number" ? (
+          <p className="new-summary-quality">{text.quality} - {content.document_quality_percent}%</p>
+        ) : null}
       </header>
 
       <TractionSummaryTable content={content} labels={text} />
@@ -504,15 +504,16 @@ const newSummaryStyles = `
   display: flex;
   min-height: 40px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 14px;
+  padding-inline: 22px;
 }
 
 .new-summary-toolbar__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 10px;
 }
 
@@ -562,12 +563,11 @@ const newSummaryStyles = `
   padding: 8px 2px 2px;
 }
 
-.new-summary-header > p {
-  margin: 0;
-  color: var(--accent-strong);
-  font-size: 11px;
-  font-weight: 850;
-  text-transform: uppercase;
+.new-summary-quality {
+  margin: 1px 0 0;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .new-summary-header h1 {

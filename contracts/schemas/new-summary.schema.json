@@ -90,6 +90,12 @@
           "items": { "$ref": "#/$defs/required_element" },
           "description": "The exact stage checklist, in canonical order. Do not add criteria from other stages."
         },
+        "document_quality_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Final document quality percentage computed from required_elements. Rated child items count instead of their parent; the server recalculates this field after normalizing the checklist. Optional for historical reports."
+        },
         "required_details": {
           "$ref": "#/$defs/required_details",
           "description": "Legacy appendix payload retained only for compatibility with saved historical reports. New inline details belong on the matching required_elements item."

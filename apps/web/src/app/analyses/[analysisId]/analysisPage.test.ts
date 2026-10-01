@@ -467,6 +467,13 @@ describe("analysis result page", () => {
     expect(newSummarySource).not.toContain("Скачать PDF на русском и английском");
   });
 
+  it("hides the top-level verdict/status and the regenerate button on result pages", () => {
+    const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+    expect(pageSource).not.toContain('className="analysis-chip-row"');
+    expect(pageSource).not.toContain("Пересобрать AI Summary");
+    expect(pageSource).not.toContain("regenerateNewSummary(params.analysisId)");
+  });
+
   it("keeps repository AI Summary presentation aligned with the current skill section order", () => {
     const newSummarySource = readFileSync(
       new URL("../../../components/new-summary/NewSummaryReport.tsx", import.meta.url),

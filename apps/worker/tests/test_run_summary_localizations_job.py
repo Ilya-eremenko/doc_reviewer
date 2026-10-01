@@ -731,6 +731,8 @@ def test_gate2_details_are_saved_below_their_required_elements():
         required_elements=checklist,
     )
     for version in report["versions"]:
+        if version["language"] == "en":
+            version["document_quality_percent"] = 99
         by_id = {item["id"]: item for item in version["required_elements"]}
         by_id["gate2_hypothesis_results"]["detail"] = {
             "type": "solution_validation",
@@ -742,7 +744,8 @@ def test_gate2_details_are_saved_below_their_required_elements():
         by_id["gate2_metric_linkage"]["detail"] = {
             "type": "metric_binding",
             "input_metrics": [{"metric": "Activation", "binding": "confirmed", "evidence": "Measured in pilot"}],
-            "output_metrics": [],
+            "output_metrics": ([{"metric": "Revenue", "binding": "confirmed", "evidence": "Measured in pilot"}]
+                               if version["language"] == "en" else []),
         }
         by_id["gate2_commitments"]["detail"] = {
             "type": "next_review_plan",
@@ -780,6 +783,7 @@ def test_gate2_details_are_saved_below_their_required_elements():
         assert elements["gate2_metric_linkage"]["detail"]["input_metrics"][0]["metric"] == "Activation"
         assert elements["gate2_commitments"]["detail"]["metrics_until_next_review"][0]["current"] == ""
         assert elements["gate2_stop_criteria"]["detail"]["criteria"] == ["Stop if pilot fails"]
+        assert version["document_quality_percent"] == 54
 
 
 @pytest.mark.parametrize(
@@ -911,6 +915,25 @@ def test_explicit_stop_criterion_is_partial_when_gate_checklist_missed_it():
         generated_item=None,
         required_details={},
     ) == "нет"
+
+
+def test_edited_skill_allows_explicit_gate2_utp_and_complete_gate3_stop_criteria():
+    assert new_summary_generation._required_element_status(
+        {"status": "yellow"}, item_id="gate2_value_proposition",
+        generated_item={"status": "есть", "evidence": "Документ явно описывает отличие продукта."},
+        required_details={},
+    ) == "есть"
+    assert new_summary_generation._required_element_status(
+        {"status": "red"}, item_id="gate2_value_proposition",
+        generated_item={"status": "есть"}, required_details={},
+    ) == "нет"
+    assert new_summary_generation._required_element_status(
+        {"status": "yellow"}, item_id="gate3_stop_criteria",
+        generated_item={"status": "есть"},
+        required_details={"gate3_stop_criteria": {
+            "type": "stop_criteria", "criteria": ["Остановить при провале пилота"],
+        }},
+    ) == "есть"
 
 
 def test_new_summary_hypothesis_fraction_comes_from_structured_detail_not_traffic_light():

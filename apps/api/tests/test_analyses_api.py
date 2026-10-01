@@ -1647,9 +1647,13 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     db_session.commit()
     login(client, user.login, "secret")
 
+    report_response = client.get(f"/analyses/{analysis.id}/new-summary")
     pdf_response = client.get(f"/analyses/{analysis.id}/new-summary/export/pdf")
     docx_response = client.get(f"/analyses/{analysis.id}/new-summary/export/docx")
 
+    assert report_response.status_code == 200
+    assert report_response.json()["ru"]["payload"]["document_quality_percent"] == 33
+    assert report_response.json()["en"]["payload"]["document_quality_percent"] == 33
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
     assert pdf_response.content.startswith(b"%PDF")
@@ -1665,6 +1669,8 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     table_text = "\n".join(cell.text for table in document.tables for row in table.rows for cell in row.cells)
     text = f"{paragraph_text}\n{table_text}"
     assert "AI Summary Test Initiative" in text
+    assert "Качество документа - 33%" in text
+    assert "Document quality - 33%" in text
     assert "Выявленные проблемы" in text
     assert "Подтверждено" in text
     assert "Связь подтверждена" not in text

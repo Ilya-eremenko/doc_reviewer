@@ -17,7 +17,6 @@ import {
   getDocument,
   getNewSummary,
   newSummaryExportUrl,
-  regenerateNewSummary,
   type AnalysisCheckRunStatusRecord,
   type AnalysisCheckStepRecord,
   type AnalysisCheckStepStatusRecord,
@@ -134,8 +133,6 @@ export default function AnalysisDetailPage() {
   const [isLaunchingIcReview, setIsLaunchingIcReview] = useState(false);
   const [newSummary, setNewSummary] = useState<NewSummaryRecord | null>(null);
   const [newSummaryError, setNewSummaryError] = useState("");
-  const [newSummaryRefreshToken, setNewSummaryRefreshToken] = useState(0);
-  const [isRegeneratingNewSummary, setIsRegeneratingNewSummary] = useState(false);
 
   useEffect(() => {
     me().then(setCurrentUser).catch(() => undefined);
@@ -204,20 +201,7 @@ export default function AnalysisDetailPage() {
         window.clearTimeout(timer);
       }
     };
-  }, [analysis?.id, analysis?.status, analysis?.ic_review_run?.id, analysis?.ic_review_run?.status, analysisDocument, currentUser, params.analysisId, newSummaryRefreshToken]);
-
-  async function handleRegenerateNewSummary() {
-    setIsRegeneratingNewSummary(true);
-    try {
-      setNewSummary(await regenerateNewSummary(params.analysisId));
-      setNewSummaryError("");
-      setNewSummaryRefreshToken((value) => value + 1);
-    } catch (err) {
-      setNewSummaryError(err instanceof Error ? err.message : "Failed to regenerate AI Summary");
-    } finally {
-      setIsRegeneratingNewSummary(false);
-    }
-  }
+  }, [analysis?.id, analysis?.status, analysis?.ic_review_run?.id, analysis?.ic_review_run?.status, analysisDocument, currentUser, params.analysisId]);
 
   useEffect(() => {
     let ignore = false;
@@ -510,12 +494,6 @@ export default function AnalysisDetailPage() {
                     </button> : null}
                   </div>
                 </div>
-                <div className="analysis-chip-row">
-                  <span className={`analysis-verdict analysis-verdict--${toneForValue(analysis.verdict)}`}>
-                    {formatLabel(analysis.verdict)}
-                  </span>
-                  <StatusBadge status={analysis.status} />
-                </div>
               </div>
             </section>
 
@@ -548,8 +526,6 @@ export default function AnalysisDetailPage() {
                     analysis={analysis}
                     newSummary={newSummary}
                     newSummaryError={newSummaryError}
-                    onRegenerate={currentUser?.role === "admin" ? handleRegenerateNewSummary : undefined}
-                    isRegenerating={isRegeneratingNewSummary}
                   />
                 ) : null}
                 {activeTopTab === "mainOutput" ? <MainSkillMarkdownPanel analysis={analysis} /> : null}
@@ -953,14 +929,10 @@ function NewSummaryPanel({
   analysis,
   newSummary,
   newSummaryError,
-  onRegenerate,
-  isRegenerating,
 }: {
   analysis: AnalysisRecord;
   newSummary: NewSummaryRecord | null;
   newSummaryError: string;
-  onRegenerate?: () => void;
-  isRegenerating: boolean;
 }) {
   const newSummaryReady =
     newSummary?.available === true
@@ -991,16 +963,7 @@ function NewSummaryPanel({
       ru: newSummaryRu,
       en: newSummaryEn,
     };
-    return (
-      <>
-        {onRegenerate ? (
-          <button className="analysis-secondary-action" disabled={isRegenerating} type="button" onClick={onRegenerate}>
-            {isRegenerating ? "Обновляем AI Summary..." : "Пересобрать AI Summary"}
-          </button>
-        ) : null}
-        <NewSummaryReportView embedded report={report} />
-      </>
-    );
+    return <NewSummaryReportView embedded report={report} />;
   }
 
   return (
