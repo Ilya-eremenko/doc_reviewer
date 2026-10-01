@@ -32,6 +32,7 @@ from reportlab.platypus import (
 
 from app.models.analysis import Analysis
 from app.services.new_summary_quality import with_bilingual_document_quality
+from app.services.new_summary_traction import with_traction_totals
 from app.services.new_summaries import with_summary_display_stage
 
 
@@ -120,6 +121,8 @@ def _read_completed_report(analysis: Analysis) -> dict[str, Any]:
             raise NewSummaryExportUnavailableError("New Summary is not completed")
         versions[language] = payload
     versions["ru"], versions["en"] = with_bilingual_document_quality(versions["ru"], versions["en"])
+    versions["ru"] = with_traction_totals(versions["ru"])
+    versions["en"] = with_traction_totals(versions["en"])
     return versions
 
 

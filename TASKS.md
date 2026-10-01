@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Refine AI Summary display for every analysis: align language controls with tabs;
+  remove the required-elements intro and first divider; increase section and quality
+  text sizes; explain quality on hover; keep criterion/subcriterion verdicts attached
+  to their last word. Require a Total column for each Traction Summary table in RU/EN
+  and PDF/Word without calculating missing figures; retain source totals and show an
+  explicit absence/extraction reason otherwise. Update only the corresponding New
+  Summary skill presentation/Traction rules and shared schema description. Local
+  verification: 277 API tests, 165 web tests, production web build, and 299 worker
+  tests pass. Three unrelated PDF parser tests require `pdfplumber`, absent locally;
+  the first API run also needed the default CORS origins instead of the local `.env`.
+  PR, CI, and production deployment checks remain.
 - [~] Remove the result-page verdict/status badges, the AI Summary regenerate
   button, and the skill eyebrow; align language/download controls to the left.
   Add the user-defined document-quality percentage to New Summary JSON, compute

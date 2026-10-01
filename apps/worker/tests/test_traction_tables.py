@@ -51,6 +51,16 @@ def test_source_table_blank_cell_is_explained_without_changing_real_values():
     ]
 
 
+def test_source_total_blank_is_reported_as_missing_not_summed():
+    table = _incremental_rows([
+        ["Incremental revenue, mR", "2026", "2027", "Total"],
+        ["Revenue", "10", "20", ""],
+    ])[0][1]
+    assert display_traction_tables([table], language="ru")["tables"][0]["rows"][0]["values"][-1] == (
+        "отсутствуют данные в документе защиты"
+    )
+
+
 def test_legacy_markdown_table_rows_are_read_without_reparse():
     block = {
         "markdown": "| Increment P&L, mR | 2026 | 2027 | 2026-27 total |\n"
@@ -66,6 +76,18 @@ def test_previous_scenario_is_not_used_as_current_incremental_data():
         ["Diff vs IC 25, mR", "2026", "2027", "Total"],
         ["Revenue", "-1", "-2", "-3"],
     ]) == []
+
+
+def test_same_metric_prefers_source_table_with_explicit_total():
+    without_total = _incremental_rows([
+        ["Incremental revenue", "2026", "2027"],
+        ["Revenue", "10", "20"],
+    ])[0]
+    with_total = _incremental_rows([
+        ["Incremental revenue", "2026", "2027", "Total"],
+        ["Revenue", "10", "20", "30"],
+    ])[0]
+    assert with_total[0] > without_total[0]
 
 
 def test_source_tables_use_matching_owned_artifact_and_ignore_stale_parse(tmp_path, monkeypatch):
