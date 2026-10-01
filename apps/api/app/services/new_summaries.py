@@ -13,6 +13,7 @@ from app.models.analysis import Analysis, AnalysisCheckRun
 from app.schemas.analyses import NewSummaryRead, NewSummaryVariantRead
 from app.schemas.enums import RunStatus
 from app.services.new_summary_quality import with_bilingual_document_quality, with_document_quality
+from app.services.new_summary_traction import with_traction_totals
 from app.services.summary_localizations import latest_completed_ic_review
 
 
@@ -394,7 +395,7 @@ def _variant(value: Any, *, include_payload: bool = True) -> NewSummaryVariantRe
     item = value if isinstance(value, dict) else {}
     payload = item.get("payload") if include_payload and isinstance(item.get("payload"), dict) else None
     if payload is not None:
-        payload = with_document_quality(payload)
+        payload = with_traction_totals(with_document_quality(payload))
     return NewSummaryVariantRead(
         status=str(item.get("status") or "missing"),
         payload=payload,

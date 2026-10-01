@@ -147,7 +147,10 @@
       "properties": {
         "metric": { "type": "string", "enum": ["revenue", "dtb"] },
         "metric_label": { "$ref": "#/$defs/non_empty_string" },
-        "periods": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" } },
+        "periods": {
+          "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" },
+          "description": "New reports end with a Total column for this metric and period horizon. The server fills a missing Total with an explicit absence or extraction reason; historical reports remain readable."
+        },
         "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traction_row" } }
       }
     },
@@ -164,7 +167,7 @@
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "Years, quarters and Total in output order."
+          "description": "Years, quarters and Total in output order. A missing Total in historical payloads is explained at read/export time."
         },
         "rows": {
           "type": "array",

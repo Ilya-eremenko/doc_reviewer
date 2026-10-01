@@ -38,9 +38,9 @@ const labels = {
     outputMetrics: "Output metrics",
     present: "Есть",
     quality: "Качество документа",
+    qualityHelpTitle: "Как рассчитано качество",
+    qualityHelpText: "Оценка основана на обязательных элементах этой стадии: «Есть» — 2 балла, «Частично подтверждено» — 1, «Нет» — 0. Если у пункта есть оцененные подпункты, считаются они, а не родительский пункт. Процент — доля набранных баллов от максимума.",
     required: "Обязательные элементы документа",
-    requiredIntro:
-      "Обязательные элементы соответствующей стадии сопоставлены с доказательствами в документе.",
     source: "Исходный анализ",
     stage: "Стадия инициативы",
     traction: "Traction Summary",
@@ -70,9 +70,9 @@ const labels = {
     outputMetrics: "Output metrics",
     present: "Present",
     quality: "Document quality",
+    qualityHelpTitle: "How quality is calculated",
+    qualityHelpText: "Required elements for this stage are scored: Present — 2 points, Partially confirmed — 1, Missing — 0. When a criterion has scored subitems, those replace the parent score. The percentage is the share of points earned out of the maximum.",
     required: "Required document elements",
-    requiredIntro:
-      "Stage-required elements are matched against the evidence in the document.",
     source: "Source analysis",
     stage: "Initiative stage",
     traction: "Traction Summary",
@@ -141,7 +141,16 @@ export function NewSummaryReportView({
           <strong>{content.stage}</strong>
         </div>
         {typeof content.document_quality_percent === "number" ? (
-          <p className="new-summary-quality">{text.quality} - {content.document_quality_percent}%</p>
+          <div className="new-summary-quality-row">
+            <p className="new-summary-quality">{text.quality} - {content.document_quality_percent}%</p>
+            <span className="new-summary-help-wrap">
+              <button className="new-summary-help" type="button" aria-label={text.qualityHelpTitle} aria-describedby="new-summary-quality-help">?</button>
+              <span className="new-summary-help__tooltip" id="new-summary-quality-help" role="tooltip">
+                <strong>{text.qualityHelpTitle}</strong>
+                <span>{text.qualityHelpText}</span>
+              </span>
+            </span>
+          </div>
         ) : null}
       </header>
 
@@ -155,7 +164,6 @@ export function NewSummaryReportView({
       <section className="new-summary-panel new-summary-required">
         <div className="new-summary-section-heading">
           <h2>{text.required}</h2>
-          <p>{text.requiredIntro}</p>
         </div>
         <ul>
           {content.required_elements.map((item) => {
@@ -165,8 +173,13 @@ export function NewSummaryReportView({
                 <span className="new-summary-required__marker" aria-hidden="true" />
                 <div>
                   <div className="new-summary-required__title">
-                    <strong>{item.label}</strong>
-                    <span>{tone === "fraction" ? item.status : text[tone]}</span>
+                    <strong>
+                      {leadingWords(item.label)}
+                      <span className="new-summary-inline-tail">
+                        {lastWord(item.label)}
+                        <span className="new-summary-required__status">{tone === "fraction" ? item.status : text[tone]}</span>
+                      </span>
+                    </strong>
                   </div>
                   {item.evidence ? <p>{item.evidence}</p> : null}
                   {item.detail ? (
@@ -328,8 +341,7 @@ function RequiredDetailContent({
       <ul className="new-summary-appendix-list">
         {detail.items.map((item) => (
           <li key={item.text}>
-            <span>{item.text}</span>
-            <StatusChip status={item.verdict} labels={text} kind="hypothesis" />
+            <InlineVerdict text={item.text} status={item.verdict} labels={text} kind="hypothesis" />
           </li>
         ))}
       </ul>
@@ -416,11 +428,8 @@ function MetricBindingGroup({
       <ul className="new-summary-appendix-list">
         {items.map((item) => (
           <li key={`${item.metric}-${item.evidence}`}>
-            <span>
-              <strong>{item.metric}</strong>
-              {item.evidence ? ` - ${item.evidence}` : ""}
-            </span>
-            <StatusChip status={item.binding} labels={text} />
+            {item.evidence ? <><strong>{item.metric}</strong> - </> : null}
+            <InlineVerdict text={item.evidence || item.metric} status={item.binding} labels={text} />
           </li>
         ))}
       </ul>
@@ -446,6 +455,30 @@ function StatusChip({
       {label}
     </span>
   );
+}
+
+function leadingWords(value: string): string {
+  const index = value.trimEnd().lastIndexOf(" ");
+  return index < 0 ? "" : `${value.slice(0, index)} `;
+}
+
+function lastWord(value: string): string {
+  const index = value.trimEnd().lastIndexOf(" ");
+  return value.slice(index + 1).trim();
+}
+
+function InlineVerdict({
+  text: value,
+  status,
+  labels: text,
+  kind,
+}: {
+  text: string;
+  status: "confirmed" | "insufficient";
+  labels: (typeof labels)[NewSummaryLanguage];
+  kind?: "binding" | "hypothesis";
+}) {
+  return <>{leadingWords(value)}<span className="new-summary-inline-tail">{lastWord(value)}<StatusChip status={status} labels={text} kind={kind} /></span></>;
 }
 
 function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value is NewSummaryTractionSummary {
@@ -506,7 +539,7 @@ const newSummaryStyles = `
   align-items: center;
   justify-content: flex-start;
   gap: 14px;
-  padding-inline: 22px;
+  padding-inline: 0;
 }
 
 .new-summary-toolbar__actions {
@@ -563,12 +596,59 @@ const newSummaryStyles = `
   padding: 8px 2px 2px;
 }
 
+.new-summary-quality-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .new-summary-quality {
   margin: 1px 0 0;
-  color: var(--foreground);
-  font-size: 15px;
+  color: var(--muted-strong);
+  font-size: 17px;
   font-weight: 700;
 }
+
+.new-summary-help-wrap { position: relative; display: inline-flex; }
+.new-summary-help {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--info);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--info);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.new-summary-help__tooltip {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(230px, 35vh);
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+}
+.new-summary-help__tooltip strong { display: block; margin-bottom: 6px; color: var(--foreground); font-size: inherit; }
+.new-summary-help:hover + .new-summary-help__tooltip,
+.new-summary-help:focus-visible + .new-summary-help__tooltip,
+.new-summary-help__tooltip:hover { display: block; }
 
 .new-summary-header h1 {
   margin: 0;
@@ -617,7 +697,7 @@ const newSummaryStyles = `
 .new-summary-list-section h2 {
   margin: 0;
   color: var(--foreground);
-  font-size: 17px;
+  font-size: 19px;
   line-height: 1.3;
 }
 
@@ -692,6 +772,7 @@ const newSummaryStyles = `
   border-top: 1px solid var(--line);
   padding: 15px 22px;
 }
+.new-summary-required > ul > li:first-child { border-top: 0; }
 
 .new-summary-required__marker {
   width: 10px;
@@ -706,11 +787,10 @@ const newSummaryStyles = `
 .new-summary-required li.fraction .new-summary-required__marker { background: transparent; }
 
 .new-summary-required__title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px 10px;
+  display: block;
 }
+
+.new-summary-inline-tail { display: inline-block; white-space: nowrap; }
 
 .new-summary-required__title strong {
   color: var(--foreground);
@@ -718,7 +798,7 @@ const newSummaryStyles = `
   line-height: 1.4;
 }
 
-.new-summary-required__title span {
+.new-summary-required__title .new-summary-required__status {
   display: inline-flex;
   min-height: 24px;
   align-items: center;
@@ -730,20 +810,21 @@ const newSummaryStyles = `
   font-weight: 800;
 }
 
-.new-summary-required li.present .new-summary-required__title span {
+.new-summary-required li.present .new-summary-required__title .new-summary-required__status {
   background: var(--success-bg);
   color: #075e45;
 }
 
-.new-summary-required li.partial .new-summary-required__title span {
+.new-summary-required li.partial .new-summary-required__title .new-summary-required__status {
   background: var(--warning-bg);
   color: #925c00;
 }
 
-.new-summary-required li.fraction .new-summary-required__title span {
+.new-summary-required li.fraction .new-summary-required__title .new-summary-required__status {
   background: transparent;
   color: var(--foreground);
   padding: 0;
+  font-size: 13px;
 }
 
 .new-summary-required p {
@@ -755,6 +836,12 @@ const newSummaryStyles = `
 
 .new-summary-required__detail {
   margin-top: 14px;
+}
+
+.new-summary-required__detail .new-summary-appendix-list li,
+.new-summary-required__detail .new-summary-appendix-list li strong {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .new-summary-required__detail h4 {

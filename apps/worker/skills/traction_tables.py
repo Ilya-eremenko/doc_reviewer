@@ -119,6 +119,8 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
         score = 10 if context_incremental else 5
         if _TOTAL.search(first):
             score += 3
+        if any(_TOTAL.search(period) for period in periods):
+            score += 2
         if "p&l" in active_context.lower():
             score += 3
         if re.search(r"20\d{2}\s*[-–]\s*(?:20)?\d{2}\s*(?:total|ttl)", " ".join(periods), re.IGNORECASE):
@@ -163,9 +165,17 @@ def display_traction_tables(source_tables: list[dict[str, Any]], *, language: st
                     "Итоговый инкрементальный прирост" if language == "ru" else "Total incremental output uplifts"
                 ) if row["label"] == "Total incremental output uplifts" else row["label"],
                 "values": [
-                    value if value else ("Нет данных в документе" if language == "ru" else "No data in the document")
-                    for value in row["values"]
+                    _display_source_cell(value, source["periods"][index], language=language)
+                    for index, value in enumerate(row["values"])
                 ],
             } for row in source["rows"]],
         })
     return {"tables": tables}
+
+
+def _display_source_cell(value: str, period: str, *, language: str) -> str:
+    if value:
+        return value
+    if _TOTAL.search(period):
+        return "отсутствуют данные в документе защиты" if language == "ru" else "no data in the defense document"
+    return "Нет данных в документе" if language == "ru" else "No data in the document"

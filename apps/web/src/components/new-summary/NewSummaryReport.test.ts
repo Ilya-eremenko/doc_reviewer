@@ -10,7 +10,7 @@ describe("AI Summary required elements", () => {
     expect(source).toContain('partial: "Partially confirmed"');
     expect(source).toContain('tone === "fraction" ? item.status : text[tone]');
     expect(source).toContain('new-summary-required li.partial .new-summary-required__marker');
-    expect(source).toContain('new-summary-required li.fraction .new-summary-required__title span');
+    expect(source).toContain('new-summary-required li.fraction .new-summary-required__title .new-summary-required__status');
     expect(source).toContain('background: var(--danger-bg)');
   });
 
@@ -35,6 +35,11 @@ describe("AI Summary required elements", () => {
     expect(source).toContain(".new-summary-quality {");
     expect(source).toContain(".new-summary-toolbar {");
     expect(source).toContain("justify-content: flex-start;");
-    expect(source).toContain("padding-inline: 22px;");
+    expect(source).toContain("padding-inline: 0;");
+    expect(source).toContain('role="tooltip"');
+    expect(source).toContain('.new-summary-help:hover + .new-summary-help__tooltip');
+    expect(source).not.toContain('requiredIntro:');
+    expect(source).toContain('.new-summary-required > ul > li:first-child { border-top: 0; }');
+    expect(source).toContain('<InlineVerdict text={item.text}');
   });
 });

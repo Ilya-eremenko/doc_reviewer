@@ -18,6 +18,7 @@ from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
 from app.services.document_type_detector import progress_review_display_stage
 from app.services.new_summary_quality import with_bilingual_document_quality
+from app.services.new_summary_traction import with_traction_totals
 from app.services.new_summaries import (
     NEW_SUMMARY_GENERATION_MODE,
     NEW_SUMMARY_VERSION,
@@ -838,6 +839,10 @@ def _validated_source_dependent_report(
             normalized_version["traction_summary"] = display_traction_tables(
                 source_tables, language=expected_language
             )
+        normalized_version = with_traction_totals(
+            normalized_version,
+            source_tables=source_tables if isinstance(source_tables, list) and source_tables else None,
+        )
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
         normalized_versions.append(normalized_version)

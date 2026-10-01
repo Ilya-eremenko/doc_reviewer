@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -1645,6 +1646,13 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     )
     db_session.add(analysis)
     db_session.commit()
+    output = deepcopy(analysis.structured_output)
+    for language in ("ru", "en"):
+        table = output["result"]["new_summary"][language]["payload"]["traction_summary"]
+        table["periods"].pop()
+        table["rows"][0]["values"].pop()
+    analysis.structured_output = output
+    db_session.commit()
     login(client, user.login, "secret")
 
     report_response = client.get(f"/analyses/{analysis.id}/new-summary")
@@ -1654,6 +1662,9 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     assert report_response.status_code == 200
     assert report_response.json()["ru"]["payload"]["document_quality_percent"] == 33
     assert report_response.json()["en"]["payload"]["document_quality_percent"] == 33
+    assert report_response.json()["ru"]["payload"]["traction_summary"]["rows"][0]["values"][-1] == (
+        "невозможно извлечь данные"
+    )
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
     assert pdf_response.content.startswith(b"%PDF")
@@ -1671,6 +1682,9 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     assert "AI Summary Test Initiative" in text
     assert "Качество документа - 33%" in text
     assert "Document quality - 33%" in text
+    assert "Total 2026–2027" in table_text
+    assert "невозможно извлечь данные" in table_text
+    assert "could not extract data" in table_text
     assert "Выявленные проблемы" in text
     assert "Подтверждено" in text
     assert "Связь подтверждена" not in text
