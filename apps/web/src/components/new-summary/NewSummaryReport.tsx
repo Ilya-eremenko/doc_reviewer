@@ -611,19 +611,29 @@ const newSummaryStyles = `
 }
 
 .new-summary-help-wrap { position: relative; display: inline-flex; }
-.new-summary-help {
+.analysis-workbench button.new-summary-help {
   display: inline-grid;
   width: 22px;
   height: 22px;
+  min-height: 22px;
   place-items: center;
   border: 1px solid var(--info);
   border-radius: 50%;
   background: transparent;
   color: var(--info);
+  box-shadow: none;
+  padding: 0;
   font-size: 13px;
   font-weight: 700;
   line-height: 1;
   cursor: help;
+}
+
+.analysis-workbench button.new-summary-help:hover:not(:disabled) {
+  border-color: var(--info);
+  background: transparent;
+  color: var(--info);
+  transform: none;
 }
 
 .new-summary-help__tooltip {
