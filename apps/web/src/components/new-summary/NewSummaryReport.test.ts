@@ -27,4 +27,14 @@ describe("AI Summary required elements", () => {
     expect(source).toContain('detail.type === "hypotheses_with_thresholds"');
     expect(source).toContain("table-layout: fixed;");
   });
+
+  it("shows document quality below the stage and aligns controls with content", () => {
+    expect(source).toContain("content.document_quality_percent");
+    expect(source).toContain("{text.quality} - {content.document_quality_percent}%");
+    expect(source).not.toContain("AI Summary · скилл new-summary");
+    expect(source).toContain(".new-summary-quality {");
+    expect(source).toContain(".new-summary-toolbar {");
+    expect(source).toContain("justify-content: flex-start;");
+    expect(source).toContain("padding-inline: 22px;");
+  });
 });

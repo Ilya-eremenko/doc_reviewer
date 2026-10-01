@@ -31,6 +31,7 @@ from reportlab.platypus import (
 )
 
 from app.models.analysis import Analysis
+from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summaries import with_summary_display_stage
 
 
@@ -118,6 +119,7 @@ def _read_completed_report(analysis: Analysis) -> dict[str, Any]:
         if variant.get("status") != "completed" or payload is None:
             raise NewSummaryExportUnavailableError("New Summary is not completed")
         versions[language] = payload
+    versions["ru"], versions["en"] = with_bilingual_document_quality(versions["ru"], versions["en"])
     return versions
 
 
@@ -174,6 +176,9 @@ def _append_docx_version(document: DocxDocument, content: dict[str, Any], langua
     stage_run = stage.add_run(f"{labels['stage']}: ")
     stage_run.bold = True
     stage.add_run(_clean_text(content.get("stage") or "Unknown"))
+    quality = content.get("document_quality_percent")
+    if isinstance(quality, int) and not isinstance(quality, bool):
+        document.add_paragraph(f"{labels['quality']} - {quality}%")
 
     _append_docx_traction(document, content, labels)
     _append_docx_text_section(document, labels["context"], [_clean_text(content.get("context"))])
@@ -411,6 +416,9 @@ def _append_pdf_version(
     labels = _labels(language)
     story.append(Paragraph(_xml(content.get("title") or "AI Summary"), styles["title"]))
     story.append(Paragraph(f"<b>{_xml(labels['stage'])}:</b> {_xml(content.get('stage') or 'Unknown')}", styles["body"]))
+    quality = content.get("document_quality_percent")
+    if isinstance(quality, int) and not isinstance(quality, bool):
+        story.append(Paragraph(f"{_xml(labels['quality'])} - {quality}%", styles["body"]))
     story.append(Spacer(1, 8))
     _append_pdf_traction(story, content, labels, styles, frame_width)
     _append_pdf_text_section(story, labels["context"], [_clean_text(content.get("context"))], styles)
@@ -639,6 +647,7 @@ def _labels(language: str) -> dict[str, str]:
             "binding_confirmed": "Binding confirmed",
             "binding_insufficient": "Binding not sufficiently confirmed",
             "context": "Initiative context",
+            "quality": "Document quality",
             "critical": "Identified problems",
             "current": "Current value",
             "input_metrics": "Input metrics",
@@ -663,6 +672,7 @@ def _labels(language: str) -> dict[str, str]:
         "binding_confirmed": "Связь подтверждена",
         "binding_insufficient": "Связь недостаточно подтверждена",
         "context": "Краткий контекст инициативы",
+        "quality": "Качество документа",
         "critical": "Выявленные проблемы",
         "current": "Текущее значение",
         "input_metrics": "Input metrics",

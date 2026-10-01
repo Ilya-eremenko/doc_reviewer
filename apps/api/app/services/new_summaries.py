@@ -12,6 +12,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.models.analysis import Analysis, AnalysisCheckRun
 from app.schemas.analyses import NewSummaryRead, NewSummaryVariantRead
 from app.schemas.enums import RunStatus
+from app.services.new_summary_quality import with_bilingual_document_quality, with_document_quality
 from app.services.summary_localizations import latest_completed_ic_review
 
 
@@ -372,13 +373,19 @@ def _read_state(analysis_id: UUID, state: dict[str, Any], *, include_payload: bo
         state.get("version") == NEW_SUMMARY_VERSION
         and state.get("generation_mode") == NEW_SUMMARY_GENERATION_MODE
     )
+    ru = _variant(state.get("ru") if available else None, include_payload=include_payload)
+    en = _variant(state.get("en") if available else None, include_payload=include_payload)
+    if isinstance(ru.payload, dict) and isinstance(en.payload, dict):
+        ru_payload, en_payload = with_bilingual_document_quality(ru.payload, en.payload)
+        ru = ru.model_copy(update={"payload": ru_payload})
+        en = en.model_copy(update={"payload": en_payload})
     return NewSummaryRead(
         analysis_id=analysis_id,
         source_revision=state.get("source_revision"),
         generation_mode=state.get("generation_mode") if available else None,
         available=available,
-        ru=_variant(state.get("ru") if available else None, include_payload=include_payload),
-        en=_variant(state.get("en") if available else None, include_payload=include_payload),
+        ru=ru,
+        en=en,
         progress=_progress(state) if available else None,
     )
 
@@ -386,6 +393,8 @@ def _read_state(analysis_id: UUID, state: dict[str, Any], *, include_payload: bo
 def _variant(value: Any, *, include_payload: bool = True) -> NewSummaryVariantRead:
     item = value if isinstance(value, dict) else {}
     payload = item.get("payload") if include_payload and isinstance(item.get("payload"), dict) else None
+    if payload is not None:
+        payload = with_document_quality(payload)
     return NewSummaryVariantRead(
         status=str(item.get("status") or "missing"),
         payload=payload,

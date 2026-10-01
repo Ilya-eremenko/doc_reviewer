@@ -21,7 +21,18 @@ Primary plan index:
 
 ## Current Focus
 
-- [~] Align the latest user-edited New Summary skill with the site contract:
+- [~] Remove the result-page verdict/status badges, the AI Summary regenerate
+  button, and the skill eyebrow; align language/download controls to the left.
+  Add the user-defined document-quality percentage to New Summary JSON, compute
+  it from the final stage checklist (rated children replace parent scores),
+  and show it below the stage in the web view and PDF/Word exports. Enrich old
+  saved reports on read without modifying stored analysis snapshots. Honor the
+  edited skill's explicit Gate 2 UTP and complete Gate 3 stop-criterion statuses
+  without changing other stages. Local verification: 273 API tests, 165 web
+  tests, production web build, and 297 worker tests pass. Three existing PDF
+  parser tests were deselected locally because `pdfplumber` is absent and `pypdf` is used.
+  PR, CI, and production deploy verification remain.
+- [x] Align the latest user-edited New Summary skill with the site contract:
   Gate 1 hypothesis thresholds; Gate 2 and Stream Review 1 inline detail;
   Progress Review and Stream Review 2+ next-plan detail inline; optional
   required-element evidence, problems, and Other; explicit missing Traction
@@ -29,7 +40,8 @@ Primary plan index:
   saved reports keep their appendix presentation. Focused API/worker tests,
   full API/web tests, and a production web build pass; the local worker suite
   has three known PDF parser failures because `pdfplumber` is not installed in
-  this local Python runtime. PR, CI, and production merge/deploy are pending.
+  this local Python runtime. PR #87 was merged and deployed as
+  `fb95a290f2f96fc544d4eced94dd2f4c4f7a5bf6`.
 - [x] Align the prior user-edited New Summary skill with the site contract: Gate 2
   hypothesis, metric-linkage, commitment, and stop-criterion details now live
   inside their matching `required_elements[].detail` entries and render there

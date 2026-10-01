@@ -61,6 +61,7 @@ export type NewSummaryContent = {
   language: NewSummaryLanguage;
   title: string;
   stage: NewSummaryStage;
+  document_quality_percent?: number;
   traction_summary?: NewSummaryTractionSummary;
   context: string;
   required_elements: NewSummaryRequiredElement[];

@@ -17,6 +17,7 @@ from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun
 from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
 from app.services.document_type_detector import progress_review_display_stage
+from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summaries import (
     NEW_SUMMARY_GENERATION_MODE,
     NEW_SUMMARY_VERSION,
@@ -840,6 +841,10 @@ def _validated_source_dependent_report(
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
         normalized_versions.append(normalized_version)
+    ru, en = with_bilingual_document_quality(
+        normalized_versions[1], normalized_versions[0], recompute=True,
+    )
+    normalized_versions = [en, ru]
     normalized["versions"] = normalized_versions
     validate(instance=normalized, schema=response_schema)
     return normalized
@@ -906,6 +911,7 @@ def _normalize_generated_version_shell(
             "context",
             "required_elements",
             "required_details",
+            "document_quality_percent",
             "critical_problems",
             "other",
         },
@@ -1235,6 +1241,16 @@ def _required_element_status(
     generated_item: dict[str, Any] | None,
     required_details: dict[str, Any],
 ) -> str:
+    generated_status = str((generated_item or {}).get("status") or "").strip().lower()
+    if item_id == "gate2_value_proposition":
+        generated_evidence = _non_empty_string((generated_item or {}).get("evidence"))
+        if generated_status in {"есть", "present"} and generated_evidence:
+            return "есть"
+    if item_id == "gate3_stop_criteria":
+        detail = required_details.get(item_id)
+        if (generated_status in {"есть", "present"} and isinstance(detail, dict)
+                and detail.get("type") == "stop_criteria" and detail.get("criteria")):
+            return "есть"
     if item_id in {"gate2_hypothesis_results", "stream_review_1_solution_validation"}:
         detail = required_details.get(item_id)
         if isinstance(detail, dict) and detail.get("type") == "solution_validation":
@@ -1242,7 +1258,6 @@ def _required_element_status(
             if isinstance(items, list) and items:
                 confirmed = sum(entry.get("verdict") == "confirmed" for entry in items if isinstance(entry, dict))
                 return f"{confirmed}/{len(items)}"
-        generated_status = str((generated_item or {}).get("status") or "")
         numerator, separator, denominator = generated_status.partition("/")
         if separator and numerator.isdecimal() and denominator.isdecimal() and int(numerator) <= int(denominator):
             return generated_status
