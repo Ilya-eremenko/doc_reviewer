@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from skills.traction_tables import _block_rows, _incremental_rows, display_traction_tables, source_traction_tables
+from app.services.new_summary_source_tables import verified_revenue_total
 
 
 def test_incremental_revenue_uses_full_source_horizon_and_excludes_tobe():
@@ -117,3 +118,58 @@ def test_source_tables_use_matching_owned_artifact_and_ignore_stale_parse(tmp_pa
     assert tables[0]["rows"][0]["values"] == ["86", "379", "465"]
     document.file_hash_sha256 = "b" * 64
     assert source_traction_tables(document) == []
+
+
+def test_revenue_total_can_use_matching_faq_tobe_total_but_not_another_scenario(tmp_path, monkeypatch):
+    import app.core.config as config
+
+    monkeypatch.setattr(config, "get_settings", lambda: SimpleNamespace(storage_root=tmp_path))
+    document = SimpleNamespace(
+        owner_id=uuid4(), id=uuid4(), parsed_text="Parsed source", file_hash_sha256="a" * 64
+    )
+    parsed_dir = tmp_path / "documents" / str(document.owner_id) / str(document.id) / "parsed"
+    parsed_dir.mkdir(parents=True)
+    incremental = {
+        "id": "b0082", "type": "table", "metadata": {"rows": [
+            ["Increment P&L, mR", "H2 2026", "2026", "2027", "2028", "2029", "2030"],
+            ["Revenue", "41", "41", "235", "1 797", "2 995", "4 250"],
+        ]},
+    }
+    tobe = {
+        "id": "b0089", "type": "table", "metadata": {"rows": [
+            ["ToBe P&L, mR", "2025", "2026", "2027", "2028", "2029", "2030", "2026-30 total"],
+            ["Revenue", "-", "41", "235", "1 797", "2 995", "4 250", "9 318"],
+        ]},
+    }
+    artifact = {
+        "source": {"sha256": document.file_hash_sha256},
+        "outputs": {"plain_text_sha256": hashlib.sha256(document.parsed_text.encode()).hexdigest()},
+        "blocks": [incremental, tobe],
+    }
+    (parsed_dir / "structured.json").write_text(json.dumps(artifact))
+    revenue = source_traction_tables(document)[0]
+    assert revenue["metric"] == "revenue"
+    assert revenue["periods"][-1] == "Total 2026–2030"
+    assert revenue["rows"][0]["values"][-1] == "9 318"
+    assert revenue["total_source_block_id"] == "b0089"
+
+    tobe["metadata"]["rows"][1][3] = "236"
+    (parsed_dir / "structured.json").write_text(json.dumps(artifact))
+    assert source_traction_tables(document)[0]["periods"][-1] == "2030"
+
+
+def test_verified_revenue_total_rejects_wrong_horizon_or_ambiguous_totals():
+    periods = ["2026", "2027"]
+    values = ["10", "20"]
+    block = {"id": "faq", "metadata": {"rows": [
+        ["ToBe P&L", "2026", "2027", "2026-28 total"],
+        ["Revenue", "10", "20", "30"],
+    ]}}
+    assert verified_revenue_total(periods, values, [block]) is None
+    block["metadata"]["rows"][0][-1] = "2026-27 total"
+    assert verified_revenue_total(periods, values, [block]).value == "30"
+    other = {"id": "alternative", "metadata": {"rows": [
+        ["ToBe P&L", "2026", "2027", "2026-27 total"],
+        ["Revenue", "10", "20", "31"],
+    ]}}
+    assert verified_revenue_total(periods, values, [block, other]) is None

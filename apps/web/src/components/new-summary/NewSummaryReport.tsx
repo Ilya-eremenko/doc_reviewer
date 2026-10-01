@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { confirmedFirst, gate2HypothesisSummary } from "@/lib/newSummaryRequired";
 
 import type {
   NewSummaryContent,
@@ -168,17 +169,20 @@ export function NewSummaryReportView({
         <ul>
           {content.required_elements.map((item) => {
             const tone = requiredElementTone(item);
+            const hypothesisSummary = gate2HypothesisSummary(item, language);
             return (
               <li className={tone} key={item.id}>
                 <span className="new-summary-required__marker" aria-hidden="true" />
                 <div>
                   <div className="new-summary-required__title">
                     <strong>
-                      {leadingWords(item.label)}
-                      <span className="new-summary-inline-tail">
-                        {lastWord(item.label)}
-                        <span className="new-summary-required__status">{tone === "fraction" ? item.status : text[tone]}</span>
-                      </span>
+                      {hypothesisSummary ?? <>
+                        {leadingWords(item.label)}
+                        <span className="new-summary-inline-tail">
+                          {lastWord(item.label)}
+                          <span className="new-summary-required__status">{tone === "fraction" ? item.status : text[tone]}</span>
+                        </span>
+                      </>}
                     </strong>
                   </div>
                   {item.evidence ? <p>{item.evidence}</p> : null}
@@ -339,7 +343,7 @@ function RequiredDetailContent({
   if (detail.type === "solution_validation") {
     return (
       <ul className="new-summary-appendix-list">
-        {detail.items.map((item) => (
+        {confirmedFirst(detail.items, (item) => item.verdict).map((item) => (
           <li key={item.text}>
             <InlineVerdict text={item.text} status={item.verdict} labels={text} kind="hypothesis" />
           </li>
@@ -426,7 +430,7 @@ function MetricBindingGroup({
     <div>
       <h4>{title}</h4>
       <ul className="new-summary-appendix-list">
-        {items.map((item) => (
+        {confirmedFirst(items, (item) => item.binding).map((item) => (
           <li key={`${item.metric}-${item.evidence}`}>
             {item.evidence ? <><strong>{item.metric}</strong> - </> : null}
             <InlineVerdict text={item.evidence || item.metric} status={item.binding} labels={text} />
@@ -601,6 +605,7 @@ const newSummaryStyles = `
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin-top: 12px;
 }
 
 .new-summary-quality {
@@ -812,6 +817,7 @@ const newSummaryStyles = `
   display: inline-flex;
   min-height: 24px;
   align-items: center;
+  margin-left: 3ch;
   border-radius: 999px;
   background: var(--danger-bg);
   color: var(--danger);
@@ -858,6 +864,10 @@ const newSummaryStyles = `
   margin: 0 0 8px;
   color: var(--foreground);
   font-size: 13px;
+}
+
+.new-summary-plan-detail > .new-summary-appendix-list + h4 {
+  margin-top: 16px;
 }
 
 .new-summary-required__detail .new-summary-table-scroll {
@@ -958,7 +968,7 @@ const newSummaryStyles = `
   display: inline-flex;
   min-height: 22px;
   align-items: center;
-  margin-left: 8px;
+  margin-left: 3ch;
   border-radius: 999px;
   padding: 0 8px;
   font-size: 11px;

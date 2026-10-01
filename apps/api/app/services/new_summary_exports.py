@@ -31,8 +31,10 @@ from reportlab.platypus import (
 )
 
 from app.models.analysis import Analysis
+from app.models.document import Document
 from app.services.new_summary_quality import with_bilingual_document_quality
-from app.services.new_summary_traction import with_traction_totals
+from app.services.new_summary_source_tables import verified_table_blocks
+from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
 from app.services.new_summaries import with_summary_display_stage
 
 
@@ -48,6 +50,7 @@ _MUTED = "#5D6675"
 _LINE = "#DDE3EA"
 _SURFACE = "#F6F8FA"
 _TEXT = "#111827"
+_VERDICT_GAP = "\u00a0" * 3
 
 
 class NewSummaryExportUnavailableError(Exception):
@@ -81,12 +84,15 @@ class NewSummaryExportProvenance:
     source_revision: str | None
 
 
-def build_new_summary_export(*, analysis: Analysis, file_format: str, display_stage: str | None = None) -> NewSummaryExport:
+def build_new_summary_export(
+    *, analysis: Analysis, file_format: str, display_stage: str | None = None,
+    document: Document | None = None,
+) -> NewSummaryExport:
     normalized_format = file_format.lower()
     if normalized_format not in EXPORT_FORMATS:
         raise UnsupportedNewSummaryExportFormatError(file_format)
 
-    report = _read_completed_report(analysis)
+    report = _read_completed_report(analysis, document=document)
     if display_stage is not None:
         report = {
             **report,
@@ -109,7 +115,7 @@ def build_new_summary_export(*, analysis: Analysis, file_format: str, display_st
     )
 
 
-def _read_completed_report(analysis: Analysis) -> dict[str, Any]:
+def _read_completed_report(analysis: Analysis, *, document: Document | None = None) -> dict[str, Any]:
     output = analysis.structured_output if isinstance(analysis.structured_output, dict) else {}
     result = output.get("result") if isinstance(output.get("result"), dict) else {}
     state = result.get("new_summary") if isinstance(result.get("new_summary"), dict) else {}
@@ -121,8 +127,11 @@ def _read_completed_report(analysis: Analysis) -> dict[str, Any]:
             raise NewSummaryExportUnavailableError("New Summary is not completed")
         versions[language] = payload
     versions["ru"], versions["en"] = with_bilingual_document_quality(versions["ru"], versions["en"])
-    versions["ru"] = with_traction_totals(versions["ru"])
-    versions["en"] = with_traction_totals(versions["en"])
+    blocks = verified_table_blocks(document) if document is not None and any(
+        needs_verified_revenue_total(versions[language]) for language in ("ru", "en")
+    ) else []
+    versions["ru"] = with_traction_totals(versions["ru"], source_blocks=blocks)
+    versions["en"] = with_traction_totals(versions["en"], source_blocks=blocks)
     return versions
 
 
@@ -280,17 +289,19 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Inches(0.22)
         paragraph.paragraph_format.space_after = Pt(2)
-        title = paragraph.add_run(_clean_text(item.get("label")))
+        hypothesis_heading = _gate2_hypothesis_heading(item, labels)
+        title = paragraph.add_run(hypothesis_heading or _clean_text(item.get("label")))
         title.bold = True
-        status = _localized_status(item, labels)
-        status_run = paragraph.add_run(f" — {status}")
-        status_run.bold = True
-        status_run.font.color.rgb = {
-            "present": RGBColor(15, 163, 107),
-            "partial": RGBColor(199, 120, 0),
-            "missing": RGBColor(217, 45, 32),
-            "fraction": RGBColor(17, 24, 39),
-        }[_required_status_kind(item)]
+        if hypothesis_heading is None:
+            status = _localized_status(item, labels)
+            status_run = paragraph.add_run(f"{_VERDICT_GAP}{status}")
+            status_run.bold = True
+            status_run.font.color.rgb = {
+                "present": RGBColor(15, 163, 107),
+                "partial": RGBColor(199, 120, 0),
+                "missing": RGBColor(217, 45, 32),
+                "fraction": RGBColor(17, 24, 39),
+            }[_required_status_kind(item)]
         if item.get("evidence"):
             evidence = document.add_paragraph(_clean_text(item.get("evidence")))
             evidence.paragraph_format.left_indent = Inches(0.22)
@@ -328,16 +339,16 @@ def _append_docx_detail(
             paragraph.add_run(f" - {_clean_text(item.get('confirmation_condition'))}")
         return
     if detail_type == "solution_validation":
-        for item in _dict_list(detail.get("items")):
+        for item in _confirmed_first(_dict_list(detail.get("items")), "verdict"):
             paragraph = document.add_paragraph(style="List Bullet")
             paragraph.add_run(_clean_text(item.get("text")))
-            status_run = paragraph.add_run(f" — {_verdict_status(item.get('verdict'), labels)}")
+            status_run = paragraph.add_run(f"{_VERDICT_GAP}{_verdict_status(item.get('verdict'), labels)}")
             status_run.bold = True
             status_run.font.color.rgb = RGBColor(15, 163, 107) if item.get("verdict") == "confirmed" else RGBColor(199, 120, 0)
         return
     if detail_type == "metric_binding":
         for title, key in ((labels["input_metrics"], "input_metrics"), (labels["output_metrics"], "output_metrics")):
-            metrics = _dict_list(detail.get(key))
+            metrics = _confirmed_first(_dict_list(detail.get(key)), "binding")
             if not metrics:
                 continue
             paragraph = document.add_paragraph()
@@ -348,7 +359,7 @@ def _append_docx_detail(
                 bullet.add_run(_clean_text(item.get("metric"))).bold = True
                 if item.get("evidence"):
                     bullet.add_run(f" - {_clean_text(item.get('evidence'))}")
-                status_run = bullet.add_run(f" — {_detail_status(item.get('binding'), labels)}")
+                status_run = bullet.add_run(f"{_VERDICT_GAP}{_detail_status(item.get('binding'), labels)}")
                 status_run.bold = True
                 status_run.font.color.rgb = RGBColor(15, 163, 107) if item.get("binding") == "confirmed" else RGBColor(199, 120, 0)
         return
@@ -530,12 +541,10 @@ def _append_pdf_required(
             "fraction": _TEXT,
         }[_required_status_kind(item)]
         status = _localized_status(item, labels)
-        story.append(
-            Paragraph(
-                f"<b>{_xml(item.get('label'))}</b> — <font color=\"{color}\"><b>{_xml(status)}</b></font>",
-                styles["required"],
-            )
-        )
+        hypothesis_heading = _gate2_hypothesis_heading(item, labels)
+        heading = (f"<b>{_xml(hypothesis_heading)}</b>" if hypothesis_heading else
+                   f"<b>{_xml(item.get('label'))}</b>{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(status)}</b></font>")
+        story.append(Paragraph(heading, styles["required"]))
         if item.get("evidence"):
             story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
         detail = item.get("detail")
@@ -579,15 +588,15 @@ def _append_pdf_detail(
         return
     if detail_type == "solution_validation":
         items = []
-        for item in _dict_list(detail.get("items")):
+        for item in _confirmed_first(_dict_list(detail.get("items")), "verdict"):
             color = _SUCCESS if item.get("verdict") == "confirmed" else _WARNING
-            items.append(Paragraph(f"{_xml(item.get('text'))} — <font color=\"{color}\"><b>{_xml(_verdict_status(item.get('verdict'), labels))}</b></font>", styles["body"]))
+            items.append(Paragraph(f"{_xml(item.get('text'))}{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_verdict_status(item.get('verdict'), labels))}</b></font>", styles["body"]))
         if items:
             story.append(ListFlowable([ListItem(item) for item in items], bulletType="bullet", leftIndent=15))
         return
     if detail_type == "metric_binding":
         for title, key in ((labels["input_metrics"], "input_metrics"), (labels["output_metrics"], "output_metrics")):
-            metrics = _dict_list(detail.get(key))
+            metrics = _confirmed_first(_dict_list(detail.get(key)), "binding")
             if not metrics:
                 continue
             story.append(Paragraph(_xml(title), styles["subheading"]))
@@ -598,7 +607,7 @@ def _append_pdf_detail(
                     Paragraph(
                         f"<b>{_xml(item.get('metric'))}</b>"
                         f"{' - ' + _xml(item.get('evidence')) if item.get('evidence') else ''}"
-                        f" — <font color=\"{color}\"><b>{_xml(_detail_status(item.get('binding'), labels))}</b></font>",
+                        f"{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_detail_status(item.get('binding'), labels))}</b></font>",
                         styles["body"],
                     )
                 )
@@ -610,6 +619,7 @@ def _append_pdf_detail(
         metrics = _dict_list(detail.get("metrics_until_next_review"))
         if metrics:
             if inline_item_id:
+                story.append(Spacer(1, 10))
                 story.append(Paragraph(_xml(labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"]), styles["subheading"]))
             rows = [
                 [
@@ -740,6 +750,25 @@ def _required_status_kind(item: dict[str, Any]) -> str:
 def _localized_status(item: dict[str, Any], labels: dict[str, str]) -> str:
     kind = _required_status_kind(item)
     return str(item.get("status")) if kind == "fraction" else labels[kind]
+
+
+def _confirmed_first(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    return sorted(items, key=lambda item: item.get(key) != "confirmed")
+
+
+def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str]) -> str | None:
+    detail = item.get("detail")
+    if item.get("id") != "gate2_hypothesis_results" or not isinstance(detail, dict) or detail.get("type") != "solution_validation":
+        return None
+    items = _dict_list(detail.get("items"))
+    if not items:
+        return None
+    total = len(items)
+    confirmed = sum(entry.get("verdict") == "confirmed" for entry in items)
+    insufficient = total - confirmed
+    if labels["required"] == "Required document elements":
+        return f"Gate hypothesis validation: {confirmed} of {total} hypotheses confirmed, {insufficient} of {total} insufficiently confirmed."
+    return f"Результаты проверки гипотез из Gate: {confirmed} гипотез из {total} подтверждены, {insufficient} гипотез из {total} недостаточно подтверждены."
 
 
 def _detail_status(status: Any, labels: dict[str, str]) -> str:

@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.analysis import Analysis, AnalysisCheckRun
+from app.models.document import Document
 from app.schemas.analyses import NewSummaryRead, NewSummaryVariantRead
 from app.schemas.enums import RunStatus
 from app.services.new_summary_quality import with_bilingual_document_quality, with_document_quality
-from app.services.new_summary_traction import with_traction_totals
+from app.services.new_summary_source_tables import verified_table_blocks
+from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
 from app.services.summary_localizations import latest_completed_ic_review
 
 
@@ -97,6 +99,26 @@ def with_display_stage(response: NewSummaryRead, display_stage: str | None) -> N
         if isinstance(payload, dict):
             variants[language] = variant.model_copy(update={"payload": with_summary_display_stage(payload, display_stage)})
     return response.model_copy(update=variants) if variants else response
+
+
+def with_verified_source_totals(response: NewSummaryRead, document: Document | None) -> NewSummaryRead:
+    if document is None or not any(
+        isinstance(getattr(response, language).payload, dict)
+        and needs_verified_revenue_total(getattr(response, language).payload)
+        for language in ("ru", "en")
+    ):
+        return response
+    blocks = verified_table_blocks(document)
+    if not blocks:
+        return response
+    variants = {}
+    for language in ("ru", "en"):
+        variant = getattr(response, language)
+        if isinstance(variant.payload, dict):
+            variants[language] = variant.model_copy(update={
+                "payload": with_traction_totals(variant.payload, source_blocks=blocks),
+            })
+    return response.model_copy(update=variants)
 
 
 def with_summary_display_stage(payload: dict[str, Any], display_stage: str) -> dict[str, Any]:

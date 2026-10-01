@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import { confirmedFirst, gate2HypothesisSummary } from "../../lib/newSummaryRequired";
 
 const source = readFileSync(new URL("./NewSummaryReport.tsx", import.meta.url), "utf8");
 
@@ -42,4 +43,23 @@ describe("AI Summary required elements", () => {
     expect(source).toContain('.new-summary-required > ul > li:first-child { border-top: 0; }');
     expect(source).toContain('<InlineVerdict text={item.text}');
   });
+
+  it("counts Gate 2 hypotheses and separates verdicts while preserving their visual grouping", () => {
+    expect(source).toContain("gate2HypothesisSummary(item, language)");
+    const item = {
+      id: "gate2_hypothesis_results", label: "Результаты проверки гипотез из Gate 1", status: "1/3" as const,
+      detail: { type: "solution_validation" as const, items: [
+        { text: "Первое", verdict: "insufficient" as const },
+        { text: "Второе", verdict: "confirmed" as const },
+        { text: "Третье", verdict: "insufficient" as const },
+      ] },
+    };
+    expect(gate2HypothesisSummary(item, "ru")).toBe("Результаты проверки гипотез из Gate: 1 гипотез из 3 подтверждены, 2 гипотез из 3 недостаточно подтверждены.");
+    expect(confirmedFirst(item.detail.items, (entry) => entry.verdict).map((entry) => entry.text)).toEqual(["Второе", "Первое", "Третье"]);
+    expect(source).toContain("confirmedFirst(detail.items, (item) => item.verdict)");
+    expect(source).toContain("margin-left: 3ch;");
+    expect(source).toContain(".new-summary-plan-detail > .new-summary-appendix-list + h4");
+    expect(source).toContain("margin-top: 12px;");
+  });
+
 });

@@ -49,6 +49,7 @@ from app.services.new_summaries import (
     regenerate_new_summary,
     request_new_summary,
     with_display_stage,
+    with_verified_source_totals,
 )
 from app.services.new_summary_exports import (
     NewSummaryExportUnavailableError,
@@ -79,6 +80,12 @@ def get_run_summary_localizations_enqueue() -> RunSummaryLocalizationsEnqueue:
 def _display_stage_for_analysis(db: Session, analysis: Analysis) -> str | None:
     document = db.get(Document, analysis.document_id)
     return document.display_stage if document is not None else None
+
+
+def _present_new_summary(db: Session, analysis: Analysis, response: NewSummaryRead) -> NewSummaryRead:
+    document = db.get(Document, analysis.document_id)
+    response = with_verified_source_totals(response, document)
+    return with_display_stage(response, document.display_stage if document is not None else None)
 
 
 @router.post("/documents/{document_id}/analyses", response_model=AnalysisRead, status_code=status.HTTP_201_CREATED)
@@ -215,7 +222,7 @@ def get_analysis_new_summary(
     except AnalysisNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found") from exc
     if current_user.role != "admin" and analysis.user_id != current_user.id:
-        return with_display_stage(read_new_summary(analysis), _display_stage_for_analysis(db, analysis))
+        return _present_new_summary(db, analysis, read_new_summary(analysis))
     response, should_enqueue = request_new_summary(db=db, analysis=analysis)
     if should_enqueue:
         try:
@@ -227,7 +234,7 @@ def get_analysis_new_summary(
                 error_message="new_summary_generation_queue_unavailable",
             )
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="New Summary generation queue is unavailable") from exc
-    return with_display_stage(response, _display_stage_for_analysis(db, analysis))
+    return _present_new_summary(db, analysis, response)
 
 
 @router.post("/analyses/{analysis_id}/new-summary", response_model=NewSummaryRead)
@@ -253,7 +260,7 @@ def ensure_analysis_new_summary(
                 error_message="new_summary_generation_queue_unavailable",
             )
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="New Summary generation queue is unavailable") from exc
-    return with_display_stage(response, _display_stage_for_analysis(db, analysis))
+    return _present_new_summary(db, analysis, response)
 
 
 @router.post("/analyses/{analysis_id}/new-summary/regenerate", response_model=NewSummaryRead)
@@ -278,7 +285,7 @@ def regenerate_analysis_new_summary(
                 db=db, analysis=analysis, error_message="new_summary_generation_queue_unavailable"
             )
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="New Summary generation queue is unavailable") from exc
-    return with_display_stage(response, _display_stage_for_analysis(db, analysis))
+    return _present_new_summary(db, analysis, response)
 
 
 @router.get("/analyses/{analysis_id}/new-summary/export/{file_format}")
@@ -294,6 +301,7 @@ def download_analysis_new_summary_export(
             analysis=analysis,
             file_format=file_format,
             display_stage=_display_stage_for_analysis(db, analysis),
+            document=db.get(Document, analysis.document_id),
         )
     except AnalysisNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found") from exc

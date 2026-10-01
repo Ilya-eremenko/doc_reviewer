@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from typing import TYPE_CHECKING, Any
+
+from app.services.new_summary_source_tables import (
+    block_rows as _block_rows,
+    verified_revenue_total,
+    verified_table_blocks,
+)
 
 if TYPE_CHECKING:
     from app.models.document import Document
@@ -18,29 +22,9 @@ _METRICS = {"revenue": re.compile(r"\b(?:revenue|выручк[а-я]*)\b", re.IG
 
 def source_traction_tables(document: Document) -> list[dict[str, Any]]:
     """Read only the parsed artifact owned by this document; never infer missing figures."""
-    from app.core.config import get_settings
-    from app.storage.local import LocalDocumentStorage
-    path = LocalDocumentStorage(get_settings().storage_root).parsed_artifact_dir(
-        owner_id=document.owner_id, document_id=document.id
-    ) / "structured.json"
-    if not path.is_file():
-        return []
-    try:
-        artifact = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(artifact, dict) or not isinstance(document.parsed_text, str):
-        return []
-    if (artifact.get("source") or {}).get("sha256") != document.file_hash_sha256:
-        return []
-    text_hash = hashlib.sha256(document.parsed_text.encode("utf-8")).hexdigest()
-    if (artifact.get("outputs") or {}).get("plain_text_sha256") != text_hash:
-        return []
-
+    blocks = verified_table_blocks(document)
     best: dict[str, tuple[int, dict[str, Any]]] = {}
-    for block in artifact.get("blocks") or []:
-        if not isinstance(block, dict) or block.get("type") != "table":
-            continue
+    for block in blocks:
         rows = _block_rows(block)
         if not rows:
             continue
@@ -59,26 +43,36 @@ def source_traction_tables(document: Document) -> list[dict[str, Any]]:
                     for row in table["rows"]:
                         if row not in selected["rows"]:
                             selected["rows"].append(row)
-    return [best[metric][1] for metric in ("revenue", "dtb") if metric in best]
-
-
-def _block_rows(block: dict[str, Any]) -> list[list[str]]:
-    metadata = block.get("metadata") or {}
-    rows = metadata.get("rows") if isinstance(metadata, dict) else None
-    if isinstance(rows, list) and all(isinstance(row, list) for row in rows):
-        return [[str(cell or "").strip() for cell in row] for row in rows]
-    markdown = block.get("markdown")
-    if not isinstance(markdown, str):
-        return []
-    parsed: list[list[str]] = []
-    for line in markdown.splitlines():
-        if not line.startswith("|"):
+    tables = [best[metric][1] for metric in ("revenue", "dtb") if metric in best]
+    for table in tables:
+        if table["metric"] != "revenue":
             continue
-        cells = [cell.strip().replace("<br>", " ") for cell in re.split(r"(?<!\\)\|", line.strip("|"))]
-        if cells and all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
+        total_index = next((index for index, period in enumerate(table["periods"]) if _TOTAL.search(period)), None)
+        if total_index is not None and all(
+            total_index < len(row["values"]) and row["values"][total_index]
+            for row in table["rows"]
+        ):
             continue
-        parsed.append([cell.replace(r"\|", "|") for cell in cells])
-    return parsed
+        totals = [
+            verified_revenue_total(table["periods"], row["values"], blocks)
+            if total_index is None or total_index >= len(row["values"]) or not row["values"][total_index]
+            else None
+            for row in table["rows"]
+        ]
+        if not any(totals):
+            continue
+        if total_index is None:
+            years = [period for period in table["periods"] if re.fullmatch(r"20\d{2}", period)]
+            table["periods"].append(f"Total {years[0]}–{years[-1]}")
+        for row, total in zip(table["rows"], totals, strict=True):
+            if total_index is None:
+                row["values"].append(total.value if total else "")
+            elif total:
+                row["values"][total_index] = total.value
+        matched = next(total for total in totals if total is not None)
+        table["total_source_block_id"] = matched.source_block_id
+        table["total_source_page"] = matched.source_page
+    return tables
 
 
 def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]:
