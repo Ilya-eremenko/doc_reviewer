@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Align Gate 2 hypothesis counts and required-item verdict spacing across New Summary skill,
+  JSON contract, web, and PDF/Word. Show confirmed detail before insufficient detail and
+  separate commitment metrics from the preceding list. Recover a missing Revenue Total
+  from an explicit FAQ ToBe P&L cell only after exact year-by-year and horizon matches;
+  enrich historical saved reports at read/export time without rewriting analysis snapshots.
+  Verified locally: 280 API tests, 166 web tests, 302 worker tests (three pre-existing
+  PDF parser tests deselected because local `pdfplumber` is absent), Next.js production
+  build, Docker web rebuild, and HTTP 200 at localhost:3000/login. PR and production
+  deploy pending.
 - [~] Refine AI Summary display for every analysis: align language controls with tabs;
   remove the required-elements intro and first divider; increase section and quality
   text sizes; explain quality on hover; keep criterion/subcriterion verdicts attached

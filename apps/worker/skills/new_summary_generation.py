@@ -1118,6 +1118,7 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
             for verdict in [_enum_value(item.get("verdict"), {"confirmed", "insufficient"})]
             if text is not None and verdict is not None
         ]
+        items.sort(key=lambda item: item["verdict"] != "confirmed")
         return {"type": detail_type, "items": items} if items else None
     if detail_type == "metric_binding":
         return {
@@ -1144,7 +1145,7 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
 def _normalized_metric_binding_items(value: Any) -> list[dict[str, str]]:
     if not isinstance(value, list):
         return []
-    return [
+    items = [
         {"metric": metric, "binding": binding, "evidence": evidence}
         for item in value
         if isinstance(item, dict)
@@ -1153,6 +1154,8 @@ def _normalized_metric_binding_items(value: Any) -> list[dict[str, str]]:
         for evidence in [_non_empty_string(item.get("evidence"))]
         if metric is not None and binding is not None and evidence is not None
     ]
+    items.sort(key=lambda item: item["binding"] != "confirmed")
+    return items
 
 
 def _normalized_metric_plan_rows(value: Any) -> list[dict[str, str]]:

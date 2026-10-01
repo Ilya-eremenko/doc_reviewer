@@ -1783,15 +1783,16 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     exported.write_bytes(inline_docx.content)
     document = DocxDocument(exported)
     paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    gap = "\u00a0" * 3
     assert "Appendices" not in paragraphs
-    assert paragraphs.index("Потребность проверена — Подтверждено") < paragraphs.index("Описание MVP/целевого продукта — Нет")
+    assert paragraphs.index(f"Потребность проверена{gap}Подтверждено") < paragraphs.index(f"Описание MVP/целевого продукта{gap}Нет")
     metric_detail_index = next(index for index, text in enumerate(paragraphs) if "Activation - Из пилота" in text)
-    assert paragraphs.index("Связь Input/Output метрик продукта с УТП — Есть") < metric_detail_index
-    assert metric_detail_index < paragraphs.index("Commitments к Gate 3: список функционала и метрики — Частично подтверждено")
+    assert paragraphs.index(f"Связь Input/Output метрик продукта с УТП{gap}Есть") < metric_detail_index
+    assert metric_detail_index < paragraphs.index(f"Commitments к Gate 3: список функционала и метрики{gap}Частично подтверждено")
     assert paragraphs.index("Запустить MVP") < paragraphs.index(
         "Metrics until Gate 3", paragraphs.index("Запустить MVP")
     )
-    assert paragraphs.index("Stop-критерии — Частично подтверждено") < paragraphs.index("Остановить при провале пилота")
+    assert paragraphs.index(f"Stop-критерии{gap}Частично подтверждено") < paragraphs.index("Остановить при провале пилота")
 
     output = dict(analysis.structured_output)
     result = dict(output["result"])
@@ -1826,7 +1827,7 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     exported.write_bytes(gate1_docx.content)
     document = DocxDocument(exported)
     paragraphs = [paragraph.text for paragraph in document.paragraphs]
-    assert paragraphs.index("Гипотезы к Gate 2 — Частично подтверждено") < paragraphs.index("Есть спрос - 20 лидов")
+    assert paragraphs.index(f"Гипотезы к Gate 2{gap}Частично подтверждено") < paragraphs.index("Есть спрос - 20 лидов")
     assert "Выявленные проблемы" not in paragraphs
     assert "Другие наблюдения" not in paragraphs
     assert "Appendices" not in paragraphs

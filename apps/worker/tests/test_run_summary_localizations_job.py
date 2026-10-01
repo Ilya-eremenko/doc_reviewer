@@ -723,6 +723,20 @@ def test_new_summary_solution_validation_detail_ignores_non_list_items():
     )
 
 
+def test_new_summary_detail_keeps_confirmed_findings_first():
+    detail = new_summary_generation._normalized_required_detail({"type": "solution_validation", "items": [
+        {"text": "a", "verdict": "insufficient"},
+        {"text": "b", "verdict": "confirmed"},
+        {"text": "c", "verdict": "insufficient"},
+    ]})
+    assert [item["text"] for item in detail["items"]] == ["b", "a", "c"]
+    metrics = new_summary_generation._normalized_metric_binding_items([
+        {"metric": "a", "binding": "insufficient", "evidence": "one"},
+        {"metric": "b", "binding": "confirmed", "evidence": "two"},
+    ])
+    assert [item["metric"] for item in metrics] == ["b", "a"]
+
+
 def test_gate2_details_are_saved_below_their_required_elements():
     checklist = new_summary_generation._new_summary_stage_checklists()["gate_2"]
     report = _new_summary_report_payload(

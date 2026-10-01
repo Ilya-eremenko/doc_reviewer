@@ -23,8 +23,8 @@ def test_required_element_statuses_match_in_pdf_and_word():
 
     document = DocxDocument()
     exports._append_docx_required(document, content, labels)
-    status_runs = [run for paragraph in document.paragraphs for run in paragraph.runs if run.text.startswith(" — ")]
-    assert [(run.text.strip(" —"), run.font.color.rgb) for run in status_runs] == [
+    status_runs = [run for paragraph in document.paragraphs for run in paragraph.runs if run.text.startswith("\u00a0" * 3)]
+    assert [(run.text.strip("\u00a0"), run.font.color.rgb) for run in status_runs] == [
         (label, color) for _status, label, color, _pdf_color in statuses
     ]
 

@@ -1,6 +1,10 @@
 from copy import deepcopy
 
-from app.services.new_summary_traction import with_traction_totals
+from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
+from app.services.new_summary_exports import _confirmed_first, _gate2_hypothesis_heading, _labels
+from app.services.new_summaries import with_verified_source_totals
+from app.schemas.analyses import NewSummaryRead, NewSummaryVariantRead
+from uuid import uuid4
 
 
 def _payload(language: str = "ru") -> dict:
@@ -55,3 +59,62 @@ def test_existing_total_moves_to_last_column_with_matching_value():
     result = with_traction_totals(payload)["traction_summary"]["tables"][0]
     assert result["periods"] == ["2026", "2027", "Total"]
     assert result["rows"][0]["values"] == ["10", "20", "30"]
+
+
+def test_saved_summary_placeholder_is_enriched_only_by_verified_source_total():
+    payload = _payload()
+    table = payload["traction_summary"]["tables"][0]
+    table["periods"].append("Total 2026–2027")
+    table["rows"][0]["values"].append("невозможно извлечь данные")
+    source = [{"id": "faq6", "metadata": {"rows": [
+        ["ToBe P&L", "2026", "2027", "2026-27 total"],
+        ["Revenue", "10", "20", "30"],
+    ]}}]
+    enriched = with_traction_totals(payload, source_blocks=source)
+    assert enriched["traction_summary"]["tables"][0]["rows"][0]["values"][-1] == "30"
+    assert payload["traction_summary"]["tables"][0]["rows"][0]["values"][-1] == "невозможно извлечь данные"
+    source[0]["metadata"]["rows"][1][2] = "21"
+    assert with_traction_totals(payload, source_blocks=source)["traction_summary"]["tables"][0]["rows"][0]["values"][-1] == "невозможно извлечь данные"
+
+
+def test_old_bilingual_report_reads_verified_total_without_mutating_saved_payload(monkeypatch):
+    import app.services.new_summaries as summaries
+
+    source = [{"id": "faq6", "metadata": {"rows": [
+        ["ToBe P&L", "2026", "2027", "2026-27 total"],
+        ["Revenue", "10", "20", "30"],
+    ]}}]
+    monkeypatch.setattr(summaries, "verified_table_blocks", lambda _document: source)
+    ru = _payload("ru")
+    en = _payload("en")
+    report = NewSummaryRead(
+        analysis_id=uuid4(), ru=NewSummaryVariantRead(status="completed", payload=ru),
+        en=NewSummaryVariantRead(status="completed", payload=en),
+    )
+    updated = with_verified_source_totals(report, object())
+    for language in ("ru", "en"):
+        assert getattr(updated, language).payload["traction_summary"]["tables"][0]["rows"][0]["values"][-1] == "30"
+        assert getattr(report, language).payload["traction_summary"]["tables"][0]["periods"] == ["2026", "2027"]
+
+
+def test_gate2_hypothesis_heading_uses_actual_items_and_confirmed_first():
+    item = {"id": "gate2_hypothesis_results", "detail": {"type": "solution_validation", "items": [
+        {"text": "a", "verdict": "insufficient"}, {"text": "b", "verdict": "confirmed"},
+        {"text": "c", "verdict": "insufficient"},
+    ]}}
+    assert _gate2_hypothesis_heading(item, _labels("ru")) == (
+        "Результаты проверки гипотез из Gate: 1 гипотез из 3 подтверждены, 2 гипотез из 3 недостаточно подтверждены."
+    )
+    assert [entry["text"] for entry in _confirmed_first(item["detail"]["items"], "verdict")] == ["b", "a", "c"]
+
+
+def test_legacy_single_revenue_table_without_metric_can_receive_verified_total():
+    payload = {"language": "ru", "traction_summary": {
+        "metric_label": "Revenue (incr)", "periods": ["2026", "2027", "Total"],
+        "rows": [{"label": "Revenue", "values": ["10", "20", "Не смог получить данные"]}],
+    }}
+    source = [{"metadata": {"rows": [
+        ["ToBe P&L", "2026", "2027", "2026-27 total"], ["Revenue", "10", "20", "30"],
+    ]}}]
+    assert needs_verified_revenue_total(payload)
+    assert with_traction_totals(payload, source_blocks=source)["traction_summary"]["rows"][0]["values"][-1] == "30"
