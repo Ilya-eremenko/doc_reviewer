@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v1"
+      "const": "new-summary-v2"
     },
     "language": {
       "const": "en",
@@ -90,44 +90,15 @@
           "items": { "$ref": "#/$defs/required_element" },
           "description": "The exact stage checklist, in canonical order. Do not add criteria from other stages."
         },
-        "document_quality_percent": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Final document quality percentage computed from required_elements. Rated child items count instead of their parent; the server recalculates this field after normalizing the checklist. Optional for historical reports."
-        },
-        "required_details": {
-          "$ref": "#/$defs/required_details",
-          "description": "Legacy appendix payload retained only for compatibility with saved historical reports. New inline details belong on the matching required_elements item."
-        },
-        "confirmed": {
-          "$ref": "#/$defs/optional_finding_list",
-          "description": "What is confirmed. Do not duplicate facts that already belong in required elements or critical problems."
-        },
-        "insufficiently_confirmed": {
-          "$ref": "#/$defs/optional_finding_list",
-          "description": "What is not sufficiently confirmed. Do not duplicate required elements or identified problems."
-        },
         "critical_problems": {
           "type": "array",
           "maxItems": 10,
           "items": { "$ref": "#/$defs/non_empty_string" },
           "description": "Decision-critical problems only; do not include recommendations or action plans."
-        },
-        "other": {
-          "type": "array",
-          "maxItems": 5,
-          "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "Optional cross-functional observations that do not belong in previous sections."
         }
       }
     },
-    "traction_summary": {
-      "oneOf": [
-        { "$ref": "#/$defs/traction_tables" },
-        { "$ref": "#/$defs/legacy_traction_summary" }
-      ]
-    },
+    "traction_summary": { "$ref": "#/$defs/traction_tables" },
     "traction_tables": {
       "type": "object",
       "additionalProperties": false,
@@ -152,28 +123,6 @@
           "description": "New reports end with a Total column for this metric and period horizon. The server fills a missing Total with an explicit absence or extraction reason; historical reports remain readable."
         },
         "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traction_row" } }
-      }
-    },
-    "legacy_traction_summary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["metric_label", "periods", "rows"],
-      "properties": {
-        "metric_label": {
-          "type": "string",
-          "minLength": 1
-        },
-        "periods": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "Years, quarters and Total in output order. A missing Total in historical payloads is explained at read/export time."
-        },
-        "rows": {
-          "type": "array",
-          "minItems": 1,
-          "items": { "$ref": "#/$defs/traction_row" }
-        }
       }
     },
     "traction_row": {
@@ -240,11 +189,12 @@
             { "enum": ["есть", "частично подтверждено", "нет"] },
             { "pattern": "^[0-9]+/[0-9]+$" }
           ],
-          "description": "Use есть/частично подтверждено/нет. Hypothesis-count items may use numerator/denominator. For Gate 2, the fraction remains technical; the visible heading counts detail.items verdicts (confirmed/insufficient) rather than showing the fraction."
+          "description": "Use есть/частично подтверждено/нет. Gate 2 hypotheses and Stream Review 1 solution checks may use a technical numerator/denominator; visible headings count detail.items verdicts instead of showing the fraction."
         },
         "evidence": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "Brief source-grounded explanation of what was required, what was shown, and why it supports the status; omit when no source evidence exists."
         },
         "detail": {
           "$ref": "#/$defs/required_detail",
@@ -260,12 +210,6 @@
         { "$ref": "#/$defs/next_review_plan_detail" },
         { "$ref": "#/$defs/stop_criteria_detail" }
       ]
-    },
-    "required_details": {
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/required_detail"
-      }
     },
     "hypotheses_with_thresholds_detail": {
       "type": "object",
@@ -312,7 +256,10 @@
         "verdict": {
           "type": "string",
           "enum": ["confirmed", "insufficient"]
-        }
+        },
+        "test": { "$ref": "#/$defs/non_empty_string" },
+        "expected_result": { "$ref": "#/$defs/non_empty_string" },
+        "actual_result": { "$ref": "#/$defs/non_empty_string" }
       }
     },
     "metric_binding_detail": {
@@ -382,12 +329,6 @@
           "items": { "$ref": "#/$defs/non_empty_string" }
         }
       }
-    },
-    "optional_finding_list": {
-      "type": "array",
-      "minItems": 0,
-      "maxItems": 5,
-      "items": { "$ref": "#/$defs/non_empty_string" }
     },
     "non_empty_string": {
       "type": "string",

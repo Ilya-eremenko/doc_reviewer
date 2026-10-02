@@ -17,7 +17,6 @@ from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun
 from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
 from app.services.document_type_detector import progress_review_display_stage
-from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summary_traction import with_traction_totals
 from app.services.new_summaries import (
     NEW_SUMMARY_GENERATION_MODE,
@@ -93,9 +92,6 @@ INLINE_REQUIRED_DETAIL_TYPES = {
     "stream_review_2_plus_stop_criteria": "stop_criteria",
     "stream_review_2_plus_next_half_year_plan": "next_review_plan",
 }
-
-INLINE_EVIDENCE_ITEM_IDS = {"gate2_value_proposition", "stream_review_1_confirmed_problem"}
-
 
 def generate_and_persist_new_summary_report(
     *,
@@ -846,10 +842,6 @@ def _validated_source_dependent_report(
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
         normalized_versions.append(normalized_version)
-    ru, en = with_bilingual_document_quality(
-        normalized_versions[1], normalized_versions[0], recompute=True,
-    )
-    normalized_versions = [en, ru]
     normalized["versions"] = normalized_versions
     validate(instance=normalized, schema=response_schema)
     return normalized
@@ -864,7 +856,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized.setdefault("schema_version", "new-summary-v1")
+    normalized["schema_version"] = "new-summary-v2"
     normalized.setdefault("language", "en")
     title = normalized.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -916,9 +908,7 @@ def _normalize_generated_version_shell(
             "context",
             "required_elements",
             "required_details",
-            "document_quality_percent",
             "critical_problems",
-            "other",
         },
     )
     normalized["language"] = language
@@ -929,7 +919,7 @@ def _normalize_generated_version_shell(
         normalized.get("traction_summary"),
         language=language,
     )
-    for key in ("required_elements", "critical_problems", "other"):
+    for key in ("required_elements", "critical_problems"):
         if not isinstance(normalized.get(key), list):
             normalized[key] = []
     return normalized
@@ -958,7 +948,10 @@ def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
         return {"tables": tables}
     normalized = _normalize_single_traction_table(value, language=language)
     if normalized is not None:
-        return normalized
+        metric_label = normalized["metric_label"].lower()
+        metric = "dtb" if "dtb" in metric_label else "revenue" if ("revenue" in metric_label or "выруч" in metric_label) else None
+        if metric is not None:
+            return {"tables": [{"metric": metric, **normalized}]}
     return {"tables": []}
 
 
@@ -1061,17 +1054,26 @@ def _required_elements_from_source(
                 required_details={**required_details, item_id: detail} if detail is not None else required_details,
             ),
         }
-        if item_id in INLINE_EVIDENCE_ITEM_IDS:
-            evidence = _required_element_evidence(
-                by_id.get(item_id),
-                generated_item,
-                target_language=target_language,
-            )
-            if evidence:
-                element["evidence"] = evidence
+        evidence = _required_element_evidence(
+            by_id.get(item_id),
+            generated_item,
+            target_language=target_language,
+        )
+        if evidence:
+            element["evidence"] = evidence
         if detail is not None:
             element["detail"] = detail
         elements.append(element)
+    if document_type == "stream_review_1":
+        by_element_id = {element["id"]: element for element in elements}
+        problem = by_element_id.get("stream_review_1_confirmed_problem")
+        solution = by_element_id.get("stream_review_1_solution_validation")
+        if problem and solution and problem["status"] == "есть":
+            confirmed, separator, total = solution["status"].partition("/")
+            if solution["status"] == "частично подтверждено" or (
+                separator and confirmed.isdecimal() and total.isdecimal() and int(confirmed) < int(total)
+            ):
+                problem["status"] = "частично подтверждено"
     return elements
 
 
@@ -1110,14 +1112,20 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
         detail_items = detail.get("items")
         if not isinstance(detail_items, list):
             return None
-        items = [
-            {"text": text, "verdict": verdict}
-            for item in detail_items
-            if isinstance(item, dict)
-            for text in [_non_empty_string(item.get("text"))]
-            for verdict in [_enum_value(item.get("verdict"), {"confirmed", "insufficient"})]
-            if text is not None and verdict is not None
-        ]
+        items = []
+        for item in detail_items:
+            if not isinstance(item, dict):
+                continue
+            text = _non_empty_string(item.get("text"))
+            verdict = _enum_value(item.get("verdict"), {"confirmed", "insufficient"})
+            if text is None or verdict is None:
+                continue
+            normalized_item = {"text": text, "verdict": verdict}
+            for key in ("test", "expected_result", "actual_result"):
+                value = _non_empty_string(item.get(key))
+                if value is not None:
+                    normalized_item[key] = value
+            items.append(normalized_item)
         items.sort(key=lambda item: item["verdict"] != "confirmed")
         return {"type": detail_type, "items": items} if items else None
     if detail_type == "metric_binding":
@@ -1254,7 +1262,7 @@ def _required_element_status(
         generated_evidence = _non_empty_string((generated_item or {}).get("evidence"))
         if generated_status in {"есть", "present"} and generated_evidence:
             return "есть"
-    if item_id == "gate3_stop_criteria":
+    if item_id.endswith("_stop_criteria"):
         detail = required_details.get(item_id)
         if (generated_status in {"есть", "present"} and isinstance(detail, dict)
                 and detail.get("type") == "stop_criteria" and detail.get("criteria")):
@@ -1289,10 +1297,11 @@ def _required_element_evidence(
     target_language: str,
 ) -> str | None:
     generated_evidence = (generated_item or {}).get("evidence")
-    if isinstance(generated_evidence, str) and generated_evidence.strip():
+    boilerplate = {"no evidence is provided.", "нет данных.", "раздел есть.", "the section is present."}
+    if isinstance(generated_evidence, str) and generated_evidence.strip() and generated_evidence.strip().lower() not in boilerplate:
         return generated_evidence.strip()
     evidence = (item or {}).get("evidence")
-    if target_language == "ru" and isinstance(evidence, str) and evidence.strip():
+    if target_language == "ru" and isinstance(evidence, str) and evidence.strip() and evidence.strip().lower() not in boilerplate:
         return evidence.strip()
     return None
 

@@ -126,7 +126,8 @@ def _read_completed_report(analysis: Analysis, *, document: Document | None = No
         if variant.get("status") != "completed" or payload is None:
             raise NewSummaryExportUnavailableError("New Summary is not completed")
         versions[language] = payload
-    versions["ru"], versions["en"] = with_bilingual_document_quality(versions["ru"], versions["en"])
+    if all(versions[language].get("schema_version") != "new-summary-v2" for language in ("ru", "en")):
+        versions["ru"], versions["en"] = with_bilingual_document_quality(versions["ru"], versions["en"])
     blocks = verified_table_blocks(document) if document is not None and any(
         needs_verified_revenue_total(versions[language]) for language in ("ru", "en")
     ) else []
@@ -188,7 +189,7 @@ def _append_docx_version(document: DocxDocument, content: dict[str, Any], langua
     stage_run = stage.add_run(f"{labels['stage']}: ")
     stage_run.bold = True
     stage.add_run(_clean_text(content.get("stage") or "Unknown"))
-    quality = content.get("document_quality_percent")
+    quality = content.get("document_quality_percent") if content.get("schema_version") != "new-summary-v2" else None
     if isinstance(quality, int) and not isinstance(quality, bool):
         document.add_paragraph(f"{labels['quality']} - {quality}%")
 
@@ -196,7 +197,8 @@ def _append_docx_version(document: DocxDocument, content: dict[str, Any], langua
     _append_docx_text_section(document, labels["context"], [_clean_text(content.get("context"))])
     _append_docx_required(document, content, labels)
     _append_docx_list_section(document, labels["critical"], _string_list(content.get("critical_problems")), RGBColor(185, 28, 28))
-    _append_docx_list_section(document, labels["other"], _string_list(content.get("other")), RGBColor(93, 102, 117))
+    if content.get("schema_version") != "new-summary-v2":
+        _append_docx_list_section(document, labels["other"], _string_list(content.get("other")), RGBColor(93, 102, 117))
     _append_docx_details(document, content, labels)
 
 
@@ -283,14 +285,15 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
     if not isinstance(items, list) or not items:
         return
     _append_docx_heading(document, labels["required"])
-    for item in items:
+    numbered = content.get("schema_version") == "new-summary-v2"
+    for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             continue
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Inches(0.22)
         paragraph.paragraph_format.space_after = Pt(2)
-        hypothesis_heading = _gate2_hypothesis_heading(item, labels)
-        title = paragraph.add_run(hypothesis_heading or _clean_text(item.get("label")))
+        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered)
+        title = paragraph.add_run((f"{index}. " if numbered else "") + (hypothesis_heading or _clean_text(item.get("label"))))
         title.bold = True
         if hypothesis_heading is None:
             status = _localized_status(item, labels)
@@ -345,6 +348,12 @@ def _append_docx_detail(
             status_run = paragraph.add_run(f"{_VERDICT_GAP}{_verdict_status(item.get('verdict'), labels)}")
             status_run.bold = True
             status_run.font.color.rgb = RGBColor(15, 163, 107) if item.get("verdict") == "confirmed" else RGBColor(199, 120, 0)
+            rationale = _validation_rationale(item, labels)
+            if rationale:
+                rationale_run = paragraph.add_run()
+                rationale_run.add_break()
+                rationale_run.add_text(rationale)
+                rationale_run.font.color.rgb = RGBColor(93, 102, 117)
         return
     if detail_type == "metric_binding":
         for title, key in ((labels["input_metrics"], "input_metrics"), (labels["output_metrics"], "output_metrics")):
@@ -430,7 +439,7 @@ def _append_pdf_version(
     labels = _labels(language)
     story.append(Paragraph(_xml(content.get("title") or "AI Summary"), styles["title"]))
     story.append(Paragraph(f"<b>{_xml(labels['stage'])}:</b> {_xml(content.get('stage') or 'Unknown')}", styles["body"]))
-    quality = content.get("document_quality_percent")
+    quality = content.get("document_quality_percent") if content.get("schema_version") != "new-summary-v2" else None
     if isinstance(quality, int) and not isinstance(quality, bool):
         story.append(Paragraph(f"{_xml(labels['quality'])} - {quality}%", styles["body"]))
     story.append(Spacer(1, 8))
@@ -438,7 +447,8 @@ def _append_pdf_version(
     _append_pdf_text_section(story, labels["context"], [_clean_text(content.get("context"))], styles)
     _append_pdf_required(story, content, labels, styles, frame_width)
     _append_pdf_list_section(story, labels["critical"], _string_list(content.get("critical_problems")), "#B91C1C", styles)
-    _append_pdf_list_section(story, labels["other"], _string_list(content.get("other")), _MUTED, styles)
+    if content.get("schema_version") != "new-summary-v2":
+        _append_pdf_list_section(story, labels["other"], _string_list(content.get("other")), _MUTED, styles)
     _append_pdf_details(story, content, labels, styles, frame_width)
 
 
@@ -531,7 +541,8 @@ def _append_pdf_required(
     if not isinstance(items, list) or not items:
         return
     _append_pdf_heading(story, labels["required"], styles)
-    for item in items:
+    numbered = content.get("schema_version") == "new-summary-v2"
+    for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             continue
         color = {
@@ -541,9 +552,11 @@ def _append_pdf_required(
             "fraction": _TEXT,
         }[_required_status_kind(item)]
         status = _localized_status(item, labels)
-        hypothesis_heading = _gate2_hypothesis_heading(item, labels)
+        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered)
         heading = (f"<b>{_xml(hypothesis_heading)}</b>" if hypothesis_heading else
                    f"<b>{_xml(item.get('label'))}</b>{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(status)}</b></font>")
+        if numbered:
+            heading = f"{index}. {heading}"
         story.append(Paragraph(heading, styles["required"]))
         if item.get("evidence"):
             story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
@@ -590,7 +603,11 @@ def _append_pdf_detail(
         items = []
         for item in _confirmed_first(_dict_list(detail.get("items")), "verdict"):
             color = _SUCCESS if item.get("verdict") == "confirmed" else _WARNING
-            items.append(Paragraph(f"{_xml(item.get('text'))}{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_verdict_status(item.get('verdict'), labels))}</b></font>", styles["body"]))
+            entry = f"{_xml(item.get('text'))}{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_verdict_status(item.get('verdict'), labels))}</b></font>"
+            rationale = _validation_rationale(item, labels)
+            if rationale:
+                entry += f'<br/><font color="{_MUTED}">{_xml(rationale)}</font>'
+            items.append(Paragraph(entry, styles["body"]))
         if items:
             story.append(ListFlowable([ListItem(item) for item in items], bulletType="bullet", leftIndent=15))
         return
@@ -679,6 +696,9 @@ def _labels(language: str) -> dict[str, str]:
             "traction": "Traction Summary",
             "verdict_confirmed": "Confirmed",
             "verdict_insufficient": "Not sufficiently confirmed",
+            "test": "Test",
+            "expected": "expected",
+            "actual": "observed",
         }
     return {
         "appendices": "Appendices",
@@ -704,6 +724,9 @@ def _labels(language: str) -> dict[str, str]:
         "traction": "Traction Summary",
         "verdict_confirmed": "Подтверждено",
         "verdict_insufficient": "Недостаточно подтверждено",
+        "test": "Проверка",
+        "expected": "ожидали",
+        "actual": "получили",
     }
 
 
@@ -756,9 +779,10 @@ def _confirmed_first(items: list[dict[str, Any]], key: str) -> list[dict[str, An
     return sorted(items, key=lambda item: item.get(key) != "confirmed")
 
 
-def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str]) -> str | None:
+def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str], *, new_format: bool = False) -> str | None:
     detail = item.get("detail")
-    if item.get("id") != "gate2_hypothesis_results" or not isinstance(detail, dict) or detail.get("type") != "solution_validation":
+    gate2 = item.get("id") == "gate2_hypothesis_results"
+    if not (gate2 or (new_format and item.get("id") == "stream_review_1_solution_validation")) or not isinstance(detail, dict) or detail.get("type") != "solution_validation":
         return None
     items = _dict_list(detail.get("items"))
     if not items:
@@ -766,9 +790,30 @@ def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str]) -> s
     total = len(items)
     confirmed = sum(entry.get("verdict") == "confirmed" for entry in items)
     insufficient = total - confirmed
-    if labels["required"] == "Required document elements":
-        return f"Gate hypothesis validation: {confirmed} of {total} hypotheses confirmed, {insufficient} of {total} insufficiently confirmed."
-    return f"Результаты проверки гипотез из Gate: {confirmed} гипотез из {total} подтверждены, {insufficient} гипотез из {total} недостаточно подтверждены."
+    english = labels["required"] == "Required document elements"
+    if not new_format:
+        return (f"Gate hypothesis validation: {confirmed} of {total} hypotheses confirmed, {insufficient} of {total} insufficiently confirmed." if english
+                else f"Результаты проверки гипотез из Gate: {confirmed} гипотез из {total} подтверждены, {insufficient} гипотез из {total} недостаточно подтверждены.")
+    if english:
+        return f"{'Gate 1 hypothesis validation' if gate2 else 'Solution validation'}: {confirmed} of {total} {'hypotheses' if gate2 else 'checks'} confirmed, {insufficient} of {total} insufficiently confirmed."
+    forms = ("гипотеза", "гипотезы", "гипотез") if gate2 else ("проверка", "проверки", "проверок")
+    heading = "Результаты проверки гипотез из Gate 1" if gate2 else "Подтвержденные решения"
+    return (f"{heading}: {confirmed} {_ru_count(confirmed, forms)} из {total} {'подтверждена' if confirmed == 1 else 'подтверждены'}, "
+            f"{insufficient} {_ru_count(insufficient, forms)} из {total} недостаточно {'подтверждена' if insufficient == 1 else 'подтверждены'}.")
+
+
+def _ru_count(value: int, forms: tuple[str, str, str]) -> str:
+    if 11 <= value % 100 <= 14:
+        return forms[2]
+    tail = value % 10
+    return forms[0] if tail == 1 else forms[1] if 2 <= tail <= 4 else forms[2]
+
+
+def _validation_rationale(item: dict[str, Any], labels: dict[str, str]) -> str:
+    parts = [f"{labels[label]}: {_clean_text(item.get(key)).rstrip('.')}" for key, label in (
+        ("test", "test"), ("expected_result", "expected"), ("actual_result", "actual"),
+    ) if _clean_text(item.get(key))]
+    return "; ".join(parts) + "." if parts else ""
 
 
 def _detail_status(status: Any, labels: dict[str, str]) -> str:

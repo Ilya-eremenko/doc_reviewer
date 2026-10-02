@@ -1,7 +1,13 @@
 from copy import deepcopy
+from io import BytesIO
+
+from docx import Document as DocxDocument
 
 from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
-from app.services.new_summary_exports import _confirmed_first, _gate2_hypothesis_heading, _labels
+from app.services.new_summary_exports import (
+    NewSummaryExportProvenance, _build_docx, _confirmed_first,
+    _gate2_hypothesis_heading, _labels, _validation_rationale,
+)
 from app.services.new_summaries import with_verified_source_totals
 from app.schemas.analyses import NewSummaryRead, NewSummaryVariantRead
 from uuid import uuid4
@@ -106,6 +112,40 @@ def test_gate2_hypothesis_heading_uses_actual_items_and_confirmed_first():
         "Результаты проверки гипотез из Gate: 1 гипотез из 3 подтверждены, 2 гипотез из 3 недостаточно подтверждены."
     )
     assert [entry["text"] for entry in _confirmed_first(item["detail"]["items"], "verdict")] == ["b", "a", "c"]
+
+
+def test_v2_solution_checks_show_counts_and_source_rationale():
+    item = {"id": "stream_review_1_solution_validation", "detail": {"type": "solution_validation", "items": [
+        {"text": "Pilot", "verdict": "confirmed", "test": "Pilot with 20 users",
+         "expected_result": "10 activations", "actual_result": "12 activations"},
+        {"text": "Launch", "verdict": "insufficient"},
+    ]}}
+    assert _gate2_hypothesis_heading(item, _labels("ru"), new_format=True) == (
+        "Подтвержденные решения: 1 проверка из 2 подтверждена, 1 проверка из 2 недостаточно подтверждена."
+    )
+    assert _validation_rationale(item["detail"]["items"][0], _labels("ru")) == (
+        "Проверка: Pilot with 20 users; ожидали: 10 activations; получили: 12 activations."
+    )
+
+
+def test_v2_docx_omits_removed_sections_and_numbers_required_elements():
+    item = {"id": "stream_review_1_solution_validation", "label": "Подтверждение решения", "status": "1/1",
+            "detail": {"type": "solution_validation", "items": [{
+                "text": "Пилот", "verdict": "confirmed", "test": "Пилот на 20 пользователях",
+                "expected_result": "10 активаций", "actual_result": "12 активаций",
+            }]}}
+    content = {"schema_version": "new-summary-v2", "language": "ru", "title": "AI Summary Test",
+               "stage": "Stream Review 1", "context": "Проверен пилот.",
+               "traction_summary": {"tables": []}, "required_elements": [item],
+               "document_quality_percent": 75, "other": ["Legacy-only note"], "critical_problems": []}
+    provenance = NewSummaryExportProvenance("a", "d", "skill", "1", "test", "mock", None)
+    document = DocxDocument(BytesIO(_build_docx({"ru": content, "en": {**content, "language": "en"}}, provenance)))
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    assert "1. Подтвержденные решения: 1 проверка из 1 подтверждена" in text
+    assert "Проверка: Пилот на 20 пользователях" in text
+    assert "Качество документа" not in text
+    assert "Другие наблюдения" not in text
+    assert "Legacy-only note" not in text
 
 
 def test_legacy_single_revenue_table_without_metric_can_receive_verified_total():

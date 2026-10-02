@@ -21,6 +21,13 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Align the user-edited New Summary with a v2 output contract. New runs omit
+  document quality and Other, keep short source-grounded evidence on checklist
+  items, number required elements, and carry Stream Review 1 test/expected/actual
+  evidence into web and PDF/Word. Historical v1 reports remain readable with
+  their saved layout. Locally verified: 284 API tests, 303 worker tests (three
+  unrelated pdfplumber-dependent parser tests deselected), 166 web tests, and
+  Next.js production build. PR, CI, and production deploy verification pending.
 - [~] Align Gate 2 hypothesis counts and required-item verdict spacing across New Summary skill,
   JSON contract, web, and PDF/Word. Show confirmed detail before insufficient detail and
   separate commitment metrics from the preceding list. Recover a missing Revenue Total
