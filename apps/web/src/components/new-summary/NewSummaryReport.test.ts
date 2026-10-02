@@ -24,7 +24,7 @@ describe("AI Summary required elements", () => {
   it("keeps optional sections and evidence hidden when no content is present", () => {
     expect(source).toContain("{item.evidence ? <p>{item.evidence}</p> : null}");
     expect(source).toContain("{content.critical_problems?.length ? (");
-    expect(source).toContain("{content.other?.length ? (");
+    expect(source).toContain('content.schema_version !== "new-summary-v2" && content.other?.length');
     expect(source).toContain('detail.type === "hypotheses_with_thresholds"');
     expect(source).toContain("table-layout: fixed;");
   });
@@ -45,7 +45,7 @@ describe("AI Summary required elements", () => {
   });
 
   it("counts Gate 2 hypotheses and separates verdicts while preserving their visual grouping", () => {
-    expect(source).toContain("gate2HypothesisSummary(item, language)");
+    expect(source).toContain('gate2HypothesisSummary(item, language, content.schema_version === "new-summary-v2")');
     const item = {
       id: "gate2_hypothesis_results", label: "Результаты проверки гипотез из Gate 1", status: "1/3" as const,
       detail: { type: "solution_validation" as const, items: [
@@ -55,6 +55,10 @@ describe("AI Summary required elements", () => {
       ] },
     };
     expect(gate2HypothesisSummary(item, "ru")).toBe("Результаты проверки гипотез из Gate: 1 гипотез из 3 подтверждены, 2 гипотез из 3 недостаточно подтверждены.");
+    expect(gate2HypothesisSummary(item, "ru", true)).toBe("Результаты проверки гипотез из Gate 1: 1 гипотеза из 3 подтверждена, 2 гипотезы из 3 недостаточно подтверждены.");
+    expect(gate2HypothesisSummary({ ...item, id: "stream_review_1_solution_validation" }, "ru", true)).toBe("Подтвержденные решения: 1 проверка из 3 подтверждена, 2 проверки из 3 недостаточно подтверждены.");
+    expect(source).toContain('className="new-summary-required__number"');
+    expect(source).toContain("item.expected_result");
     expect(confirmedFirst(item.detail.items, (entry) => entry.verdict).map((entry) => entry.text)).toEqual(["Второе", "Первое", "Третье"]);
     expect(source).toContain("confirmedFirst(detail.items, (item) => item.verdict)");
     expect(source).toContain("margin-left: 3ch;");

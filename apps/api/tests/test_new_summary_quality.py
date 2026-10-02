@@ -3,6 +3,8 @@ from app.services.new_summary_quality import (
     with_bilingual_document_quality,
     with_document_quality,
 )
+from app.services.new_summaries import _read_state
+from uuid import uuid4
 
 
 def test_document_quality_counts_rated_children_instead_of_parent():
@@ -70,3 +72,15 @@ def test_old_bilingual_report_uses_one_quality_score_without_mutating_either_ver
     assert enriched_en["document_quality_percent"] == 100
     assert "document_quality_percent" not in ru
     assert "document_quality_percent" not in en
+
+
+def test_v2_report_is_read_without_reintroducing_removed_quality_field():
+    payload = {"schema_version": "new-summary-v2", "language": "ru",
+               "required_elements": [{"status": "есть"}], "traction_summary": {"tables": []}}
+    state = {"version": 2, "generation_mode": "new_summary_skill", "source_revision": "check-id",
+             "ru": {"status": "completed", "payload": payload},
+             "en": {"status": "completed", "payload": {**payload, "language": "en"}}}
+    result = _read_state(uuid4(), state)
+    assert "document_quality_percent" not in result.ru.payload
+    assert "document_quality_percent" not in result.en.payload
+    assert "document_quality_percent" not in state["ru"]["payload"]

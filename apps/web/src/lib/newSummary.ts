@@ -37,7 +37,13 @@ export type NewSummaryRequiredDetails =
     }
   | {
       type: "solution_validation";
-      items: Array<{ text: string; verdict: "confirmed" | "insufficient" }>;
+      items: Array<{
+        text: string;
+        verdict: "confirmed" | "insufficient";
+        test?: string;
+        expected_result?: string;
+        actual_result?: string;
+      }>;
     }
   | {
       type: "metric_binding";
@@ -57,7 +63,7 @@ export type NewSummaryRequiredDetails =
 export type NewSummaryRequiredDetailsById = Record<string, NewSummaryRequiredDetails>;
 
 export type NewSummaryContent = {
-  schema_version: "new-summary-v1";
+  schema_version: "new-summary-v1" | "new-summary-v2";
   language: NewSummaryLanguage;
   title: string;
   stage: NewSummaryStage;

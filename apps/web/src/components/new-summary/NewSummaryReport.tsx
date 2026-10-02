@@ -45,6 +45,9 @@ const labels = {
     source: "Исходный анализ",
     stage: "Стадия инициативы",
     traction: "Traction Summary",
+    test: "Проверка",
+    expected: "ожидали",
+    actual: "получили",
   },
   en: {
     appendices: "Appendices",
@@ -77,6 +80,9 @@ const labels = {
     source: "Source analysis",
     stage: "Initiative stage",
     traction: "Traction Summary",
+    test: "Test",
+    expected: "expected",
+    actual: "observed",
   },
 } as const;
 
@@ -141,7 +147,7 @@ export function NewSummaryReportView({
           <span>{text.stage}</span>
           <strong>{content.stage}</strong>
         </div>
-        {typeof content.document_quality_percent === "number" ? (
+        {content.schema_version !== "new-summary-v2" && typeof content.document_quality_percent === "number" ? (
           <div className="new-summary-quality-row">
             <p className="new-summary-quality">{text.quality} - {content.document_quality_percent}%</p>
             <span className="new-summary-help-wrap">
@@ -162,17 +168,21 @@ export function NewSummaryReportView({
         <p>{content.context}</p>
       </section>
 
-      <section className="new-summary-panel new-summary-required">
+      <section className={`new-summary-panel new-summary-required${content.schema_version === "new-summary-v2" ? " new-summary-required--numbered" : ""}`}>
         <div className="new-summary-section-heading">
           <h2>{text.required}</h2>
         </div>
         <ul>
-          {content.required_elements.map((item) => {
+          {content.required_elements.map((item, index) => {
             const tone = requiredElementTone(item);
-            const hypothesisSummary = gate2HypothesisSummary(item, language);
+            const hypothesisSummary = gate2HypothesisSummary(item, language, content.schema_version === "new-summary-v2");
             return (
               <li className={tone} key={item.id}>
-                <span className="new-summary-required__marker" aria-hidden="true" />
+                {content.schema_version === "new-summary-v2" ? (
+                  <span className="new-summary-required__number" aria-hidden="true">{index + 1}.</span>
+                ) : (
+                  <span className="new-summary-required__marker" aria-hidden="true" />
+                )}
                 <div>
                   <div className="new-summary-required__title">
                     <strong>
@@ -204,7 +214,7 @@ export function NewSummaryReportView({
         </section>
       ) : null}
 
-      {content.other?.length ? (
+      {content.schema_version !== "new-summary-v2" && content.other?.length ? (
         <section className="new-summary-panel new-summary-other">
           <SummarySection items={content.other} title={text.other} />
         </section>
@@ -346,6 +356,15 @@ function RequiredDetailContent({
         {confirmedFirst(detail.items, (item) => item.verdict).map((item) => (
           <li key={item.text}>
             <InlineVerdict text={item.text} status={item.verdict} labels={text} kind="hypothesis" />
+            {item.test || item.expected_result || item.actual_result ? (
+              <p className="new-summary-validation-evidence">
+                {[
+                  item.test && `${text.test}: ${item.test}`,
+                  item.expected_result && `${text.expected}: ${item.expected_result}`,
+                  item.actual_result && `${text.actual}: ${item.actual_result}`,
+                ].filter(Boolean).join("; ")}.
+              </p>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -788,6 +807,10 @@ const newSummaryStyles = `
   padding: 15px 22px;
 }
 .new-summary-required > ul > li:first-child { border-top: 0; }
+
+.new-summary-required--numbered > ul > li { grid-template-columns: 24px minmax(0, 1fr); }
+.new-summary-required__number { color: var(--muted); font-size: 14px; font-weight: 700; line-height: 1.4; }
+.new-summary-validation-evidence { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 
 .new-summary-required__marker {
   width: 10px;

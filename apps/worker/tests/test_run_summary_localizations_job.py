@@ -426,8 +426,8 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["schema_version"] == "new-summary-v1"
-        assert state["en"]["payload"]["schema_version"] == "new-summary-v1"
+        assert state["ru"]["payload"]["schema_version"] == "new-summary-v2"
+        assert state["en"]["payload"]["schema_version"] == "new-summary-v2"
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
         assert state["en"]["payload"]["context"] == "The team is validating a new product."
         assert state["progress"]["stage"] == "completed"
@@ -620,7 +620,7 @@ def test_new_summary_generation_tolerates_optional_sections_and_stray_appendices
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
         assert "insufficiently_confirmed" not in state["en"]["payload"]
         assert state["ru"]["payload"]["critical_problems"] == []
-        assert state["en"]["payload"]["other"] == []
+        assert "other" not in state["en"]["payload"]
         assert "appendices" not in state["ru"]["payload"]
         assert "appendices" not in state["en"]["payload"]
         assert state["progress"]["stage"] == "completed"
@@ -684,11 +684,11 @@ def test_new_summary_traction_summary_filters_blank_period_values_together():
         language="en",
     )
 
-    assert normalized == {
-        "metric_label": "DTB",
+    assert normalized == {"tables": [{
+        "metric": "dtb", "metric_label": "DTB",
         "periods": ["2025", "2027"],
         "rows": [{"label": "Total", "values": ["1", "3"]}],
-    }
+    }]}
 
 
 def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
@@ -697,12 +697,15 @@ def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
          "rows": [{"label": "Total", "values": ["10", ""]}]},
         language="ru",
     )
-    assert normalized["rows"][0]["values"] == ["10", "Не смог получить данные"]
+    assert normalized["tables"][0]["rows"][0]["values"] == ["10", "Не смог получить данные"]
 
 
 def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    report["schema_version"] = "new-summary-v2"
     for version in report["versions"]:
+        for legacy in ("confirmed", "insufficiently_confirmed", "other"):
+            version.pop(legacy)
         version["traction_summary"] = {
             "tables": [
                 {"metric": "revenue", "metric_label": "Revenue", "periods": ["2026", "2027", "2026-27 total"],
@@ -797,7 +800,7 @@ def test_gate2_details_are_saved_below_their_required_elements():
         assert elements["gate2_metric_linkage"]["detail"]["input_metrics"][0]["metric"] == "Activation"
         assert elements["gate2_commitments"]["detail"]["metrics_until_next_review"][0]["current"] == ""
         assert elements["gate2_stop_criteria"]["detail"]["criteria"] == ["Stop if pilot fails"]
-        assert version["document_quality_percent"] == 54
+        assert "document_quality_percent" not in version
 
 
 @pytest.mark.parametrize(
@@ -862,7 +865,7 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
     for version in normalized["versions"]:
         element = next(item for item in version["required_elements"] if item["id"] == item_id)
         assert element["detail"] == detail
-        assert "evidence" not in element
+        assert element.get("evidence") == ("Source evidence" if version["language"] == "ru" else None)
         assert "required_details" not in version
         assert version["critical_problems"] == []
         assert "confirmed" not in version
@@ -871,6 +874,7 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
 
 def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    report["schema_version"] = "new-summary-v2"
     for version in report["versions"]:
         version.pop("confirmed")
         version.pop("insufficiently_confirmed")
@@ -878,11 +882,17 @@ def test_new_summary_schema_allows_zero_to_ten_critical_problems():
         version["critical_problems"] = []
         for element in version["required_elements"]:
             element.pop("evidence", None)
+        version["traction_summary"] = {"tables": []}
     schema = new_summary_generation._new_summary_schema()
     validate(instance=report, schema=schema)
     for version in report["versions"]:
         version["critical_problems"] = [f"Problem {index}" for index in range(10)]
     validate(instance=report, schema=schema)
+    for removed in ("document_quality_percent", "other", "confirmed", "insufficiently_confirmed"):
+        report["versions"][0][removed] = 50 if removed == "document_quality_percent" else []
+        with pytest.raises(ValidationError):
+            validate(instance=report, schema=schema)
+        report["versions"][0].pop(removed)
     report["versions"][0]["critical_problems"].append("Problem 11")
     with pytest.raises(ValidationError):
         validate(instance=report, schema=schema)
@@ -897,6 +907,41 @@ def test_new_summary_checklist_order_matches_updated_skill():
         "progress_review_plan_fact_last_half_year", "progress_review_stop_criteria"
     ]
     assert checklists["progress_review"][-1]["label_ru"].endswith("над продуктом")
+
+
+def test_new_summary_v2_keeps_solution_test_evidence_and_consistent_problem_status():
+    checklist = new_summary_generation._new_summary_stage_checklists()["stream_review_1"]
+    report = _new_summary_report_payload(
+        ru_context="Контекст.", en_context="Context.", stage="Stream Review 1",
+        required_elements=checklist,
+    )
+    for version in report["versions"]:
+        elements = {item["id"]: item for item in version["required_elements"]}
+        elements["stream_review_1_solution_validation"]["detail"] = {
+            "type": "solution_validation", "items": [
+                {"text": "Pilot", "verdict": "confirmed", "test": "Pilot with 20 users",
+                 "expected_result": "10 activations", "actual_result": "12 activations"},
+                {"text": "Launch", "verdict": "insufficient"},
+            ],
+        }
+        elements["stream_review_1_confirmed_problem"]["evidence"] = "Pilot confirms the problem."
+    source = {"document_type": "stream_review_1", "document_stage": "Stream Review 1",
+              "gate_challenger": {"stage_checklist": [
+                  {"id": item["id"], "status": "green", "evidence": "The pilot provided evidence."}
+                  for item in checklist
+              ]}}
+    result = new_summary_generation._validated_source_dependent_report(
+        payload=report, source_payload=source,
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+    assert result["schema_version"] == "new-summary-v2"
+    for version in result["versions"]:
+        elements = {item["id"]: item for item in version["required_elements"]}
+        assert elements["stream_review_1_confirmed_problem"]["status"] == "частично подтверждено"
+        detail = elements["stream_review_1_solution_validation"]["detail"]
+        assert detail["items"][0]["actual_result"] == "12 activations"
+        assert "document_quality_percent" not in version
+        assert "other" not in version
 
 
 def test_new_summary_required_elements_preserve_three_gate_checklist_statuses():
