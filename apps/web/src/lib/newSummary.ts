@@ -30,6 +30,8 @@ export type NewSummaryTractionTable = {
 
 export type NewSummaryTractionSummary = NewSummaryTractionTable | { tables: NewSummaryTractionTable[] };
 
+export type NewSummaryCriticalProblem = string | { issue: string; fact: string };
+
 export type NewSummaryRequiredDetails =
   | {
       type: "hypotheses_with_thresholds";
@@ -67,7 +69,7 @@ export type NewSummaryRequiredDetails =
 export type NewSummaryRequiredDetailsById = Record<string, NewSummaryRequiredDetails>;
 
 export type NewSummaryContent = {
-  schema_version: "new-summary-v1" | "new-summary-v2";
+  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3";
   language: NewSummaryLanguage;
   title: string;
   stage: NewSummaryStage;
@@ -78,7 +80,7 @@ export type NewSummaryContent = {
   required_details?: NewSummaryRequiredDetailsById;
   confirmed?: string[];
   insufficiently_confirmed?: string[];
-  critical_problems?: string[];
+  critical_problems?: NewSummaryCriticalProblem[];
   other?: string[];
 };
 

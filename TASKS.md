@@ -21,7 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
-- [~] 2026-10-05: Recover Devil's Advocate from short/invalid provider JSON with one
+- [~] 2026-10-05: Publish the user-edited New Summary with a v3 JSON contract:
+  `critical_problems[]` now separates a bold issue sentence from its supporting
+  fact, while saved v1/v2 string problems remain visible and exportable. Keep
+  the Gate 2 one-hypothesis/one-sentence rule in schema guidance. Align worker,
+  API read/export, web, PDF/Word, and regression tests. Locally verified: 288 API
+  tests, 309 worker tests (three unrelated `pdfplumber` tests deselected), 166 web
+  tests, Next.js build, rebuilt Docker web/API, and local login HTTP 200. PR,
+  CI, and production deploy verification remain.
+- [x] 2026-10-05: Recover Devil's Advocate from short/invalid provider JSON with one
   bounded retry and metadata-only diagnostics persisted with the run; preserve the final raw response.
   Strip parsed-table `<br>` markers before Traction Summary selection and at
   read/export time for historical reports, without changing totals. Publish the
@@ -31,7 +39,8 @@ Primary plan index:
   web, and PDF/Word. Verified locally: 286 API tests with default CORS origins,
   308 worker tests (three known `pdfplumber` environment tests deselected),
   166 web tests, Next.js build, Docker web/API rebuild, and HTTP 200 at local
-  login. PR/CI/production checks pending.
+  login. PR #93 merged as `d760acf39a803169b3b35bacab996ab5096d9a4e`;
+  production workflow `37310085237` passed and confirmed health checks.
 - [~] Align the user-edited New Summary with a v2 output contract. New runs omit
   document quality and Other, keep short source-grounded evidence on checklist
   items, number required elements, and carry Stream Review 1 test/expected/actual

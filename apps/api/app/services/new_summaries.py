@@ -24,6 +24,7 @@ NEW_SUMMARY_EXPECTED_PARAMETER = "new_summary_expected"
 NEW_SUMMARY_POSTPROCESSING = "postprocessing"
 NEW_SUMMARY_VERSION = 2
 NEW_SUMMARY_GENERATION_MODE = "new_summary_skill"
+NEW_SUMMARY_NUMBERED_SCHEMAS = frozenset({"new-summary-v2", "new-summary-v3"})
 STALE_NEW_SUMMARY_AFTER = timedelta(minutes=30)
 NEW_SUMMARY_PROGRESS_PERCENTS = {
     "waiting_for_ic_review": 5,
@@ -399,8 +400,8 @@ def _read_state(analysis_id: UUID, state: dict[str, Any], *, include_payload: bo
     ru = _variant(state.get("ru") if available else None, include_payload=include_payload)
     en = _variant(state.get("en") if available else None, include_payload=include_payload)
     if (isinstance(ru.payload, dict) and isinstance(en.payload, dict)
-            and ru.payload.get("schema_version") != "new-summary-v2"
-            and en.payload.get("schema_version") != "new-summary-v2"):
+            and ru.payload.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS
+            and en.payload.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS):
         ru_payload, en_payload = with_bilingual_document_quality(ru.payload, en.payload)
         ru = ru.model_copy(update={"payload": ru_payload})
         en = en.model_copy(update={"payload": en_payload})
@@ -419,7 +420,7 @@ def _variant(value: Any, *, include_payload: bool = True) -> NewSummaryVariantRe
     item = value if isinstance(value, dict) else {}
     payload = item.get("payload") if include_payload and isinstance(item.get("payload"), dict) else None
     if payload is not None:
-        if payload.get("schema_version") != "new-summary-v2":
+        if payload.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS:
             payload = with_document_quality(payload)
         payload = with_traction_totals(payload)
     return NewSummaryVariantRead(

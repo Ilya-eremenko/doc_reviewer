@@ -867,7 +867,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized["schema_version"] = "new-summary-v2"
+    normalized["schema_version"] = "new-summary-v3"
     normalized.setdefault("language", "en")
     title = normalized.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -933,6 +933,12 @@ def _normalize_generated_version_shell(
     for key in ("required_elements", "critical_problems"):
         if not isinstance(normalized.get(key), list):
             normalized[key] = []
+    for problem in normalized["critical_problems"]:
+        if not isinstance(problem, dict) or not isinstance(problem.get("issue"), str):
+            continue
+        issue = problem["issue"].strip()
+        if issue.startswith("**") and issue.endswith("**") and len(issue) > 4:
+            problem["issue"] = issue[2:-2].strip()
     return normalized
 
 
@@ -1130,6 +1136,15 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
             text = _non_empty_string(item.get("text"))
             verdict = _enum_value(item.get("verdict"), {"confirmed", "insufficient"})
             if text is None or verdict is None:
+                continue
+            for suffix in (
+                " (Confirmed)", " (Not sufficiently confirmed)",
+                " (Подтверждено)", " (Недостаточно подтверждено)",
+            ):
+                if text.casefold().endswith(suffix.casefold()):
+                    text = text[:-len(suffix)].rstrip()
+                    break
+            if not text:
                 continue
             normalized_item = {"text": text, "verdict": verdict}
             for key in ("test", "expected_result", "actual_result"):

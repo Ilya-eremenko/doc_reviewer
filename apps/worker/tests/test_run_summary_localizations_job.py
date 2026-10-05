@@ -426,8 +426,8 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["schema_version"] == "new-summary-v2"
-        assert state["en"]["payload"]["schema_version"] == "new-summary-v2"
+        assert state["ru"]["payload"]["schema_version"] == "new-summary-v3"
+        assert state["en"]["payload"]["schema_version"] == "new-summary-v3"
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
         assert state["en"]["payload"]["context"] == "The team is validating a new product."
         assert state["progress"]["stage"] == "completed"
@@ -702,7 +702,7 @@ def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
 
 def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v2"
+    report["schema_version"] = "new-summary-v3"
     for version in report["versions"]:
         for legacy in ("confirmed", "insufficiently_confirmed", "other"):
             version.pop(legacy)
@@ -728,8 +728,8 @@ def test_new_summary_solution_validation_detail_ignores_non_list_items():
 
 def test_new_summary_detail_keeps_confirmed_findings_first():
     detail = new_summary_generation._normalized_required_detail({"type": "solution_validation", "items": [
-        {"text": "a", "verdict": "insufficient"},
-        {"text": "b", "verdict": "confirmed"},
+        {"text": "a (Not sufficiently confirmed)", "verdict": "insufficient"},
+        {"text": "b (Confirmed)", "verdict": "confirmed"},
         {"text": "c", "verdict": "insufficient"},
     ]})
     assert [item["text"] for item in detail["items"]] == ["b", "a", "c"]
@@ -877,7 +877,7 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
 
 def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v2"
+    report["schema_version"] = "new-summary-v3"
     for version in report["versions"]:
         version.pop("confirmed")
         version.pop("insufficiently_confirmed")
@@ -889,16 +889,36 @@ def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     schema = new_summary_generation._new_summary_schema()
     validate(instance=report, schema=schema)
     for version in report["versions"]:
-        version["critical_problems"] = [f"Problem {index}" for index in range(10)]
+        version["critical_problems"] = [
+            {"issue": f"Problem {index}.", "fact": f"Source fact {index}."} for index in range(10)
+        ]
     validate(instance=report, schema=schema)
+    report["versions"][0]["critical_problems"][0] = "Legacy plain-text problem"
+    with pytest.raises(ValidationError):
+        validate(instance=report, schema=schema)
+    report["versions"][0]["critical_problems"][0] = {"issue": "Problem 0."}
+    with pytest.raises(ValidationError):
+        validate(instance=report, schema=schema)
+    report["versions"][0]["critical_problems"][0] = {"issue": "Problem 0.", "fact": "Source fact 0."}
     for removed in ("document_quality_percent", "other", "confirmed", "insufficiently_confirmed"):
         report["versions"][0][removed] = 50 if removed == "document_quality_percent" else []
         with pytest.raises(ValidationError):
             validate(instance=report, schema=schema)
         report["versions"][0].pop(removed)
-    report["versions"][0]["critical_problems"].append("Problem 11")
+    report["versions"][0]["critical_problems"].append({"issue": "Problem 11.", "fact": "Source fact 11."})
     with pytest.raises(ValidationError):
         validate(instance=report, schema=schema)
+
+
+def test_new_summary_problem_issue_drops_model_markdown_bold_markers():
+    report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
+    report["versions"][0]["critical_problems"][0]["issue"] = "**Stop criteria are missing.**"
+    normalized = new_summary_generation._normalize_generated_report_shell(
+        payload=report, source_payload={"document_stage": "Gate 2"}
+    )
+    assert normalized["versions"][0]["critical_problems"][0] == {
+        "issue": "Stop criteria are missing.", "fact": "The document does not define them."
+    }
 
 
 def test_new_summary_checklist_order_matches_updated_skill():
@@ -937,7 +957,7 @@ def test_new_summary_v2_keeps_solution_test_evidence_and_consistent_problem_stat
         payload=report, source_payload=source,
         response_schema=new_summary_generation._new_summary_schema(),
     )
-    assert result["schema_version"] == "new-summary-v2"
+    assert result["schema_version"] == "new-summary-v3"
     for version in result["versions"]:
         elements = {item["id"]: item for item in version["required_elements"]}
         assert elements["stream_review_1_confirmed_problem"]["status"] == "частично подтверждено"
@@ -1726,7 +1746,10 @@ def _new_summary_payload(
         "insufficiently_confirmed": [
             "Не хватает связи метрик с продуктом." if language == "ru" else "Metric linkage to the product is missing."
         ],
-        "critical_problems": ["Нет stop-критериев." if language == "ru" else "Stop criteria are missing."],
+        "critical_problems": [{
+            "issue": "Нет stop-критериев." if language == "ru" else "Stop criteria are missing.",
+            "fact": "Документ их не задаёт." if language == "ru" else "The document does not define them.",
+        }],
         "other": [],
     }
 

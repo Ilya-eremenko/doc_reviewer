@@ -2,6 +2,7 @@ from copy import deepcopy
 from io import BytesIO
 
 from docx import Document as DocxDocument
+from pypdf import PdfReader
 
 from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
 
@@ -17,7 +18,7 @@ def test_historical_traction_break_marker_is_cleaned_without_changing_total():
     assert result["rows"][0]["values"] == ["10", "15 918"]
     assert payload["traction_summary"]["tables"][0]["periods"][-1] == "2026-31<br>total"
 from app.services.new_summary_exports import (
-    NewSummaryExportProvenance, _build_docx, _confirmed_first,
+    NewSummaryExportProvenance, _build_docx, _build_pdf, _confirmed_first,
     _gate2_hypothesis_heading, _labels, _validation_rationale,
 )
 from app.services.new_summaries import with_verified_source_totals
@@ -158,6 +159,32 @@ def test_v2_docx_omits_removed_sections_and_numbers_required_elements():
     assert "Качество документа" not in text
     assert "Другие наблюдения" not in text
     assert "Legacy-only note" not in text
+
+
+def test_v3_problem_issue_is_bold_in_exports_and_v2_string_still_renders():
+    content = {
+        "schema_version": "new-summary-v3", "language": "en", "title": "AI Summary Test",
+        "stage": "Gate 2", "context": "A pilot was conducted.",
+        "traction_summary": {"tables": []}, "required_elements": [],
+        "critical_problems": [{
+            "issue": "Revenue starts late.",
+            "fact": "The current plan shows no revenue in the first year.",
+        }],
+    }
+    provenance = NewSummaryExportProvenance("a", "d", "skill", "1", "test", "mock", None)
+    report = {"ru": {**content, "language": "ru"}, "en": content}
+    document = DocxDocument(BytesIO(_build_docx(report, provenance)))
+    problem = next(paragraph for paragraph in document.paragraphs if "Revenue starts late" in paragraph.text)
+    assert problem.runs[0].text == "Revenue starts late."
+    assert problem.runs[0].bold is True
+    assert problem.runs[1].text == " The current plan shows no revenue in the first year."
+    assert not problem.runs[1].bold
+    assert "Revenue starts late." in PdfReader(BytesIO(_build_pdf(report, provenance))).pages[0].extract_text()
+
+    legacy = {**content, "schema_version": "new-summary-v2", "critical_problems": ["Legacy plain-text problem."]}
+    legacy_report = {"ru": {**legacy, "language": "ru"}, "en": legacy}
+    legacy_document = DocxDocument(BytesIO(_build_docx(legacy_report, provenance)))
+    assert any("Legacy plain-text problem." in paragraph.text for paragraph in legacy_document.paragraphs)
 
 
 def test_legacy_single_revenue_table_without_metric_can_receive_verified_total():
