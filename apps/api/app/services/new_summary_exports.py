@@ -35,7 +35,7 @@ from app.models.document import Document
 from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summary_source_tables import verified_table_blocks
 from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
-from app.services.new_summaries import with_summary_display_stage
+from app.services.new_summaries import NEW_SUMMARY_NUMBERED_SCHEMAS, with_summary_display_stage
 
 
 PDF_MEDIA_TYPE = "application/pdf"
@@ -126,7 +126,7 @@ def _read_completed_report(analysis: Analysis, *, document: Document | None = No
         if variant.get("status") != "completed" or payload is None:
             raise NewSummaryExportUnavailableError("New Summary is not completed")
         versions[language] = payload
-    if all(versions[language].get("schema_version") != "new-summary-v2" for language in ("ru", "en")):
+    if all(versions[language].get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS for language in ("ru", "en")):
         versions["ru"], versions["en"] = with_bilingual_document_quality(versions["ru"], versions["en"])
     blocks = verified_table_blocks(document) if document is not None and any(
         needs_verified_revenue_total(versions[language]) for language in ("ru", "en")
@@ -189,15 +189,15 @@ def _append_docx_version(document: DocxDocument, content: dict[str, Any], langua
     stage_run = stage.add_run(f"{labels['stage']}: ")
     stage_run.bold = True
     stage.add_run(_clean_text(content.get("stage") or "Unknown"))
-    quality = content.get("document_quality_percent") if content.get("schema_version") != "new-summary-v2" else None
+    quality = content.get("document_quality_percent") if content.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS else None
     if isinstance(quality, int) and not isinstance(quality, bool):
         document.add_paragraph(f"{labels['quality']} - {quality}%")
 
     _append_docx_traction(document, content, labels)
     _append_docx_text_section(document, labels["context"], [_clean_text(content.get("context"))])
     _append_docx_required(document, content, labels)
-    _append_docx_list_section(document, labels["critical"], _string_list(content.get("critical_problems")), RGBColor(185, 28, 28))
-    if content.get("schema_version") != "new-summary-v2":
+    _append_docx_problems(document, labels["critical"], _problem_items(content.get("critical_problems")))
+    if content.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS:
         _append_docx_list_section(document, labels["other"], _string_list(content.get("other")), RGBColor(93, 102, 117))
     _append_docx_details(document, content, labels)
 
@@ -232,6 +232,25 @@ def _append_docx_list_section(document: DocxDocument, title: str, items: list[st
         paragraph.paragraph_format.space_after = Pt(3)
         run = paragraph.add_run(item)
         run.font.color.rgb = color
+
+
+def _append_docx_problems(document: DocxDocument, title: str, items: list[str | tuple[str, str]]) -> None:
+    if not items:
+        return
+    _append_docx_heading(document, title)
+    for item in items:
+        paragraph = document.add_paragraph(style="List Bullet")
+        paragraph.paragraph_format.space_after = Pt(3)
+        if isinstance(item, str):
+            run = paragraph.add_run(item)
+            run.font.color.rgb = RGBColor(185, 28, 28)
+            continue
+        issue, fact = item
+        issue_run = paragraph.add_run(issue)
+        issue_run.bold = True
+        issue_run.font.color.rgb = RGBColor(185, 28, 28)
+        fact_run = paragraph.add_run(f" {fact}")
+        fact_run.font.color.rgb = RGBColor(185, 28, 28)
 
 
 def _append_docx_traction(document: DocxDocument, content: dict[str, Any], labels: dict[str, str]) -> None:
@@ -285,7 +304,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
     if not isinstance(items, list) or not items:
         return
     _append_docx_heading(document, labels["required"])
-    numbered = content.get("schema_version") == "new-summary-v2"
+    numbered = content.get("schema_version") in NEW_SUMMARY_NUMBERED_SCHEMAS
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             continue
@@ -439,15 +458,15 @@ def _append_pdf_version(
     labels = _labels(language)
     story.append(Paragraph(_xml(content.get("title") or "AI Summary"), styles["title"]))
     story.append(Paragraph(f"<b>{_xml(labels['stage'])}:</b> {_xml(content.get('stage') or 'Unknown')}", styles["body"]))
-    quality = content.get("document_quality_percent") if content.get("schema_version") != "new-summary-v2" else None
+    quality = content.get("document_quality_percent") if content.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS else None
     if isinstance(quality, int) and not isinstance(quality, bool):
         story.append(Paragraph(f"{_xml(labels['quality'])} - {quality}%", styles["body"]))
     story.append(Spacer(1, 8))
     _append_pdf_traction(story, content, labels, styles, frame_width)
     _append_pdf_text_section(story, labels["context"], [_clean_text(content.get("context"))], styles)
     _append_pdf_required(story, content, labels, styles, frame_width)
-    _append_pdf_list_section(story, labels["critical"], _string_list(content.get("critical_problems")), "#B91C1C", styles)
-    if content.get("schema_version") != "new-summary-v2":
+    _append_pdf_problems(story, labels["critical"], _problem_items(content.get("critical_problems")), styles)
+    if content.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS:
         _append_pdf_list_section(story, labels["other"], _string_list(content.get("other")), _MUTED, styles)
     _append_pdf_details(story, content, labels, styles, frame_width)
 
@@ -484,6 +503,23 @@ def _append_pdf_list_section(
             leftIndent=15,
         )
     )
+
+
+def _append_pdf_problems(
+    story: list[Any], title: str, items: list[str | tuple[str, str]], styles: dict[str, ParagraphStyle]
+) -> None:
+    if not items:
+        return
+    _append_pdf_heading(story, title, styles)
+    paragraphs = []
+    for item in items:
+        if isinstance(item, str):
+            markup = _xml(item)
+        else:
+            issue, fact = item
+            markup = f"<b>{_xml(issue)}</b> {_xml(fact)}"
+        paragraphs.append(ListItem(Paragraph(f'<font color="#B91C1C">{markup}</font>', styles["body"])))
+    story.append(ListFlowable(paragraphs, bulletType="bullet", leftIndent=15))
 
 
 def _append_pdf_traction(
@@ -541,7 +577,7 @@ def _append_pdf_required(
     if not isinstance(items, list) or not items:
         return
     _append_pdf_heading(story, labels["required"], styles)
-    numbered = content.get("schema_version") == "new-summary-v2"
+    numbered = content.get("schema_version") in NEW_SUMMARY_NUMBERED_SCHEMAS
     for index, item in enumerate(items, start=1):
         if not isinstance(item, dict):
             continue
@@ -833,6 +869,20 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [_clean_text(item) for item in value if _clean_text(item)]
+
+
+def _problem_items(value: Any) -> list[str | tuple[str, str]]:
+    if not isinstance(value, list):
+        return []
+    items: list[str | tuple[str, str]] = []
+    for item in value:
+        if isinstance(item, str) and _clean_text(item):
+            items.append(_clean_text(item))
+        elif isinstance(item, dict):
+            issue, fact = _clean_text(item.get("issue")), _clean_text(item.get("fact"))
+            if issue and fact:
+                items.append((issue, fact))
+    return items
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:

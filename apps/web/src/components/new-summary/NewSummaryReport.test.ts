@@ -22,9 +22,12 @@ describe("AI Summary required elements", () => {
   });
 
   it("keeps optional sections and evidence hidden when no content is present", () => {
+    expect(source).toContain('content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3"');
     expect(source).toContain("{item.evidence ? <p>{item.evidence}</p> : null}");
     expect(source).toContain("{content.critical_problems?.length ? (");
-    expect(source).toContain('content.schema_version !== "new-summary-v2" && content.other?.length');
+    expect(source).toContain('!newFormat && content.other?.length');
+    expect(source).toContain('<ProblemsSection items={content.critical_problems}');
+    expect(source).toContain('<strong className="new-summary-problem__issue">{item.issue}</strong> {item.fact}');
     expect(source).toContain('detail.type === "hypotheses_with_thresholds"');
     expect(source).toContain("table-layout: fixed;");
   });
@@ -45,7 +48,7 @@ describe("AI Summary required elements", () => {
   });
 
   it("counts Gate 2 hypotheses and separates verdicts while preserving their visual grouping", () => {
-    expect(source).toContain('gate2HypothesisSummary(item, language, content.schema_version === "new-summary-v2")');
+    expect(source).toContain('gate2HypothesisSummary(item, language, newFormat)');
     const item = {
       id: "gate2_hypothesis_results", label: "Результаты проверки гипотез из Gate 1", status: "1/3" as const,
       detail: { type: "solution_validation" as const, items: [

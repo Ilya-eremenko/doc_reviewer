@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v2"
+      "const": "new-summary-v3"
     },
     "language": {
       "const": "en",
@@ -93,8 +93,23 @@
         "critical_problems": {
           "type": "array",
           "maxItems": 10,
-          "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "Decision-critical problems only; do not include recommendations or action plans."
+          "items": { "$ref": "#/$defs/critical_problem" },
+          "description": "Zero to ten distinct, source-grounded problems. Each has a short issue sentence and a separate supporting fact; no recommendations or action plans."
+        }
+      }
+    },
+    "critical_problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "fact"],
+      "properties": {
+        "issue": {
+          "$ref": "#/$defs/non_empty_string",
+          "description": "One short sentence stating the problem. Renderers make this text bold; do not include Markdown formatting."
+        },
+        "fact": {
+          "$ref": "#/$defs/non_empty_string",
+          "description": "One short, source-grounded sentence explaining the fact behind the problem."
         }
       }
     },
@@ -253,7 +268,10 @@
       "additionalProperties": false,
       "required": ["text", "verdict"],
       "properties": {
-        "text": { "$ref": "#/$defs/non_empty_string" },
+        "text": {
+          "$ref": "#/$defs/non_empty_string",
+          "description": "For Gate 2, one concise sentence per hypothesis, including why it is confirmed or insufficiently confirmed. Do not repeat the localized verdict in text; renderers add it from verdict."
+        },
         "verdict": {
           "type": "string",
           "enum": ["confirmed", "insufficient"]

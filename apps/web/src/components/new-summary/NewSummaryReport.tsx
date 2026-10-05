@@ -5,6 +5,7 @@ import { confirmedFirst, gate2HypothesisSummary } from "@/lib/newSummaryRequired
 
 import type {
   NewSummaryContent,
+  NewSummaryCriticalProblem,
   NewSummaryLanguage,
   NewSummaryReport,
   NewSummaryRequiredDetails,
@@ -96,6 +97,7 @@ export function NewSummaryReportView({
   const [language, setLanguage] = useState<NewSummaryLanguage>("ru");
   const content = report[language];
   const text = labels[language];
+  const newFormat = content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3";
   const sourceUrl = `https://iseremenko.ru/doc-challanger/analyses/${report.analysis_id}`;
   const ShellTag = embedded ? "section" : "main";
 
@@ -147,7 +149,7 @@ export function NewSummaryReportView({
           <span>{text.stage}</span>
           <strong>{content.stage}</strong>
         </div>
-        {content.schema_version !== "new-summary-v2" && typeof content.document_quality_percent === "number" ? (
+        {!newFormat && typeof content.document_quality_percent === "number" ? (
           <div className="new-summary-quality-row">
             <p className="new-summary-quality">{text.quality} - {content.document_quality_percent}%</p>
             <span className="new-summary-help-wrap">
@@ -168,17 +170,17 @@ export function NewSummaryReportView({
         <p>{content.context}</p>
       </section>
 
-      <section className={`new-summary-panel new-summary-required${content.schema_version === "new-summary-v2" ? " new-summary-required--numbered" : ""}`}>
+      <section className={`new-summary-panel new-summary-required${newFormat ? " new-summary-required--numbered" : ""}`}>
         <div className="new-summary-section-heading">
           <h2>{text.required}</h2>
         </div>
         <ul>
           {content.required_elements.map((item, index) => {
             const tone = requiredElementTone(item);
-            const hypothesisSummary = gate2HypothesisSummary(item, language, content.schema_version === "new-summary-v2");
+            const hypothesisSummary = gate2HypothesisSummary(item, language, newFormat);
             return (
               <li className={tone} key={item.id}>
-                {content.schema_version === "new-summary-v2" ? (
+                {newFormat ? (
                   <span className="new-summary-required__number" aria-hidden="true">{index + 1}.</span>
                 ) : (
                   <span className="new-summary-required__marker" aria-hidden="true" />
@@ -210,11 +212,11 @@ export function NewSummaryReportView({
 
       {content.critical_problems?.length ? (
         <section className="new-summary-panel new-summary-critical">
-          <SummarySection className="critical" items={content.critical_problems} title={text.critical} />
+          <ProblemsSection items={content.critical_problems} title={text.critical} />
         </section>
       ) : null}
 
-      {content.schema_version !== "new-summary-v2" && content.other?.length ? (
+      {!newFormat && content.other?.length ? (
         <section className="new-summary-panel new-summary-other">
           <SummarySection items={content.other} title={text.other} />
         </section>
@@ -296,6 +298,21 @@ function SummarySection({
       <ul>
         {items.map((item) => (
           <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ProblemsSection({ items, title }: { items: NewSummaryCriticalProblem[]; title: string }) {
+  return (
+    <section className="new-summary-list-section critical">
+      <h2>{title}</h2>
+      <ul>
+        {items.map((item, index) => (
+          <li key={`${index}-${typeof item === "string" ? item : item.issue}`}>
+            {typeof item === "string" ? item : <><strong className="new-summary-problem__issue">{item.issue}</strong> {item.fact}</>}
+          </li>
         ))}
       </ul>
     </section>
@@ -955,6 +972,8 @@ const newSummaryStyles = `
   line-height: 1.55;
   padding-left: 3px;
 }
+
+.new-summary-problem__issue { color: var(--foreground); font-weight: 750; }
 
 .new-summary-list-section li::marker { color: var(--muted); font-weight: 800; }
 
