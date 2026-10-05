@@ -93,6 +93,16 @@ INLINE_REQUIRED_DETAIL_TYPES = {
     "stream_review_2_plus_stop_criteria": "stop_criteria",
     "stream_review_2_plus_next_half_year_plan": "next_review_plan",
 }
+DETAIL_REPLACES_EVIDENCE = {
+    "gate2_hypothesis_results",
+    "gate2_metric_linkage",
+    "gate2_commitments",
+    "gate3_pmf_criteria",
+    "progress_review_next_half_year_plan",
+    "stream_review_1_input_output_metric_link",
+    "stream_review_1_half_year_plan_with_metrics",
+    "stream_review_2_plus_next_half_year_plan",
+}
 
 def generate_and_persist_new_summary_report(
     *,
@@ -1060,7 +1070,7 @@ def _required_elements_from_source(
             generated_item,
             target_language=target_language,
         )
-        if evidence:
+        if evidence and not (detail is not None and item_id in DETAIL_REPLACES_EVIDENCE):
             element["evidence"] = evidence
         if detail is not None:
             element["detail"] = detail

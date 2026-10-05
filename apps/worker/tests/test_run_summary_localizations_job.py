@@ -865,7 +865,10 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
     for version in normalized["versions"]:
         element = next(item for item in version["required_elements"] if item["id"] == item_id)
         assert element["detail"] == detail
-        assert element.get("evidence") == ("Source evidence" if version["language"] == "ru" else None)
+        if item_id in new_summary_generation.DETAIL_REPLACES_EVIDENCE:
+            assert "evidence" not in element
+        else:
+            assert element.get("evidence") == ("Source evidence" if version["language"] == "ru" else None)
         assert "required_details" not in version
         assert version["critical_problems"] == []
         assert "confirmed" not in version
@@ -1045,6 +1048,7 @@ def test_metric_linkage_status_uses_eighty_percent_of_both_metric_groups():
 def test_gate3_pmf_criteria_are_kept_as_inline_structured_list():
     generated = {"required_elements": [{
         "id": "gate3_pmf_criteria",
+        "evidence": "This should be replaced by the criteria list.",
         "detail": {"type": "criteria_list", "criteria": ["Retention threshold", "Pilot adoption"]},
     }]}
     elements = new_summary_generation._required_elements_from_source(
@@ -1053,6 +1057,7 @@ def test_gate3_pmf_criteria_are_kept_as_inline_structured_list():
     )
     pmf = next(item for item in elements if item["id"] == "gate3_pmf_criteria")
     assert pmf["detail"] == {"type": "criteria_list", "criteria": ["Retention threshold", "Pilot adoption"]}
+    assert "evidence" not in pmf
 
 
 def test_new_summary_source_fingerprint_changes_with_skill_contract(monkeypatch):
