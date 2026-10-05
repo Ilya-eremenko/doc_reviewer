@@ -18,6 +18,12 @@ _TOTAL_RANGE = re.compile(
 )
 _TOBE = re.compile(r"\btobe\b", re.IGNORECASE)
 _REVENUE = re.compile(r"(?:revenue|выручк[а-я]*)", re.IGNORECASE)
+_BREAK_TAG = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def clean_table_cell(value: Any) -> str:
+    """Parsed-table line breaks are separators, not text for a report cell."""
+    return _BREAK_TAG.sub(" ", str(value if value is not None else "")).strip()
 
 
 @dataclass(frozen=True)
@@ -56,7 +62,7 @@ def block_rows(block: dict[str, Any]) -> list[list[str]]:
     metadata = block.get("metadata") or {}
     rows = metadata.get("rows") if isinstance(metadata, dict) else None
     if isinstance(rows, list) and all(isinstance(row, list) for row in rows):
-        return [[str(cell or "").strip() for cell in row] for row in rows]
+        return [[clean_table_cell(cell) for cell in row] for row in rows]
     markdown = block.get("markdown")
     if not isinstance(markdown, str):
         return []
@@ -64,7 +70,7 @@ def block_rows(block: dict[str, Any]) -> list[list[str]]:
     for line in markdown.splitlines():
         if not line.startswith("|"):
             continue
-        cells = [cell.strip().replace("<br>", " ") for cell in re.split(r"(?<!\\)\|", line.strip("|"))]
+        cells = [clean_table_cell(cell) for cell in re.split(r"(?<!\\)\|", line.strip("|"))]
         if cells and all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
             continue
         parsed.append([cell.replace(r"\|", "|") for cell in cells])

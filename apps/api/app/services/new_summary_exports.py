@@ -391,7 +391,7 @@ def _append_docx_detail(
             _style_docx_table(table)
         return
     for item in _string_list(detail.get("criteria")):
-        document.add_paragraph(item, style="List Bullet")
+        document.add_paragraph(item, style="List Number" if detail_type == "criteria_list" else "List Bullet")
 
 
 def _append_docx_provenance(document: DocxDocument, provenance: NewSummaryExportProvenance) -> None:
@@ -657,6 +657,11 @@ def _append_pdf_detail(
             table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor(_LINE)), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(_SURFACE)), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
             story.append(table)
         return
+    if detail_type == "criteria_list":
+        entries = [Paragraph(_xml(item), styles["body"]) for item in _string_list(detail.get("criteria"))]
+        if entries:
+            story.append(ListFlowable([ListItem(item) for item in entries], bulletType="1", leftIndent=15))
+        return
     _append_pdf_list_section(story, "", _string_list(detail.get("criteria")), _TEXT, styles)
 
 
@@ -674,8 +679,8 @@ def _labels(language: str) -> dict[str, str]:
     if language == "en":
         return {
             "appendices": "Appendices",
-            "binding_confirmed": "Binding confirmed",
-            "binding_insufficient": "Binding not sufficiently confirmed",
+            "binding_confirmed": "Binding is relevant",
+            "binding_insufficient": "Binding seems irrelevant",
             "context": "Initiative context",
             "quality": "Document quality",
             "critical": "Identified problems",
@@ -702,8 +707,8 @@ def _labels(language: str) -> dict[str, str]:
         }
     return {
         "appendices": "Appendices",
-        "binding_confirmed": "Связь подтверждена",
-        "binding_insufficient": "Связь недостаточно подтверждена",
+        "binding_confirmed": "Связь релевантна",
+        "binding_insufficient": "Связь нерелевантна",
         "context": "Краткий контекст инициативы",
         "quality": "Качество документа",
         "critical": "Выявленные проблемы",

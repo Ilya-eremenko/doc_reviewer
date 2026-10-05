@@ -82,6 +82,7 @@ INLINE_REQUIRED_DETAIL_TYPES = {
     "gate2_metric_linkage": "metric_binding",
     "gate2_commitments": "next_review_plan",
     "gate2_stop_criteria": "stop_criteria",
+    "gate3_pmf_criteria": "criteria_list",
     "gate3_stop_criteria": "stop_criteria",
     "progress_review_stop_criteria": "stop_criteria",
     "progress_review_next_half_year_plan": "next_review_plan",
@@ -91,6 +92,16 @@ INLINE_REQUIRED_DETAIL_TYPES = {
     "stream_review_1_half_year_plan_with_metrics": "next_review_plan",
     "stream_review_2_plus_stop_criteria": "stop_criteria",
     "stream_review_2_plus_next_half_year_plan": "next_review_plan",
+}
+DETAIL_REPLACES_EVIDENCE = {
+    "gate2_hypothesis_results",
+    "gate2_metric_linkage",
+    "gate2_commitments",
+    "gate3_pmf_criteria",
+    "progress_review_next_half_year_plan",
+    "stream_review_1_input_output_metric_link",
+    "stream_review_1_half_year_plan_with_metrics",
+    "stream_review_2_plus_next_half_year_plan",
 }
 
 def generate_and_persist_new_summary_report(
@@ -1059,7 +1070,7 @@ def _required_elements_from_source(
             generated_item,
             target_language=target_language,
         )
-        if evidence:
+        if evidence and not (detail is not None and item_id in DETAIL_REPLACES_EVIDENCE):
             element["evidence"] = evidence
         if detail is not None:
             element["detail"] = detail
@@ -1145,6 +1156,9 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
             "metrics_until_next_review": metrics,
         }
     if detail_type == "stop_criteria":
+        criteria = _non_empty_strings(detail.get("criteria"))
+        return {"type": detail_type, "criteria": criteria} if criteria else None
+    if detail_type == "criteria_list":
         criteria = _non_empty_strings(detail.get("criteria"))
         return {"type": detail_type, "criteria": criteria} if criteria else None
     return None
@@ -1277,6 +1291,21 @@ def _required_element_status(
         numerator, separator, denominator = generated_status.partition("/")
         if separator and numerator.isdecimal() and denominator.isdecimal() and int(numerator) <= int(denominator):
             return generated_status
+
+    if item_id in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}:
+        detail = required_details.get(item_id)
+        if isinstance(detail, dict) and detail.get("type") == "metric_binding":
+            metrics = [
+                metric for key in ("input_metrics", "output_metrics")
+                for metric in (detail.get(key) or [])
+                if isinstance(metric, dict)
+            ]
+            if metrics:
+                confirmed = sum(metric.get("binding") == "confirmed" for metric in metrics)
+                if confirmed * 5 >= len(metrics) * 4:
+                    return "есть"
+                return "частично подтверждено" if confirmed else "нет"
+        return "нет"
 
     status = str((item or {}).get("status") or "").lower()
     if status in {"present", "green", "true", "yes", "есть"}:

@@ -4,7 +4,7 @@ import re
 from copy import deepcopy
 from typing import Any
 
-from app.services.new_summary_source_tables import verified_revenue_total
+from app.services.new_summary_source_tables import clean_table_cell, verified_revenue_total
 
 
 _TOTAL_PERIOD = re.compile(r"\b(?:total|ttl|итого|всего)\b", re.IGNORECASE)
@@ -59,6 +59,23 @@ def with_traction_totals(
     absent = "отсутствуют данные в документе защиты" if language == "ru" else "no data in the defense document"
     unavailable = "невозможно извлечь данные" if language == "ru" else "could not extract data"
     updated = deepcopy(payload)
+    updated_summary = updated["traction_summary"]
+    updated_tables_source = updated_summary.get("tables") if isinstance(updated_summary.get("tables"), list) else [updated_summary]
+    for table in updated_tables_source:
+        if not isinstance(table, dict):
+            continue
+        if isinstance(table.get("metric_label"), str):
+            table["metric_label"] = clean_table_cell(table["metric_label"])
+        if isinstance(table.get("periods"), list):
+            table["periods"] = [clean_table_cell(period) if isinstance(period, str) else period for period in table["periods"]]
+        for row in table.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            if isinstance(row.get("label"), str):
+                row["label"] = clean_table_cell(row["label"])
+            if isinstance(row.get("values"), list):
+                row["values"] = [clean_table_cell(value) if isinstance(value, str) else value for value in row["values"]]
+    tables = updated_tables_source
     updated_tables = []
     for table in tables:
         if not isinstance(table, dict):
@@ -114,7 +131,7 @@ def with_traction_totals(
                 verified = verified_revenue_total(periods, row["values"], source_blocks or []) if metric == "revenue" else None
                 row["values"].append(verified.value if verified else missing_reason)
         updated_tables.append(amended)
-    updated["traction_summary"] = {**summary, "tables": updated_tables} if "tables" in summary else updated_tables[0]
+    updated["traction_summary"] = {**updated_summary, "tables": updated_tables} if "tables" in updated_summary else updated_tables[0]
     return updated
 
 

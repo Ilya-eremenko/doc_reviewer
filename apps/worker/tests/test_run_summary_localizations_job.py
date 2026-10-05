@@ -865,7 +865,10 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
     for version in normalized["versions"]:
         element = next(item for item in version["required_elements"] if item["id"] == item_id)
         assert element["detail"] == detail
-        assert element.get("evidence") == ("Source evidence" if version["language"] == "ru" else None)
+        if item_id in new_summary_generation.DETAIL_REPLACES_EVIDENCE:
+            assert "evidence" not in element
+        else:
+            assert element.get("evidence") == ("Source evidence" if version["language"] == "ru" else None)
         assert "required_details" not in version
         assert version["critical_problems"] == []
         assert "confirmed" not in version
@@ -1017,6 +1020,44 @@ def test_new_summary_hypothesis_fraction_comes_from_structured_detail_not_traffi
         generated_item={"status": "1/4"},
         required_details={},
     ) == "1/4"
+
+
+def test_metric_linkage_status_uses_eighty_percent_of_both_metric_groups():
+    def detail(confirmed: int, insufficient: int):
+        return {"type": "metric_binding", "input_metrics": [
+            {"binding": "confirmed"} for _ in range(confirmed)
+        ], "output_metrics": [
+            {"binding": "insufficient"} for _ in range(insufficient)
+        ]}
+
+    for item_id in ("gate2_metric_linkage", "stream_review_1_input_output_metric_link"):
+        assert new_summary_generation._required_element_status(
+            {"status": "red"}, item_id=item_id, generated_item={"status": "нет"},
+            required_details={item_id: detail(4, 1)},
+        ) == "есть"
+        assert new_summary_generation._required_element_status(
+            {"status": "green"}, item_id=item_id, generated_item={"status": "есть"},
+            required_details={item_id: detail(3, 2)},
+        ) == "частично подтверждено"
+        assert new_summary_generation._required_element_status(
+            {"status": "green"}, item_id=item_id, generated_item={"status": "есть"},
+            required_details={item_id: detail(0, 1)},
+        ) == "нет"
+
+
+def test_gate3_pmf_criteria_are_kept_as_inline_structured_list():
+    generated = {"required_elements": [{
+        "id": "gate3_pmf_criteria",
+        "evidence": "This should be replaced by the criteria list.",
+        "detail": {"type": "criteria_list", "criteria": ["Retention threshold", "Pilot adoption"]},
+    }]}
+    elements = new_summary_generation._required_elements_from_source(
+        source_payload={"document_type": "gate_3", "gate_challenger": {}},
+        target_language="en", generated_payload=generated, required_details={},
+    )
+    pmf = next(item for item in elements if item["id"] == "gate3_pmf_criteria")
+    assert pmf["detail"] == {"type": "criteria_list", "criteria": ["Retention threshold", "Pilot adoption"]}
+    assert "evidence" not in pmf
 
 
 def test_new_summary_source_fingerprint_changes_with_skill_contract(monkeypatch):
