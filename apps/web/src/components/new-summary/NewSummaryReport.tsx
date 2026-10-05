@@ -16,8 +16,8 @@ import type {
 const labels = {
   ru: {
     appendices: "Appendices",
-    bindingConfirmed: "Связь подтверждена",
-    bindingInsufficient: "Связь недостаточно подтверждена",
+    bindingConfirmed: "Связь релевантна",
+    bindingInsufficient: "Связь нерелевантна",
     verdictConfirmed: "Подтверждено",
     verdictInsufficient: "Недостаточно подтверждено",
     context: "Краткий контекст инициативы",
@@ -51,8 +51,8 @@ const labels = {
   },
   en: {
     appendices: "Appendices",
-    bindingConfirmed: "Binding confirmed",
-    bindingInsufficient: "Binding not sufficiently confirmed",
+    bindingConfirmed: "Binding is relevant",
+    bindingInsufficient: "Binding seems irrelevant",
     verdictConfirmed: "Confirmed",
     verdictInsufficient: "Not sufficiently confirmed",
     context: "Initiative context",
@@ -421,6 +421,14 @@ function RequiredDetailContent({
           </>
         ) : null}
       </div>
+    );
+  }
+
+  if (detail.type === "criteria_list") {
+    return (
+      <ol className="new-summary-appendix-list">
+        {detail.criteria.map((item) => <li key={item}>{item}</li>)}
+      </ol>
     );
   }
 

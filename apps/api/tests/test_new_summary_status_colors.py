@@ -1,7 +1,7 @@
 from docx import Document as DocxDocument
 from docx.shared import RGBColor
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph
+from reportlab.platypus import ListFlowable, Paragraph
 
 from app.services import new_summary_exports as exports
 
@@ -36,3 +36,16 @@ def test_required_element_statuses_match_in_pdf_and_word():
     for paragraph, (_status, label, _word_color, pdf_color) in zip(required_paragraphs, statuses, strict=True):
         assert label in paragraph
         assert f'color="{pdf_color}"' in paragraph
+
+
+def test_gate3_pmf_criteria_export_as_numbered_list():
+    detail = {"type": "criteria_list", "criteria": ["Retention threshold", "Pilot adoption"]}
+    document = DocxDocument()
+    exports._append_docx_detail(document, detail, exports._labels("en"))
+    assert [paragraph.style.name for paragraph in document.paragraphs] == ["List Number", "List Number"]
+    story = []
+    exports._append_pdf_detail(
+        story, detail, exports._labels("en"),
+        {"body": getSampleStyleSheet()["Normal"]}, 400,
+    )
+    assert len(story) == 1 and isinstance(story[0], ListFlowable)

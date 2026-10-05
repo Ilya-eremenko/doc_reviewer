@@ -58,6 +58,10 @@ export type NewSummaryRequiredDetails =
   | {
       type: "stop_criteria";
       criteria: string[];
+    }
+  | {
+      type: "criteria_list";
+      criteria: string[];
     };
 
 export type NewSummaryRequiredDetailsById = Record<string, NewSummaryRequiredDetails>;

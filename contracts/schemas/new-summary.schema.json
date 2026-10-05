@@ -120,7 +120,7 @@
         "metric_label": { "$ref": "#/$defs/non_empty_string" },
         "periods": {
           "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "New reports end with a Total column for this metric and period horizon. The server fills a missing Total with an explicit absence or extraction reason; historical reports remain readable."
+          "description": "New reports end with a Total column for this metric and period horizon. Period labels contain plain text, never HTML break tags. The server fills a missing Total with an explicit absence or extraction reason; historical reports remain readable."
         },
         "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traction_row" } }
       }
@@ -189,7 +189,7 @@
             { "enum": ["есть", "частично подтверждено", "нет"] },
             { "pattern": "^[0-9]+/[0-9]+$" }
           ],
-          "description": "Use есть/частично подтверждено/нет. Gate 2 hypotheses and Stream Review 1 solution checks may use a technical numerator/denominator; visible headings count detail.items verdicts instead of showing the fraction."
+          "description": "Use есть/частично подтверждено/нет. Gate 2 hypotheses and Stream Review 1 solution checks may use a technical numerator/denominator; visible headings always count detail.items verdicts instead of showing the fraction when items exist. Gate 2 and Stream Review 1 metric linkage is есть only when at least 80 percent of listed input/output metrics have confirmed binding."
         },
         "evidence": {
           "type": "string",
@@ -208,6 +208,7 @@
         { "$ref": "#/$defs/solution_validation_detail" },
         { "$ref": "#/$defs/metric_binding_detail" },
         { "$ref": "#/$defs/next_review_plan_detail" },
+        { "$ref": "#/$defs/criteria_list_detail" },
         { "$ref": "#/$defs/stop_criteria_detail" }
       ]
     },
@@ -327,6 +328,20 @@
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/non_empty_string" }
+        }
+      }
+    },
+    "criteria_list_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "criteria"],
+      "properties": {
+        "type": { "const": "criteria_list" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/non_empty_string" },
+          "description": "Gate 3 product-market fit criteria, displayed as a numbered list."
         }
       }
     },

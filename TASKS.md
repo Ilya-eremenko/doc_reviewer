@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] 2026-10-05: Recover Devil's Advocate from short/invalid provider JSON with one
+  bounded retry and metadata-only diagnostics persisted with the run; preserve the final raw response.
+  Strip parsed-table `<br>` markers before Traction Summary selection and at
+  read/export time for historical reports, without changing totals. Publish the
+  user-edited New Summary skill, clarify the Gate 2 technical X/Y status versus
+  visible hypothesis heading, align metric-linkage 80% statuses and labels, and
+  add Gate 3 PMF criteria as a numbered structured list across worker, schema,
+  web, and PDF/Word. Verified locally: 286 API tests with default CORS origins,
+  308 worker tests (three known `pdfplumber` environment tests deselected),
+  166 web tests, Next.js build, Docker web/API rebuild, and HTTP 200 at local
+  login. PR/CI/production checks pending.
 - [~] Align the user-edited New Summary with a v2 output contract. New runs omit
   document quality and Other, keep short source-grounded evidence on checklist
   items, number required elements, and carry Stream Review 1 test/expected/actual

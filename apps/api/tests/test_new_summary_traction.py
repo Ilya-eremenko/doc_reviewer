@@ -4,6 +4,18 @@ from io import BytesIO
 from docx import Document as DocxDocument
 
 from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
+
+
+def test_historical_traction_break_marker_is_cleaned_without_changing_total():
+    payload = {"language": "ru", "traction_summary": {"tables": [{
+        "metric": "revenue", "metric_label": "Выручка (инкр.)",
+        "periods": ["2026", "2026-31<br>total"],
+        "rows": [{"label": "Revenue uplift", "values": ["10", "15 918"]}],
+    }]}}
+    result = with_traction_totals(payload)["traction_summary"]["tables"][0]
+    assert result["periods"] == ["2026", "2026-31 total"]
+    assert result["rows"][0]["values"] == ["10", "15 918"]
+    assert payload["traction_summary"]["tables"][0]["periods"][-1] == "2026-31<br>total"
 from app.services.new_summary_exports import (
     NewSummaryExportProvenance, _build_docx, _confirmed_first,
     _gate2_hypothesis_heading, _labels, _validation_rationale,

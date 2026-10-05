@@ -1,11 +1,13 @@
 import hashlib
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
 
 from redis import Redis
 from rq import Queue
+from jsonschema import ValidationError
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -39,6 +41,7 @@ from skills.snapshot_loader import load_retrieval_snapshot, load_skill_source_sn
 
 ANALYSIS_QUEUE_NAME = "analysis"
 RUN_PREDICTED_COMMENTS_JOB_PATH = "jobs.run_predicted_comments.run_predicted_comments"
+worker_logger = logging.getLogger(__name__)
 
 
 def enqueue_run_predicted_comments(predicted_comment_run_id: UUID) -> None:
@@ -59,6 +62,8 @@ def run_predicted_comments(predicted_comment_run_id: str, *, db: Session | None 
     run_uuid = UUID(str(predicted_comment_run_id))
     provider_raw_output = None
     provider_structured_text = None
+    provider_attempt_count = 0
+    validation_failures: list[dict[str, object]] = []
     try:
         predicted_run = _claim_queued_predicted_run(session=session, run_uuid=run_uuid)
         if predicted_run is None:
@@ -101,15 +106,42 @@ def run_predicted_comments(predicted_comment_run_id: str, *, db: Session | None 
             response_schema=schema,
             run_parameters=provider_parameters,
         )
-        result = get_provider_adapter(provider, provider_parameters).run(request)
-        provider_raw_output = result.raw_output
-        provider_structured_text = result.structured_text
-        if _predicted_run_cancelled(session=session, predicted_run=predicted_run):
-            return
-        structured = parse_and_validate_json_output(
-            structured_text=result.structured_text,
-            schema_path=skill.result_schema_path,
-        )
+        adapter = get_provider_adapter(provider, provider_parameters)
+        max_attempts = 2 if skill.name == "devils_advocate_predefense" else 1
+        for attempt in range(1, max_attempts + 1):
+            provider_attempt_count = attempt
+            result = adapter.run(request)
+            provider_raw_output = result.raw_output
+            provider_structured_text = result.structured_text
+            if _predicted_run_cancelled(session=session, predicted_run=predicted_run):
+                return
+            try:
+                structured = parse_and_validate_json_output(
+                    structured_text=result.structured_text,
+                    schema_path=skill.result_schema_path,
+                )
+                break
+            except (json.JSONDecodeError, ValidationError) as exc:
+                if skill.name == "devils_advocate_predefense":
+                    failure = {
+                        "attempt": attempt,
+                        "error_type": type(exc).__name__,
+                        "response_length": len(result.structured_text or ""),
+                        "output_tokens": result.output_tokens,
+                        "finish_reason": result.provider_metadata.get("finish_reason"),
+                    }
+                    validation_failures.append(failure)
+                    worker_logger.warning(
+                        "devils_advocate_invalid_provider_output",
+                        extra={
+                            "job_type": "run_predicted_comments",
+                            "entity_id": str(run_uuid),
+                            "max_attempts": max_attempts,
+                            **failure,
+                        },
+                    )
+                if attempt == max_attempts:
+                    raise
         structured = deanonymize_model_value(
             structured,
             metadata=(predicted_run.run_parameters or {}).get(RUN_PARAMETER_KEY),
@@ -124,6 +156,8 @@ def run_predicted_comments(predicted_comment_run_id: str, *, db: Session | None 
             output_tokens=result.output_tokens,
             latency_ms=result.latency_ms,
             estimated_cost=result.estimated_cost,
+            validation_failures=validation_failures,
+            provider_attempt_count=provider_attempt_count,
         )
     except Exception as exc:
         session.rollback()
@@ -133,6 +167,8 @@ def run_predicted_comments(predicted_comment_run_id: str, *, db: Session | None 
             exc=exc,
             provider_raw_output=provider_raw_output,
             provider_structured_text=provider_structured_text,
+            validation_failures=validation_failures,
+            provider_attempt_count=provider_attempt_count,
         ):
             existing = session.get(PredictedCommentRun, run_uuid)
             if existing is None:
@@ -178,20 +214,28 @@ def _complete_predicted_run_if_running(
     output_tokens: int | None,
     latency_ms: int | None,
     estimated_cost,
+    validation_failures: list[dict[str, object]],
+    provider_attempt_count: int,
 ) -> bool:
+    values = dict(
+        structured_output=structured,
+        raw_output=raw_output,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        latency_ms=latency_ms,
+        estimated_cost=estimated_cost,
+        status=RunStatus.COMPLETED.value,
+        completed_at=utc_now(),
+    )
+    if validation_failures:
+        values["run_parameters"] = {
+            **predicted_run.run_parameters,
+            "provider_validation": {"attempt_count": provider_attempt_count, "failures": validation_failures},
+        }
     result = session.execute(
         update(PredictedCommentRun)
         .where(PredictedCommentRun.id == predicted_run.id, PredictedCommentRun.status == RunStatus.RUNNING.value)
-        .values(
-            structured_output=structured,
-            raw_output=raw_output,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            latency_ms=latency_ms,
-            estimated_cost=estimated_cost,
-            status=RunStatus.COMPLETED.value,
-            completed_at=utc_now(),
-        )
+        .values(**values)
     )
     if result.rowcount != 1:
         session.rollback()
@@ -209,6 +253,8 @@ def _fail_predicted_run_if_active(
     exc: Exception,
     provider_raw_output: str | None,
     provider_structured_text: str | None,
+    validation_failures: list[dict[str, object]],
+    provider_attempt_count: int,
 ) -> bool:
     failed = session.get(PredictedCommentRun, run_uuid)
     if failed is None:
@@ -216,10 +262,16 @@ def _fail_predicted_run_if_active(
     raw_output = failed.raw_output
     if provider_raw_output is not None and raw_output is None:
         raw_output = provider_raw_output or provider_structured_text
+    values = dict(status=RunStatus.FAILED.value, error_message=str(exc), raw_output=raw_output, completed_at=utc_now())
+    if validation_failures:
+        values["run_parameters"] = {
+            **failed.run_parameters,
+            "provider_validation": {"attempt_count": provider_attempt_count, "failures": validation_failures},
+        }
     result = session.execute(
         update(PredictedCommentRun)
         .where(PredictedCommentRun.id == run_uuid, PredictedCommentRun.status.in_([RunStatus.QUEUED.value, RunStatus.RUNNING.value]))
-        .values(status=RunStatus.FAILED.value, error_message=str(exc), raw_output=raw_output, completed_at=utc_now())
+        .values(**values)
     )
     if result.rowcount != 1:
         session.rollback()

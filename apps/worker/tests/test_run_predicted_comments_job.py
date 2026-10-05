@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -29,6 +30,7 @@ from app.security.passwords import hash_password
 from app.security.secrets import encrypt_secret
 from jobs.run_analysis import run_analysis
 from jobs.run_predicted_comments import run_predicted_comments
+from providers.base import AnalysisProviderResult
 
 
 def test_run_analysis_runs_predicted_comments_before_gate_after_success(tmp_path):
@@ -361,6 +363,62 @@ def test_run_predicted_comments_persists_structured_raw_and_metadata(tmp_path):
         assert predicted_run.output_tokens == 11
         assert predicted_run.latency_ms == 25
         assert predicted_run.completed_at is not None
+    finally:
+        _close_session(db)
+
+
+@pytest.mark.parametrize("second_valid", [True, False])
+def test_devils_advocate_retries_invalid_provider_json_once(tmp_path, monkeypatch, second_valid):
+    db = _create_session()
+    try:
+        user = _create_user(db)
+        document = _create_document(db, user)
+        main_skill = _create_main_skill(db)
+        predicted_skill = _create_predicted_skill(db, tmp_path)
+        _create_provider_key(db, user)
+        analysis = Analysis(
+            document_id=document.id, user_id=user.id, skill_id=main_skill.id,
+            skill_version=main_skill.version, provider=Provider.OPENAI_COMPATIBLE.value,
+            model="gpt-test", status=RunStatus.COMPLETED.value, run_parameters={},
+        )
+        db.add(analysis)
+        db.flush()
+        predicted_run = PredictedCommentRun(
+            analysis_id=analysis.id, skill_id=predicted_skill.id,
+            skill_version=predicted_skill.version, provider=analysis.provider,
+            model=analysis.model, status=RunStatus.QUEUED.value, run_parameters={},
+        )
+        db.add(predicted_run)
+        db.commit()
+
+        class FlakyAdapter:
+            calls = 0
+
+            def run(self, request):
+                self.calls += 1
+                content = (_devils_advocate_json() if second_valid and self.calls == 2
+                           else "<response_contract>\n```json\n{\n```")
+                return AnalysisProviderResult(
+                    structured_text=content, raw_output=f"response {self.calls}",
+                    latency_ms=1, output_tokens=50,
+                    provider_metadata={"finish_reason": "stop"},
+                )
+
+        adapter = FlakyAdapter()
+        monkeypatch.setattr("jobs.run_predicted_comments.get_provider_adapter", lambda *_: adapter)
+        run_predicted_comments(str(predicted_run.id), db=db)
+
+        db.refresh(predicted_run)
+        assert adapter.calls == 2
+        assert predicted_run.raw_output == "response 2"
+        assert predicted_run.status == (RunStatus.COMPLETED.value if second_valid else RunStatus.FAILED.value)
+        diagnostics = predicted_run.run_parameters["provider_validation"]
+        assert diagnostics["attempt_count"] == 2
+        assert len(diagnostics["failures"]) == (1 if second_valid else 2)
+        assert diagnostics["failures"][0]["response_length"] > 0
+        assert "response 1" not in json.dumps(diagnostics)
+        if not second_valid:
+            assert "Expecting property name" in predicted_run.error_message
     finally:
         _close_session(db)
 

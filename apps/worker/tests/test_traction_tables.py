@@ -72,6 +72,16 @@ def test_legacy_markdown_table_rows_are_read_without_reparse():
     assert _incremental_rows(_block_rows(block))[0][1]["rows"][0]["values"] == ["1", "2", "3"]
 
 
+def test_parsed_table_break_markers_do_not_leak_into_total_header_or_values():
+    block = {"metadata": {"rows": [
+        ["Increment P&L, mR", "2026", "2027", "2026-27<br>total"],
+        ["Revenue", "10", "20", "30<br/>"],
+    ]}}
+    table = _incremental_rows(_block_rows(block))[0][1]
+    assert table["periods"] == ["2026", "2027", "2026-27 total"]
+    assert table["rows"][0]["values"] == ["10", "20", "30"]
+
+
 def test_previous_scenario_is_not_used_as_current_incremental_data():
     assert _incremental_rows([
         ["Diff vs IC 25, mR", "2026", "2027", "Total"],
