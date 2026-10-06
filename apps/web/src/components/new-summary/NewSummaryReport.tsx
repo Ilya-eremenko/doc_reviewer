@@ -17,8 +17,19 @@ import type {
 const labels = {
   ru: {
     appendices: "Appendices",
-    bindingConfirmed: "Связь релевантна",
-    bindingInsufficient: "Связь нерелевантна",
+    bindingConfirmed: "Связь подтверждена",
+    bindingInsufficient: "Связь кажется неподтвержденной",
+    outputHeader: "Output-метрики — uplifts",
+    launches: "План-факт по запускам",
+    metricsFact: "План-факт по метрикам",
+    planned: "План",
+    fact: "Факт",
+    completed: "Выполнено",
+    partialLaunch: "Частично выполнено",
+    notCompleted: "Не выполнено",
+    unknownLaunch: "Нет данных",
+    linksAbsent: "Ссылки в документе не представлены",
+    linksUnavailable: "Не удалось скопировать ссылки из документа",
     verdictConfirmed: "Подтверждено",
     verdictInsufficient: "Недостаточно подтверждено",
     context: "Краткий контекст инициативы",
@@ -54,6 +65,17 @@ const labels = {
     appendices: "Appendices",
     bindingConfirmed: "Binding is relevant",
     bindingInsufficient: "Binding seems irrelevant",
+    outputHeader: "Output metrics — uplifts",
+    launches: "Launches: plan vs actual",
+    metricsFact: "Metrics: plan vs actual",
+    planned: "Plan",
+    fact: "Actual",
+    completed: "Completed",
+    partialLaunch: "Partially completed",
+    notCompleted: "Not completed",
+    unknownLaunch: "No data",
+    linksAbsent: "No links are provided in the document",
+    linksUnavailable: "Could not copy links from the document",
     verdictConfirmed: "Confirmed",
     verdictInsufficient: "Not sufficiently confirmed",
     context: "Initiative context",
@@ -97,7 +119,7 @@ export function NewSummaryReportView({
   const [language, setLanguage] = useState<NewSummaryLanguage>("ru");
   const content = report[language];
   const text = labels[language];
-  const newFormat = content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3";
+  const newFormat = content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3" || content.schema_version === "new-summary-v4";
   const sourceUrl = `https://iseremenko.ru/doc-challanger/analyses/${report.analysis_id}`;
   const ShellTag = embedded ? "section" : "main";
 
@@ -187,7 +209,7 @@ export function NewSummaryReportView({
                 )}
                 <div>
                   <div className="new-summary-required__title">
-                    <strong>
+                    <strong style={content.schema_version === "new-summary-v4" && item.id === "gate2_hypothesis_results" && hypothesisSummary ? { fontWeight: 400 } : undefined}>
                       {hypothesisSummary ?? <>
                         {leadingWords(item.label)}
                         <span className="new-summary-inline-tail">
@@ -256,7 +278,7 @@ function TractionSummaryTable({
           <table>
             <thead>
               <tr>
-                <th>{table.metric_label}</th>
+                <th>{text.outputHeader}</th>
                 {table.periods.map((period, index) => (
                   <th key={`${period}-${index}`}>{period}</th>
                 ))}
@@ -265,7 +287,7 @@ function TractionSummaryTable({
             <tbody>
               {table.rows.map((row, rowIndex) => (
                 <tr key={`${row.label}-${rowIndex}`}>
-                  <th>{row.label}</th>
+                  <th>{tractionRowLabel(table, row.label)}</th>
                   {table.periods.map((period, index) => (
                     <td key={`${rowIndex}-${period}-${index}`}>{row.values[index] ?? ""}</td>
                   ))}
@@ -277,6 +299,15 @@ function TractionSummaryTable({
       ))}
     </section>
   );
+}
+
+export function tractionRowLabel(table: NewSummaryTractionTable, label: string): string {
+  if (/revenue|выручк|\bDTB\b/i.test(label)) {
+    const unit = table.metric_label.split(",").slice(1).join(",").trim();
+    return unit && !label.includes(unit) ? `${label}, ${unit}` : label;
+  }
+  if (["total incremental output uplifts", "итоговый инкрементальный прирост", ""].includes(label.toLowerCase())) return table.metric_label;
+  return table.metric_label ? `${table.metric_label}: ${label}` : label;
 }
 
 function SummarySection({
@@ -397,35 +428,46 @@ function RequiredDetailContent({
     );
   }
 
-  if (detail.type === "next_review_plan") {
+  if (detail.type === "source_links") {
+    const links = detail.links.filter((link) => /^https?:\/\//.test(link.url));
+    return links.length ? <ul className="new-summary-appendix-list">{links.map((link) => (
+      <li key={link.url}><a href={link.url} target="_blank" rel="noreferrer">{link.label}</a></li>
+    ))}</ul> : <p>{detail.availability === "absent" ? text.linksAbsent : text.linksUnavailable}</p>;
+  }
+
+  if (detail.type === "next_review_plan" || detail.type === "plan_fact") {
     const gate2 = inlineItemId === "gate2_commitments";
     const inline = Boolean(inlineItemId);
+    const planFact = detail.type === "plan_fact";
+    const launchStatus = { completed: text.completed, partial: text.partialLaunch, not_completed: text.notCompleted, unknown: text.unknownLaunch };
+    const outputs = planFact ? detail.launches.map((item) => `${item.output} — ${launchStatus[item.status]}${item.comment ? `. ${item.comment}` : ""}`) : detail.outputs_until_next_review;
+    const metrics = planFact ? detail.metrics.map((item) => ({ metric: item.metric, current: item.planned, next_review: item.actual })) : detail.metrics_until_next_review;
     return (
       <div className="new-summary-plan-detail">
-        {detail.outputs_until_next_review.length ? (
+        {outputs.length ? (
           <>
-            {inline ? <h4>{gate2 ? text.outputsUntilGate3 : text.outputsUntilNextReview}</h4> : null}
+            {inline ? <h4>{planFact ? text.launches : gate2 ? text.outputsUntilGate3 : text.outputsUntilNextReview}</h4> : null}
             <ul className="new-summary-appendix-list">
-              {detail.outputs_until_next_review.map((item) => (
+              {outputs.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
           </>
         ) : null}
-        {detail.metrics_until_next_review.length ? (
+        {metrics.length ? (
           <>
-            {inline ? <h4>{gate2 ? text.metricsUntilGate3 : text.metricsUntilNextReview}</h4> : null}
+            {inline ? <h4>{planFact ? text.metricsFact : gate2 ? text.metricsUntilGate3 : text.metricsUntilNextReview}</h4> : null}
             <div className="new-summary-table-scroll">
               <table>
                 <thead>
                   <tr>
                     <th>{text.metric}</th>
-                    <th>{text.current}</th>
-                    <th>{text.nextReview}</th>
+                    <th>{planFact ? text.planned : text.current}</th>
+                    <th>{planFact ? text.fact : text.nextReview}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.metrics_until_next_review.map((row) => (
+                  {metrics.map((row) => (
                     <tr key={`${row.metric}-${row.current}-${row.next_review}`}>
                       <th>{row.metric}</th>
                       <td>{row.current}</td>
@@ -476,8 +518,8 @@ function MetricBindingGroup({
       <ul className="new-summary-appendix-list">
         {confirmedFirst(items, (item) => item.binding).map((item) => (
           <li key={`${item.metric}-${item.evidence}`}>
-            {item.evidence ? <><strong>{item.metric}</strong> - </> : null}
-            <InlineVerdict text={item.evidence || item.metric} status={item.binding} labels={text} />
+            <InlineVerdict text={item.metric} status={item.binding} labels={text} />
+            {item.evidence ? <p className="new-summary-validation-evidence">{item.evidence}</p> : null}
           </li>
         ))}
       </ul>

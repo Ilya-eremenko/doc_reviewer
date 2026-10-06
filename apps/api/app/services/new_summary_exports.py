@@ -10,6 +10,9 @@ from urllib.parse import quote
 from docx import Document as DocxDocument
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
@@ -34,7 +37,7 @@ from app.models.analysis import Analysis
 from app.models.document import Document
 from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summary_source_tables import verified_table_blocks
-from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
+from app.services.new_summary_traction import needs_verified_revenue_total, traction_row_label, with_traction_totals
 from app.services.new_summaries import NEW_SUMMARY_NUMBERED_SCHEMAS, with_summary_display_stage
 
 
@@ -265,12 +268,12 @@ def _append_docx_traction(document: DocxDocument, content: dict[str, Any], label
         table.alignment = WD_TABLE_ALIGNMENT.LEFT
         table.style = "Table Grid"
         header = table.rows[0].cells
-        header[0].text = _clean_text(traction.get("metric_label"))
+        header[0].text = labels["output_header"]
         for index, period in enumerate(periods, start=1):
             header[index].text = period
         for row_index, row in enumerate(rows, start=1):
             cells = table.rows[row_index].cells
-            cells[0].text = _clean_text(row.get("label"))
+            cells[0].text = traction_row_label(traction, row)
             values = row.get("values") if isinstance(row.get("values"), list) else []
             for cell_index, _period in enumerate(periods, start=1):
                 cells[cell_index].text = _clean_text(values[cell_index - 1] if cell_index - 1 < len(values) else "")
@@ -313,7 +316,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         paragraph.paragraph_format.space_after = Pt(2)
         hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered)
         title = paragraph.add_run((f"{index}. " if numbered else "") + (hypothesis_heading or _clean_text(item.get("label"))))
-        title.bold = True
+        title.bold = not (hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4")
         if hypothesis_heading is None:
             status = _localized_status(item, labels)
             status_run = paragraph.add_run(f"{_VERDICT_GAP}{status}")
@@ -385,24 +388,47 @@ def _append_docx_detail(
             for item in metrics:
                 bullet = document.add_paragraph(style="List Bullet")
                 bullet.add_run(_clean_text(item.get("metric"))).bold = True
-                if item.get("evidence"):
-                    bullet.add_run(f" - {_clean_text(item.get('evidence'))}")
                 status_run = bullet.add_run(f"{_VERDICT_GAP}{_detail_status(item.get('binding'), labels)}")
                 status_run.bold = True
                 status_run.font.color.rgb = RGBColor(15, 163, 107) if item.get("binding") == "confirmed" else RGBColor(199, 120, 0)
+                if item.get("evidence"):
+                    evidence = bullet.add_run(f"\n{_clean_text(item.get('evidence'))}")
+                    evidence.font.size = Pt(8)
+                    evidence.font.color.rgb = RGBColor(93, 102, 117)
         return
-    if detail_type == "next_review_plan":
+    if detail_type == "source_links":
+        links = _safe_source_links(detail)
+        for item in links:
+            paragraph = document.add_paragraph(style="List Bullet")
+            hyperlink = OxmlElement("w:hyperlink")
+            hyperlink.set(qn("r:id"), paragraph.part.relate_to(item["url"], RT.HYPERLINK, is_external=True))
+            run = OxmlElement("w:r")
+            properties = OxmlElement("w:rPr")
+            color = OxmlElement("w:color")
+            color.set(qn("w:val"), "0563C1")
+            properties.append(color)
+            run.append(properties)
+            text = OxmlElement("w:t")
+            text.text = item["label"]
+            run.append(text)
+            hyperlink.append(run)
+            paragraph._p.append(hyperlink)
+        if not links:
+            document.add_paragraph(labels["links_absent" if detail.get("availability") == "absent" else "links_unavailable"])
+        return
+    if detail_type in {"next_review_plan", "plan_fact"}:
+        plan_fact = detail_type == "plan_fact"
         outputs_title = labels["outputs_until_gate3"] if inline_item_id == "gate2_commitments" else labels["outputs_until_next"]
-        _append_docx_list_section(document, outputs_title, _string_list(detail.get("outputs_until_next_review")), RGBColor(17, 24, 39))
-        metrics = _dict_list(detail.get("metrics_until_next_review"))
+        outputs, metrics = _plan_detail_rows(detail, labels)
+        _append_docx_list_section(document, labels["launches"] if plan_fact else outputs_title, outputs, RGBColor(17, 24, 39))
         if metrics:
             if inline_item_id:
-                _append_docx_heading(document, labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"])
+                _append_docx_heading(document, labels["metrics_fact"] if plan_fact else labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"])
             table = document.add_table(rows=1 + len(metrics), cols=3)
             table.style = "Table Grid"
             table.rows[0].cells[0].text = labels["metric"]
-            table.rows[0].cells[1].text = labels["current"]
-            table.rows[0].cells[2].text = labels["next_review"]
+            table.rows[0].cells[1].text = labels["planned"] if plan_fact else labels["current"]
+            table.rows[0].cells[2].text = labels["fact"] if plan_fact else labels["next_review"]
             for row_index, row in enumerate(metrics, start=1):
                 table.rows[row_index].cells[0].text = _clean_text(row.get("metric"))
                 table.rows[row_index].cells[1].text = _clean_text(row.get("current"))
@@ -534,18 +560,18 @@ def _append_pdf_traction(
         return
     _append_pdf_heading(story, labels["traction"], styles)
     for traction in tables:
-        _append_pdf_traction_table(story, traction, styles, frame_width)
+        _append_pdf_traction_table(story, traction, styles, frame_width, labels["output_header"])
 
 
 def _append_pdf_traction_table(
-    story: list[Any], traction: dict[str, Any], styles: dict[str, ParagraphStyle], frame_width: float
+    story: list[Any], traction: dict[str, Any], styles: dict[str, ParagraphStyle], frame_width: float, output_header: str
 ) -> None:
     periods = [str(item) for item in traction["periods"]]
-    data = [[Paragraph(_xml(traction.get("metric_label")), styles["table_header"])] + [Paragraph(_xml(item), styles["table_header"]) for item in periods]]
+    data = [[Paragraph(_xml(output_header), styles["table_header"])] + [Paragraph(_xml(item), styles["table_header"]) for item in periods]]
     for row in traction["rows"]:
         values = row.get("values") if isinstance(row.get("values"), list) else []
         data.append(
-            [Paragraph(_xml(row.get("label")), styles["table_header"])]
+            [Paragraph(_xml(traction_row_label(traction, row)), styles["table_header"])]
             + [Paragraph(_xml(values[index] if index < len(values) else ""), styles["table_body"]) for index, _ in enumerate(periods)]
         )
     table = Table(data, colWidths=_pdf_table_widths(len(data[0]), frame_width), repeatRows=1)
@@ -591,6 +617,8 @@ def _append_pdf_required(
         hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered)
         heading = (f"<b>{_xml(hypothesis_heading)}</b>" if hypothesis_heading else
                    f"<b>{_xml(item.get('label'))}</b>{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(status)}</b></font>")
+        if hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4":
+            heading = _xml(hypothesis_heading)
         if numbered:
             heading = f"{index}. {heading}"
         story.append(Paragraph(heading, styles["required"]))
@@ -659,26 +687,34 @@ def _append_pdf_detail(
                 entries.append(
                     Paragraph(
                         f"<b>{_xml(item.get('metric'))}</b>"
-                        f"{' - ' + _xml(item.get('evidence')) if item.get('evidence') else ''}"
-                        f"{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_detail_status(item.get('binding'), labels))}</b></font>",
+                        f"{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_detail_status(item.get('binding'), labels))}</b></font>"
+                        f"<br/><font size=\"8\" color=\"{_MUTED}\">{_xml(item.get('evidence'))}</font>",
                         styles["body"],
                     )
                 )
             story.append(ListFlowable([ListItem(item) for item in entries], bulletType="bullet", leftIndent=15))
         return
-    if detail_type == "next_review_plan":
+    if detail_type == "source_links":
+        links = _safe_source_links(detail)
+        for item in links:
+            story.append(Paragraph(f'<link href="{_xml(item["url"])}" color="#0563C1">{_xml(item["label"])}</link>', styles["body"]))
+        if not links:
+            story.append(Paragraph(_xml(labels["links_absent" if detail.get("availability") == "absent" else "links_unavailable"]), styles["body"]))
+        return
+    if detail_type in {"next_review_plan", "plan_fact"}:
+        plan_fact = detail_type == "plan_fact"
         outputs_title = labels["outputs_until_gate3"] if inline_item_id == "gate2_commitments" else labels["outputs_until_next"]
-        _append_pdf_list_section(story, outputs_title, _string_list(detail.get("outputs_until_next_review")), _TEXT, styles)
-        metrics = _dict_list(detail.get("metrics_until_next_review"))
+        outputs, metrics = _plan_detail_rows(detail, labels)
+        _append_pdf_list_section(story, labels["launches"] if plan_fact else outputs_title, outputs, _TEXT, styles)
         if metrics:
             if inline_item_id:
                 story.append(Spacer(1, 10))
-                story.append(Paragraph(_xml(labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"]), styles["subheading"]))
+                story.append(Paragraph(_xml(labels["metrics_fact"] if plan_fact else labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"]), styles["subheading"]))
             rows = [
                 [
                     Paragraph(_xml(labels["metric"]), styles["table_header"]),
-                    Paragraph(_xml(labels["current"]), styles["table_header"]),
-                    Paragraph(_xml(labels["next_review"]), styles["table_header"]),
+                    Paragraph(_xml(labels["planned"] if plan_fact else labels["current"]), styles["table_header"]),
+                    Paragraph(_xml(labels["fact"] if plan_fact else labels["next_review"]), styles["table_header"]),
                 ]
             ]
             rows.extend(
@@ -711,12 +747,43 @@ def _append_pdf_provenance(
     story.append(Paragraph(_xml(_provenance_text(provenance)), styles["evidence"]))
 
 
+def _safe_source_links(detail: dict[str, Any]) -> list[dict[str, str]]:
+    return [item for item in _dict_list(detail.get("links"))
+            if isinstance(item.get("url"), str) and item["url"].startswith(("https://", "http://"))
+            and isinstance(item.get("label"), str)]
+
+
+def _plan_detail_rows(detail: dict[str, Any], labels: dict[str, str]) -> tuple[list[str], list[dict[str, Any]]]:
+    if detail.get("type") != "plan_fact":
+        return _string_list(detail.get("outputs_until_next_review")), _dict_list(detail.get("metrics_until_next_review"))
+    outputs = [
+        f"{_clean_text(item.get('output'))} — {labels.get('launch_' + str(item.get('status')), labels['launch_unknown'])}"
+        + (f". {_clean_text(item['comment'])}" if item.get("comment") else "")
+        for item in _dict_list(detail.get("launches"))
+    ]
+    metrics = [{"metric": item.get("metric"), "current": item.get("planned"), "next_review": item.get("actual")}
+               for item in _dict_list(detail.get("metrics"))]
+    return outputs, metrics
+
+
 def _labels(language: str) -> dict[str, str]:
     if language == "en":
         return {
             "appendices": "Appendices",
             "binding_confirmed": "Binding is relevant",
             "binding_insufficient": "Binding seems irrelevant",
+            "output_header": "Output metrics — uplifts",
+            "launches": "Launches: plan vs actual",
+            "metrics_fact": "Metrics: plan vs actual",
+            "planned": "Plan",
+            "fact": "Actual",
+            "launch_completed": "Completed",
+            "launch_partial": "Partially completed",
+            "launch_not_completed": "Not completed",
+            "launch_unknown": "No data",
+            "links_absent": "No links are provided in the document",
+            "links_unavailable": "Could not copy links from the document",
+            "metrics_until_next": "Metrics until the next Review",
             "context": "Initiative context",
             "quality": "Document quality",
             "critical": "Identified problems",
@@ -743,8 +810,20 @@ def _labels(language: str) -> dict[str, str]:
         }
     return {
         "appendices": "Appendices",
-        "binding_confirmed": "Связь релевантна",
-        "binding_insufficient": "Связь нерелевантна",
+        "binding_confirmed": "Связь подтверждена",
+        "binding_insufficient": "Связь кажется неподтвержденной",
+        "output_header": "Output-метрики — uplifts",
+        "launches": "План-факт по запускам",
+        "metrics_fact": "План-факт по метрикам",
+        "planned": "План",
+        "fact": "Факт",
+        "launch_completed": "Выполнено",
+        "launch_partial": "Частично выполнено",
+        "launch_not_completed": "Не выполнено",
+        "launch_unknown": "Нет данных",
+        "links_absent": "Ссылки в документе не представлены",
+        "links_unavailable": "Не удалось скопировать ссылки из документа",
+        "metrics_until_next": "Metrics until the next Review",
         "context": "Краткий контекст инициативы",
         "quality": "Качество документа",
         "critical": "Выявленные проблемы",

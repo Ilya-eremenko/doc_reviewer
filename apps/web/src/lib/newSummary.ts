@@ -20,6 +20,7 @@ export type NewSummaryRequiredElement = {
 
 export type NewSummaryTractionTable = {
   metric?: "revenue" | "dtb";
+  cumulative?: boolean;
   metric_label: string;
   periods: string[];
   rows: Array<{
@@ -33,6 +34,16 @@ export type NewSummaryTractionSummary = NewSummaryTractionTable | { tables: NewS
 export type NewSummaryCriticalProblem = string | { issue: string; fact: string };
 
 export type NewSummaryRequiredDetails =
+  | {
+      type: "source_links";
+      availability: "provided" | "absent" | "unavailable";
+      links: Array<{ label: string; url: string }>;
+    }
+  | {
+      type: "plan_fact";
+      launches: Array<{ output: string; status: "completed" | "partial" | "not_completed" | "unknown"; comment?: string }>;
+      metrics: Array<{ metric: string; planned: string; actual: string }>;
+    }
   | {
       type: "hypotheses_with_thresholds";
       items: Array<{ hypothesis: string; confirmation_condition: string }>;
@@ -69,7 +80,7 @@ export type NewSummaryRequiredDetails =
 export type NewSummaryRequiredDetailsById = Record<string, NewSummaryRequiredDetails>;
 
 export type NewSummaryContent = {
-  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3";
+  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3" | "new-summary-v4";
   language: NewSummaryLanguage;
   title: string;
   stage: NewSummaryStage;

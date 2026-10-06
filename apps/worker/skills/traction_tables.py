@@ -121,6 +121,7 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
             score += 1
         found.append((score, {
             "metric": metric,
+            **({"cumulative": True} if metric == "dtb" and re.search(r"\b(?:cum(?:ulative)?|накоплен\w*)\b", f"{active_context} {first}", re.IGNORECASE) else {}),
             "metric_label": metric.upper() if metric == "dtb" else "Revenue",
             "unit": _unit(active_context, first),
             "periods": periods,
@@ -152,6 +153,7 @@ def display_traction_tables(source_tables: list[dict[str, Any]], *, language: st
             metric_label += f", {unit if language == 'ru' else ('mR' if unit == 'млн ₽' else unit)}"
         tables.append({
             "metric": metric,
+            **({"cumulative": True} if source.get("cumulative") is True else {}),
             "metric_label": metric_label,
             "periods": source["periods"],
             "rows": [{

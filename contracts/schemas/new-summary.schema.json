@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v3"
+      "const": "new-summary-v4"
     },
     "language": {
       "const": "en",
@@ -81,7 +81,7 @@
         "context": {
           "type": "string",
           "minLength": 1,
-          "description": "Short initiative context. The source document may also supply the Traction Summary tables."
+          "description": "Up to six complete, readable sentences explaining the initiative, problem, target product, stage and past pilots. Apply the skill's terminology glossary."
         },
         "required_elements": {
           "type": "array",
@@ -94,7 +94,7 @@
           "type": "array",
           "maxItems": 10,
           "items": { "$ref": "#/$defs/critical_problem" },
-          "description": "Zero to ten distinct, source-grounded problems. Each has a short issue sentence and a separate supporting fact; no recommendations or action plans."
+          "description": "Zero to ten source-grounded problems not covered, even indirectly, by required elements. Do not paraphrase duplicate facts or report spreadsheet parsing errors such as REF/NAME. Each has one short issue sentence and one supporting fact; no recommendations."
         }
       }
     },
@@ -133,9 +133,13 @@
       "properties": {
         "metric": { "type": "string", "enum": ["revenue", "dtb"] },
         "metric_label": { "$ref": "#/$defs/non_empty_string" },
+        "cumulative": {
+          "type": "boolean",
+          "description": "True only for explicitly cumulative DTB in the source. Its Total cell is a dash, never a sum."
+        },
         "periods": {
           "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "New reports end with a Total column for this metric and period horizon. Period labels contain plain text, never HTML break tags. The server fills a missing Total with an explicit absence or extraction reason; historical reports remain readable."
+          "description": "Align Revenue and DTB to common periods, starting at the later shared period and using the same granularity. Keep each table's own later ending periods. If only H2 is available for DTB, place its value under the matching year with an explicit (H2 YYYY) note in the cell. Otherwise never relabel partial-year values as annual or calculate annual values. Last column is Total for the displayed horizon. Plain text only."
         },
         "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traction_row" } }
       }
@@ -209,7 +213,7 @@
         "evidence": {
           "type": "string",
           "minLength": 1,
-          "description": "Brief source-grounded explanation of what was required, what was shown, and why it supports the status; omit when no source evidence exists."
+          "description": "One to three short source-grounded sentences in natural language; prefer fewer. For stop criteria, describe the strongest explicit stopping criterion and whether it is clearly defined, with the remaining criteria in detail.criteria."
         },
         "detail": {
           "$ref": "#/$defs/required_detail",
@@ -223,6 +227,8 @@
         { "$ref": "#/$defs/solution_validation_detail" },
         { "$ref": "#/$defs/metric_binding_detail" },
         { "$ref": "#/$defs/next_review_plan_detail" },
+        { "$ref": "#/$defs/plan_fact_detail" },
+        { "$ref": "#/$defs/source_links_detail" },
         { "$ref": "#/$defs/criteria_list_detail" },
         { "$ref": "#/$defs/stop_criteria_detail" }
       ]
@@ -270,15 +276,12 @@
       "properties": {
         "text": {
           "$ref": "#/$defs/non_empty_string",
-          "description": "For Gate 2, one concise sentence per hypothesis, including why it is confirmed or insufficiently confirmed. Do not repeat the localized verdict in text; renderers add it from verdict."
+          "description": "For Gate 2 hypotheses and Stream Review 1 solution checks, one concise sentence per item, including why it is confirmed or insufficiently confirmed. No separate test/expected/actual paragraphs. Do not repeat the localized verdict in text."
         },
         "verdict": {
           "type": "string",
           "enum": ["confirmed", "insufficient"]
-        },
-        "test": { "$ref": "#/$defs/non_empty_string" },
-        "expected_result": { "$ref": "#/$defs/non_empty_string" },
-        "actual_result": { "$ref": "#/$defs/non_empty_string" }
+        }
       }
     },
     "metric_binding_detail": {
@@ -305,7 +308,8 @@
         "metric": { "$ref": "#/$defs/non_empty_string" },
         "binding": {
           "type": "string",
-          "enum": ["confirmed", "insufficient"]
+          "enum": ["confirmed", "insufficient"],
+          "description": "Relevance to the product/problem/UTP, not empirical validation or attainment of the metric target. A theoretically relevant metric can have confirmed binding even without a completed test."
         },
         "evidence": { "$ref": "#/$defs/non_empty_string" }
       }
@@ -333,7 +337,7 @@
       "properties": {
         "metric": { "$ref": "#/$defs/non_empty_string" },
         "current": { "type": "string" },
-        "next_review": { "type": "string" }
+        "next_review": { "type": "string", "description": "Target value with the next review date or quarter when supplied by the source." }
       }
     },
     "stop_criteria_detail": {
@@ -344,7 +348,7 @@
         "type": { "const": "stop_criteria" },
         "criteria": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": { "$ref": "#/$defs/non_empty_string" }
         }
       }
@@ -360,6 +364,51 @@
           "minItems": 1,
           "items": { "$ref": "#/$defs/non_empty_string" },
           "description": "Gate 3 product-market fit criteria, displayed as a numbered list."
+        }
+      }
+    },
+    "plan_fact_detail": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "launches", "metrics"],
+      "properties": {
+        "type": { "const": "plan_fact" },
+        "launches": { "type": "array", "items": { "$ref": "#/$defs/launch_fact" } },
+        "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric_fact" } }
+      }
+    },
+    "launch_fact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["output", "status"],
+      "properties": {
+        "output": { "$ref": "#/$defs/non_empty_string" },
+        "status": { "enum": ["completed", "partial", "not_completed", "unknown"] },
+        "comment": { "$ref": "#/$defs/non_empty_string" }
+      }
+    },
+    "metric_fact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["metric", "planned", "actual"],
+      "properties": {
+        "metric": { "$ref": "#/$defs/non_empty_string" },
+        "planned": { "type": "string" },
+        "actual": { "type": "string" }
+      }
+    },
+    "source_links_detail": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "availability", "links"],
+      "properties": {
+        "type": { "const": "source_links" },
+        "availability": { "enum": ["provided", "absent", "unavailable"] },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["label", "url"],
+            "properties": {
+              "label": { "$ref": "#/$defs/non_empty_string" },
+              "url": { "type": "string", "pattern": "^https?://", "description": "Exact URL copied from the source document. Never construct or guess URLs." }
+            }
+          }
         }
       }
     },

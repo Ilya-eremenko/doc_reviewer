@@ -24,7 +24,7 @@ NEW_SUMMARY_EXPECTED_PARAMETER = "new_summary_expected"
 NEW_SUMMARY_POSTPROCESSING = "postprocessing"
 NEW_SUMMARY_VERSION = 2
 NEW_SUMMARY_GENERATION_MODE = "new_summary_skill"
-NEW_SUMMARY_NUMBERED_SCHEMAS = frozenset({"new-summary-v2", "new-summary-v3"})
+NEW_SUMMARY_NUMBERED_SCHEMAS = frozenset({"new-summary-v2", "new-summary-v3", "new-summary-v4"})
 STALE_NEW_SUMMARY_AFTER = timedelta(minutes=30)
 NEW_SUMMARY_PROGRESS_PERCENTS = {
     "waiting_for_ic_review": 5,

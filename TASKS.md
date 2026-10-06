@@ -21,6 +21,18 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] 2026-10-06: Publish the user's New Summary revision as v4. Align Revenue/DTB
+  periods at the later common start, retain independent ending years, prefer
+  shared annual columns, and use DTB H2 as an explicitly labeled yearly-column
+  fallback only when no annual value exists (user clarification). Preserve
+  matching source Totals without arithmetic. Move metric labels from table
+  headers to body rows. Add exact-source mockup links, Progress Review plan/fact,
+  concise solution checks, primary stop-criterion evidence, and metric relevance
+  presentation across worker, schema, web and PDF/Word. Historical payloads are
+  not rewritten; shared read/export presentation normalizes existing tables.
+  Local verification: 295 API tests, 316 worker tests (three existing PDF parser
+  tests need pdfplumber in CI), 168 web tests including renderer HTML, PDF/Word
+  assertions, Next production build and Docker web/API rebuild. PR/deploy pending.
 - [~] 2026-10-05: Publish the user-edited New Summary with a v3 JSON contract:
   `critical_problems[]` now separates a bold issue sentence from its supporting
   fact, while saved v1/v2 string problems remain visible and exportable. Keep
