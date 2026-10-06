@@ -76,7 +76,7 @@ def test_old_bilingual_report_uses_one_quality_score_without_mutating_either_ver
     assert "document_quality_percent" not in en
 
 
-@pytest.mark.parametrize("schema_version", ["new-summary-v2", "new-summary-v3"])
+@pytest.mark.parametrize("schema_version", ["new-summary-v2", "new-summary-v3", "new-summary-v4"])
 def test_numbered_report_is_read_without_reintroducing_removed_quality_field(schema_version):
     payload = {"schema_version": schema_version, "language": "ru",
                "required_elements": [{"status": "есть"}], "traction_summary": {"tables": []}}

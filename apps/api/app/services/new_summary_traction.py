@@ -10,6 +10,120 @@ from app.services.new_summary_source_tables import clean_table_cell, verified_re
 _TOTAL_PERIOD = re.compile(r"\b(?:total|ttl|итого|всего)\b", re.IGNORECASE)
 _YEAR = re.compile(r"\b20\d{2}\b")
 _REVENUE_LABEL = re.compile(r"\b(?:revenue|выручк[а-я]*)\b", re.IGNORECASE)
+_CUMULATIVE = re.compile(r"\b(?:cum(?:ulative)?|накоплен\w*)\b", re.IGNORECASE)
+
+
+def _period_key(label: Any) -> tuple[int, int, int] | None:
+    text = clean_table_cell(str(label)).upper()
+    if _TOTAL_PERIOD.search(text):
+        return None
+    year = re.search(r"(?<!\d)(20\d{2})(?!\d)|CY\s*['’]?(\d{2})\b", text)
+    if not year or "FY" in text:
+        return None
+    number = int(year.group(1) or f"20{year.group(2)}")
+    quarter = re.search(r"Q\s*([1-4])|([1-4])\s*(?:Q|КВ)", text)
+    half = re.search(r"H\s*([12])|([12])\s*(?:H|ПОЛУГОД|П\b)", text)
+    if quarter:
+        start = (int(quarter.group(1) or quarter.group(2)) - 1) * 3 + 1
+        return number, start, start + 2
+    if half:
+        start = (int(half.group(1) or half.group(2)) - 1) * 6 + 1
+        return number, start, start + 5
+    if re.fullmatch(r"(?:20\d{2}(?:\s*Г(?:ОД)?\.?)?|CY\s*['’]?(?:20)?\d{2})", text):
+        return number, 1, 12
+    return None
+
+
+def _period_label(key: tuple[int, int, int]) -> str:
+    year, start, end = key
+    if (start, end) == (1, 12):
+        return str(year)
+    return f"{'H' + str((start - 1) // 6 + 1) if end - start == 5 else 'Q' + str((start - 1) // 3 + 1)} {year}"
+
+
+def _coverage(keys: list[tuple[int, int, int]]) -> set[tuple[int, int]]:
+    return {(year, month) for year, start, end in keys for month in range(start, end + 1)}
+
+
+def _total_matches_horizon(label: str, old: list[tuple[int, int, int]], new: list[tuple[int, int, int]]) -> bool:
+    explicit = re.search(r"(20\d{2})\s*[-–—]\s*(20\d{2}|\d{2})(?!\d)", label)
+    if explicit:
+        first, last = int(explicit.group(1)), int(explicit.group(2))
+        last = last + 2000 if last < 100 else last
+        return _coverage(new) == {(year, month) for year in range(first, last + 1) for month in range(1, 13)}
+    return _coverage(old) == _coverage(new)
+
+
+def _align_periods(tables: list[dict[str, Any]], unavailable: str) -> None:
+    """Select source columns together; never aggregate or relabel a partial year as a year."""
+    if len(tables) != 2 or any(not isinstance(table, dict) for table in tables) or {table.get("metric") for table in tables} != {"revenue", "dtb"}:
+        return
+    dtb = next(table for table in tables if table.get("metric") == "dtb")
+    revenue = next(table for table in tables if table.get("metric") == "revenue")
+    revenue_keys = {_period_key(period) for period in revenue.get("periods", [])}
+    dtb_keys = {_period_key(period) for period in dtb.get("periods", [])}
+    # Explicit product rule: use DTB H2 as a labeled fallback, never as an unqualified full-year figure.
+    for index, period in enumerate(dtb.get("periods", [])):
+        key = _period_key(period)
+        if key and key[1:] == (7, 12) and (key[0], 1, 12) in revenue_keys and (key[0], 1, 12) not in dtb_keys:
+            dtb["periods"][index] = str(key[0])
+            for row in dtb.get("rows") or []:
+                if isinstance(row, dict) and isinstance(row.get("values"), list) and index < len(row["values"]):
+                    row["values"][index] = f"{row['values'][index]} (H2 {key[0]})"
+    parsed = [[(i, _period_key(p)) for i, p in enumerate(table.get("periods", [])) if not _TOTAL_PERIOD.search(str(p))] for table in tables]
+    # Unknown labels must not silently disappear during a best-effort historical read.
+    if any(not pairs or any(key is None for _, key in pairs) for pairs in parsed):
+        return
+    for table, pairs in zip(tables, parsed, strict=True):
+        seen: dict[tuple[int, int, int], int] = {}
+        for index, key in pairs:
+            if key in seen and any(
+                isinstance(row, dict) and isinstance(row.get("values"), list)
+                and row["values"][index:index + 1] != row["values"][seen[key]:seen[key] + 1]
+                for row in table.get("rows") or []
+            ):
+                return
+            seen[key] = index
+    keys = [{key for _, key in pairs} for pairs in parsed]
+    common = keys[0] & keys[1]
+    if not common:
+        return
+    first_common = min(common)
+    overlap_end = min(max(values) for values in keys)
+    granularities = {(start, end) for _, start, end in common}
+    for table, pairs in zip(tables, parsed, strict=True):
+        selected = sorted((key, i) for i, key in pairs if key in common or (
+            key >= first_common and key > overlap_end and (key[1], key[2]) in granularities
+        ))
+        # Do not duplicate an equivalent source column such as CY26 and 2026.
+        unique = dict(selected)
+        selected = sorted(unique.items())
+        total_index = next((i for i, p in enumerate(table["periods"]) if _TOTAL_PERIOD.search(str(p))), None)
+        old_keys = [key for _, key in pairs]
+        new_keys = [key for key, _ in selected]
+        total_label = str(table["periods"][total_index]) if total_index is not None else "Total"
+        keep_total = _total_matches_horizon(total_label, old_keys, new_keys)
+        table["periods"] = [_period_label(key) for key in new_keys]
+        table["periods"].append(f"Total {new_keys[0][0]}–{new_keys[-1][0]}" if not keep_total else total_label)
+        for row in table.get("rows") or []:
+            values = row.get("values")
+            if not isinstance(values, list):
+                continue
+            total = values[total_index] if keep_total and total_index is not None and total_index < len(values) else unavailable
+            row["values"] = [values[i] if i < len(values) else unavailable for _, i in selected] + [total]
+
+
+def traction_row_label(table: dict[str, Any], row: dict[str, Any]) -> str:
+    label = str(row.get("label") or "").strip()
+    metric_label = str(table.get("metric_label") or "").strip()
+    if _REVENUE_LABEL.search(label) or re.search(r"\bDTB\b", label, re.IGNORECASE):
+        unit = metric_label.partition(",")[2].strip()
+        if unit and unit not in label:
+            return f"{label}, {unit}"
+        return label
+    if label.lower() in {"total incremental output uplifts", "итоговый инкрементальный прирост", ""}:
+        return metric_label
+    return f"{metric_label}: {label}" if metric_label else label
 
 
 def _table_metric(table: dict[str, Any]) -> str | None:
@@ -50,7 +164,7 @@ def with_traction_totals(
     payload: dict[str, Any], *, source_tables: list[dict[str, Any]] | None = None,
     source_blocks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Fill only missing Total cells; never calculate a total from period values."""
+    """Normalize display periods and Total cells without calculating source figures."""
     summary = payload.get("traction_summary")
     if not isinstance(summary, dict):
         return payload
@@ -131,6 +245,19 @@ def with_traction_totals(
                 verified = verified_revenue_total(periods, row["values"], source_blocks or []) if metric == "revenue" else None
                 row["values"].append(verified.value if verified else missing_reason)
         updated_tables.append(amended)
+    _align_periods(updated_tables, unavailable)
+    for table in updated_tables:
+        if not isinstance(table, dict) or _table_metric(table) != "dtb":
+            continue
+        total_index = next((i for i, p in enumerate(table.get("periods") or []) if _TOTAL_PERIOD.search(str(p))), None)
+        if total_index is None:
+            continue
+        for row in table.get("rows") or []:
+            if not isinstance(row, dict) or not isinstance(row.get("values"), list):
+                continue
+            cumulative = table.get("cumulative") is True or _CUMULATIVE.search(f"{table.get('metric_label', '')} {row.get('label', '')}")
+            if cumulative and total_index < len(row["values"]):
+                row["values"][total_index] = "—"
     updated["traction_summary"] = {**updated_summary, "tables": updated_tables} if "tables" in updated_summary else updated_tables[0]
     return updated
 

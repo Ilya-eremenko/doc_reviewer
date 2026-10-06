@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import traceback
 from copy import deepcopy
 from functools import lru_cache
@@ -79,12 +80,14 @@ STAGE_LABELS = {
 INLINE_REQUIRED_DETAIL_TYPES = {
     "gate1_hypotheses_with_metrics": "hypotheses_with_thresholds",
     "gate2_hypothesis_results": "solution_validation",
+    "gate2_user_flow": "source_links",
     "gate2_metric_linkage": "metric_binding",
     "gate2_commitments": "next_review_plan",
     "gate2_stop_criteria": "stop_criteria",
     "gate3_pmf_criteria": "criteria_list",
     "gate3_stop_criteria": "stop_criteria",
     "progress_review_stop_criteria": "stop_criteria",
+    "progress_review_plan_fact_last_half_year": "plan_fact",
     "progress_review_next_half_year_plan": "next_review_plan",
     "stream_review_1_stop_criteria": "stop_criteria",
     "stream_review_1_solution_validation": "solution_validation",
@@ -99,6 +102,8 @@ DETAIL_REPLACES_EVIDENCE = {
     "gate2_commitments",
     "gate3_pmf_criteria",
     "progress_review_next_half_year_plan",
+    "progress_review_plan_fact_last_half_year",
+    "stream_review_1_solution_validation",
     "stream_review_1_input_output_metric_link",
     "stream_review_1_half_year_plan_with_metrics",
     "stream_review_2_plus_next_half_year_plan",
@@ -867,7 +872,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized["schema_version"] = "new-summary-v3"
+    normalized["schema_version"] = "new-summary-v4"
     normalized.setdefault("language", "en")
     title = normalized.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -1002,6 +1007,8 @@ def _normalize_single_traction_table(value: Any, *, language: str) -> dict[str, 
             ]
             if normalized_periods and normalized_rows:
                 return {
+                    **({"metric": value["metric"]} if value.get("metric") in {"revenue", "dtb"} else {}),
+                    **({"cumulative": True} if value.get("cumulative") is True and value.get("metric") == "dtb" else {}),
                     "metric_label": metric_label.strip(),
                     "periods": normalized_periods,
                     "rows": normalized_rows,
@@ -1061,6 +1068,8 @@ def _required_elements_from_source(
             detail = required_details.get(item_id)
         if not isinstance(detail, dict) or detail.get("type") != INLINE_REQUIRED_DETAIL_TYPES.get(item_id):
             detail = None
+        if item_id == "gate2_user_flow":
+            detail = _verified_source_links(detail, source_payload)
         element: dict[str, Any] = {
             "id": item_id,
             "label": label,
@@ -1076,6 +1085,15 @@ def _required_elements_from_source(
             generated_item,
             target_language=target_language,
         )
+        if item_id in {"gate2_hypothesis_results", "stream_review_1_solution_validation"} and detail is None:
+            hypothesis = item_id == "gate2_hypothesis_results"
+            evidence = (
+                ("В кейсе не найдена информация о проверенных гипотезах" if hypothesis else
+                 "В кейсе не найдена информация о подтверждении решения через количественники, прототипы или фейкдоры")
+                if target_language == "ru" else
+                ("No information about tested hypotheses was found in the case" if hypothesis else
+                 "No information about solution validation through quantitative research, prototypes or fake doors was found in the case")
+            )
         if evidence and not (detail is not None and item_id in DETAIL_REPLACES_EVIDENCE):
             element["evidence"] = evidence
         if detail is not None:
@@ -1146,11 +1164,9 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
                     break
             if not text:
                 continue
+            if any(entry["text"].casefold() == text.casefold() for entry in items):
+                continue
             normalized_item = {"text": text, "verdict": verdict}
-            for key in ("test", "expected_result", "actual_result"):
-                value = _non_empty_string(item.get(key))
-                if value is not None:
-                    normalized_item[key] = value
             items.append(normalized_item)
         items.sort(key=lambda item: item["verdict"] != "confirmed")
         return {"type": detail_type, "items": items} if items else None
@@ -1172,11 +1188,50 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
         }
     if detail_type == "stop_criteria":
         criteria = _non_empty_strings(detail.get("criteria"))
-        return {"type": detail_type, "criteria": criteria} if criteria else None
+        return {"type": detail_type, "criteria": criteria}
+    if detail_type == "plan_fact":
+        launches = [
+            {"output": output, "status": status, **({"comment": comment} if comment else {})}
+            for item in detail.get("launches", []) if isinstance(item, dict)
+            for output in [_non_empty_string(item.get("output"))]
+            for status in [_enum_value(item.get("status"), {"completed", "partial", "not_completed", "unknown"})]
+            for comment in [_non_empty_string(item.get("comment"))]
+            if output and status
+        ] if isinstance(detail.get("launches"), list) else []
+        metrics = [
+            {"metric": metric, "planned": item["planned"], "actual": item["actual"]}
+            for item in detail.get("metrics", []) if isinstance(item, dict)
+            for metric in [_non_empty_string(item.get("metric"))]
+            if metric and isinstance(item.get("planned"), str) and isinstance(item.get("actual"), str)
+        ] if isinstance(detail.get("metrics"), list) else []
+        return {"type": detail_type, "launches": launches, "metrics": metrics} if launches or metrics else None
+    if detail_type == "source_links":
+        links = [
+            {"label": label, "url": url}
+            for item in detail.get("links", []) if isinstance(item, dict)
+            for label in [_non_empty_string(item.get("label"))]
+            for url in [_non_empty_string(item.get("url"))]
+            if label and url and re.match(r"^https?://[^\s<>]+$", url)
+        ] if isinstance(detail.get("links"), list) else []
+        availability = _enum_value(detail.get("availability"), {"provided", "absent", "unavailable"})
+        return {"type": detail_type, "availability": availability or "unavailable", "links": links}
     if detail_type == "criteria_list":
         criteria = _non_empty_strings(detail.get("criteria"))
         return {"type": detail_type, "criteria": criteria} if criteria else None
     return None
+
+
+def _verified_source_links(detail: dict[str, Any] | None, source: dict[str, Any]) -> dict[str, Any]:
+    document = source.get("source_document")
+    text = str(document.get("parsed_text_excerpt") or "") if isinstance(document, dict) else ""
+    source_urls = set(re.findall(r"https?://[^\s<>\"\]]+", text))
+    source_urls.update(url.rstrip(".,;:)") for url in list(source_urls))
+    detail = detail or {"availability": "unavailable", "links": []}
+    links = [item for item in detail.get("links", []) if item["url"] in source_urls]
+    availability = "provided" if links else (
+        "absent" if detail.get("availability") == "absent" and not detail.get("links") and text else "unavailable"
+    )
+    return {"type": "source_links", "availability": availability, "links": links}
 
 
 def _normalized_metric_binding_items(value: Any) -> list[dict[str, str]]:
@@ -1293,8 +1348,13 @@ def _required_element_status(
             return "есть"
     if item_id.endswith("_stop_criteria"):
         detail = required_details.get(item_id)
-        if (generated_status in {"есть", "present"} and isinstance(detail, dict)
-                and detail.get("type") == "stop_criteria" and detail.get("criteria")):
+        if generated_status in {"частично подтверждено", "partially confirmed"} and _non_empty_string((generated_item or {}).get("evidence")):
+            return "частично подтверждено"
+        if generated_status in {"есть", "present"} and (
+            _non_empty_string((generated_item or {}).get("evidence")) or (
+                isinstance(detail, dict) and detail.get("type") == "stop_criteria" and detail.get("criteria")
+            )
+        ):
             return "есть"
     if item_id in {"gate2_hypothesis_results", "stream_review_1_solution_validation"}:
         detail = required_details.get(item_id)
@@ -1303,9 +1363,7 @@ def _required_element_status(
             if isinstance(items, list) and items:
                 confirmed = sum(entry.get("verdict") == "confirmed" for entry in items if isinstance(entry, dict))
                 return f"{confirmed}/{len(items)}"
-        numerator, separator, denominator = generated_status.partition("/")
-        if separator and numerator.isdecimal() and denominator.isdecimal() and int(numerator) <= int(denominator):
-            return generated_status
+        return "нет"
 
     if item_id in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}:
         detail = required_details.get(item_id)

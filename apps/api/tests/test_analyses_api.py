@@ -1786,7 +1786,7 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     gap = "\u00a0" * 3
     assert "Appendices" not in paragraphs
     assert paragraphs.index(f"Потребность проверена{gap}Подтверждено") < paragraphs.index(f"Описание MVP/целевого продукта{gap}Нет")
-    metric_detail_index = next(index for index, text in enumerate(paragraphs) if "Activation - Из пилота" in text)
+    metric_detail_index = next(index for index, text in enumerate(paragraphs) if f"Activation{gap}Связь подтверждена\nИз пилота" in text)
     assert paragraphs.index(f"Связь Input/Output метрик продукта с УТП{gap}Есть") < metric_detail_index
     assert metric_detail_index < paragraphs.index(f"Commitments к Gate 3: список функционала и метрики{gap}Частично подтверждено")
     assert paragraphs.index("Запустить MVP") < paragraphs.index(

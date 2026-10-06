@@ -426,8 +426,8 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["schema_version"] == "new-summary-v3"
-        assert state["en"]["payload"]["schema_version"] == "new-summary-v3"
+        assert state["ru"]["payload"]["schema_version"] == "new-summary-v4"
+        assert state["en"]["payload"]["schema_version"] == "new-summary-v4"
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
         assert state["en"]["payload"]["context"] == "The team is validating a new product."
         assert state["progress"]["stage"] == "completed"
@@ -702,7 +702,7 @@ def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
 
 def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v3"
+    report["schema_version"] = "new-summary-v4"
     for version in report["versions"]:
         for legacy in ("confirmed", "insufficiently_confirmed", "other"):
             version.pop(legacy)
@@ -877,7 +877,7 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
 
 def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v3"
+    report["schema_version"] = "new-summary-v4"
     for version in report["versions"]:
         version.pop("confirmed")
         version.pop("insufficiently_confirmed")
@@ -932,7 +932,7 @@ def test_new_summary_checklist_order_matches_updated_skill():
     assert checklists["progress_review"][-1]["label_ru"].endswith("над продуктом")
 
 
-def test_new_summary_v2_keeps_solution_test_evidence_and_consistent_problem_status():
+def test_new_summary_v4_uses_concise_solution_checks_and_consistent_problem_status():
     checklist = new_summary_generation._new_summary_stage_checklists()["stream_review_1"]
     report = _new_summary_report_payload(
         ru_context="Контекст.", en_context="Context.", stage="Stream Review 1",
@@ -957,12 +957,12 @@ def test_new_summary_v2_keeps_solution_test_evidence_and_consistent_problem_stat
         payload=report, source_payload=source,
         response_schema=new_summary_generation._new_summary_schema(),
     )
-    assert result["schema_version"] == "new-summary-v3"
+    assert result["schema_version"] == "new-summary-v4"
     for version in result["versions"]:
         elements = {item["id"]: item for item in version["required_elements"]}
         assert elements["stream_review_1_confirmed_problem"]["status"] == "частично подтверждено"
         detail = elements["stream_review_1_solution_validation"]["detail"]
-        assert detail["items"][0]["actual_result"] == "12 activations"
+        assert detail["items"][0] == {"text": "Pilot", "verdict": "confirmed"}
         assert "document_quality_percent" not in version
         assert "other" not in version
 
@@ -1039,7 +1039,7 @@ def test_new_summary_hypothesis_fraction_comes_from_structured_detail_not_traffi
         item_id="stream_review_1_solution_validation",
         generated_item={"status": "1/4"},
         required_details={},
-    ) == "1/4"
+    ) == "нет"
 
 
 def test_metric_linkage_status_uses_eighty_percent_of_both_metric_groups():
