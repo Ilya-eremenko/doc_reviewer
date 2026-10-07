@@ -80,6 +80,7 @@ def test_catalog_uses_full_markdown_link_syntax_and_deduplicates():
     unicode_url = "https://example.com/макет?view=видео"
     assert source_link_catalog(f"[Design]({unicode_url})")[0]["url"] == unicode_url
     assert source_link_catalog(f"See full design: {url}.")[0]["url"] == url
+    assert source_link_catalog("See full design www.example.com/mockup") == []
     assert _verified_source_links({"links": [{"label": "Design", "url": url}], "availability": "provided"},
                                   {"source_document": {"parsed_text_excerpt": f"See design: {url}."}})["links"] == [{"label": "Design", "url": url}]
 
