@@ -21,6 +21,19 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Publish the user's next New Summary revision as v6: cumulative DTB with
+  conservative source-row verification, deduplicated metric-linkage counts,
+  verified mockup-link presence, primary/additional stop criteria and colored
+  Progress Review launch statuses. Align schema, worker, web and PDF/Word;
+  preserve saved v1-v5 reports and leave GC/DA/IC execution unchanged.
+  Baseline: production/main 1ea0e5a (PR #97 deployed successfully).
+  Verified locally: 301 API + 337 worker tests, 171 web tests, Next production
+  build, synthetic bilingual PDF visual check and Word/PDF assertions. Local
+  API/web rebuilt, login HTTP 200; worker remains stopped. Skill content above
+  the technical JSON section matches the user's backup byte-for-byte. New
+  source tables replace only their matching metric, preserving skill-extracted
+  DTB when only Revenue was recovered deterministically. PR/deploy pending.
+
 - [~] Follow-up to PR #96: preserve case-insensitive HTTP(S) schemes in exact
   source links across schema, web, PDF/Word. Prevent uppercase PDF URI schemes
   from failing Summary validation; never infer a scheme from a bare domain.

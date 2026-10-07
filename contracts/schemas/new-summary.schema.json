@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v5"
+      "const": "new-summary-v6"
     },
     "language": {
       "const": "en",
@@ -105,7 +105,7 @@
       "properties": {
         "issue": {
           "$ref": "#/$defs/non_empty_string",
-          "description": "One short sentence stating the problem. Renderers make this text bold; do not include Markdown formatting."
+          "description": "One short sentence stating a significant problem. Never report spreadsheet extraction errors such as #REF or #NAME here. Renderers make this text bold; do not include Markdown formatting."
         },
         "fact": {
           "$ref": "#/$defs/non_empty_string",
@@ -135,7 +135,7 @@
         "metric_label": { "$ref": "#/$defs/non_empty_string" },
         "cumulative": {
           "type": "boolean",
-          "description": "True only for explicitly cumulative DTB in the source. Its Total cell is a dash, never a sum."
+          "description": "True for explicitly cumulative DTB or a source DTB row verified by DTB[t] = DTB[t-1] + Incremental DTB[t] across comparable consecutive periods of the same scenario and units. Keep original cell values, label verified inferred DTB (cummul); Total is a dash, never a sum. Never relabel an incremental-only row as cumulative."
         },
         "periods": {
           "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" },
@@ -286,6 +286,7 @@
     },
     "metric_binding_detail": {
       "type": "object",
+      "description": "Deduplicate metrics across both lists before counting. The heading displays X confirmed and Z insufficiently confirmed out of Y displayed metrics, X+Z=Y, not a colored overall verdict. Do not invent counts for empty lists.",
       "additionalProperties": false,
       "required": ["type", "input_metrics", "output_metrics"],
       "properties": {
@@ -346,10 +347,15 @@
       "required": ["type", "criteria"],
       "properties": {
         "type": { "const": "stop_criteria" },
+        "primary_criterion": {
+          "type": "string",
+          "description": "The strongest explicit stopping criterion, without commentary. Empty if absent. Also describe it and its clarity in the parent evidence. Presence means present even if wording is unclear; never call it stop-loss. Do not infer a stopping rule from traction deviation alone."
+        },
         "criteria": {
           "type": "array",
           "minItems": 0,
-          "items": { "$ref": "#/$defs/non_empty_string" }
+          "items": { "$ref": "#/$defs/non_empty_string" },
+          "description": "Additional stopping criteria only, with semantic duplicates of the primary and each other removed. Empty when there are none. Only a nonempty list gets the Additional stop criteria heading."
         }
       }
     },
@@ -381,7 +387,7 @@
       "required": ["output", "status"],
       "properties": {
         "output": { "$ref": "#/$defs/non_empty_string" },
-        "status": { "enum": ["completed", "partial", "not_completed", "unknown"] },
+        "status": { "enum": ["completed", "partial", "not_completed", "unknown"], "description": "Progress Review launch result: green, orange, red, or neutral respectively in web/PDF/Word. Do not color the output or comment." },
         "comment": { "$ref": "#/$defs/non_empty_string" }
       }
     },
@@ -396,6 +402,7 @@
     },
     "source_links_detail": {
       "type": "object", "additionalProperties": false,
+      "description": "Select mockup/video/design links only by source label and context, without opening targets. At least one verified relevant source link makes Gate 2 user flow present. Render links blue.",
       "required": ["type", "availability", "links"],
       "properties": {
         "type": { "const": "source_links" },

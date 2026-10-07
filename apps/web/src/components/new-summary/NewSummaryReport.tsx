@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { confirmedFirst, gate2HypothesisSummary } from "@/lib/newSummaryRequired";
+import { confirmedFirst, gate2HypothesisSummary, metricBindingSummary } from "@/lib/newSummaryRequired";
 
 import type {
   NewSummaryContent,
@@ -17,6 +17,7 @@ import type {
 const labels = {
   ru: {
     appendices: "Appendices",
+    additionalStops: "Дополнительные найденные Stop критерии",
     bindingConfirmed: "Связь подтверждена",
     bindingInsufficient: "Связь кажется неподтвержденной",
     outputHeader: "Output-метрики — uplifts",
@@ -62,6 +63,7 @@ const labels = {
     actual: "получили",
   },
   en: {
+    additionalStops: "Additional stop criteria",
     appendices: "Appendices",
     bindingConfirmed: "Binding is relevant",
     bindingInsufficient: "Binding seems irrelevant",
@@ -119,7 +121,8 @@ export function NewSummaryReportView({
   const [language, setLanguage] = useState<NewSummaryLanguage>("ru");
   const content = report[language];
   const text = labels[language];
-  const currentFormat = content.schema_version === "new-summary-v5";
+  const v6 = content.schema_version === "new-summary-v6";
+  const currentFormat = v6 || content.schema_version === "new-summary-v5";
   const newFormat = currentFormat || content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3" || content.schema_version === "new-summary-v4";
   const sourceUrl = `https://iseremenko.ru/doc-challanger/analyses/${report.analysis_id}`;
   const ShellTag = embedded ? "section" : "main";
@@ -200,7 +203,8 @@ export function NewSummaryReportView({
         <ul>
           {content.required_elements.map((item, index) => {
             const tone = requiredElementTone(item);
-            const hypothesisSummary = gate2HypothesisSummary(item, language, newFormat, currentFormat);
+            const countedMetrics = v6 && ["gate2_metric_linkage", "stream_review_1_input_output_metric_link"].includes(item.id);
+            const hypothesisSummary = (countedMetrics ? metricBindingSummary(item, language) : null) ?? gate2HypothesisSummary(item, language, newFormat, currentFormat);
             return (
               <li className={tone} key={item.id}>
                 {newFormat ? (
@@ -218,7 +222,7 @@ export function NewSummaryReportView({
                         {leadingWords(item.label)}
                         <span className="new-summary-inline-tail">
                           {lastWord(item.label)}
-                          <span className="new-summary-required__status">{tone === "fraction" ? item.status : text[tone]}</span>
+                          {!countedMetrics ? <span className="new-summary-required__status">{tone === "fraction" ? item.status : text[tone]}</span> : null}
                         </span>
                       </>}
                     </strong>}
@@ -226,7 +230,7 @@ export function NewSummaryReportView({
                   {item.evidence ? <p>{item.evidence}</p> : null}
                   {item.detail ? (
                     <div className="new-summary-required__detail">
-                      <RequiredDetailContent detail={item.detail} labels={text} inlineItemId={item.id} currentFormat={currentFormat} />
+                      <RequiredDetailContent detail={item.detail} labels={text} inlineItemId={item.id} currentFormat={currentFormat} v6={v6} />
                     </div>
                   ) : null}
                 </div>
@@ -386,11 +390,13 @@ function RequiredDetailContent({
   labels: text,
   inlineItemId,
   currentFormat = false,
+  v6 = false,
 }: {
   detail: NewSummaryRequiredDetails;
   labels: (typeof labels)[NewSummaryLanguage];
   inlineItemId?: string;
   currentFormat?: boolean;
+  v6?: boolean;
 }) {
   if (detail.type === "hypotheses_with_thresholds") {
     return (
@@ -437,7 +443,7 @@ function RequiredDetailContent({
   if (detail.type === "source_links") {
     const links = detail.links.filter((link) => /^https?:\/\//i.test(link.url));
     return links.length ? <ul className="new-summary-appendix-list">{links.map((link) => (
-      <li key={link.url}><a href={link.url} target="_blank" rel="noreferrer">{link.label}</a></li>
+      <li key={link.url}><a className={v6 ? "new-summary-source-link" : undefined} href={link.url} target="_blank" rel="noreferrer">{link.label}</a></li>
     ))}</ul> : <p>{detail.availability === "absent" ? text.linksAbsent : text.linksUnavailable}</p>;
   }
 
@@ -454,7 +460,12 @@ function RequiredDetailContent({
           <>
             {inline ? <h4>{planFact ? text.launches : gate2 ? text.outputsUntilGate3 : text.outputsUntilNextReview}</h4> : null}
             <ul className="new-summary-appendix-list">
-              {outputs.map((item) => (
+              {planFact && v6 ? detail.launches.map((item, index) => (
+                <li key={`${index}-${item.output}`}>
+                  {item.output}<span className={`new-summary-status-chip launch-${item.status}`}>{launchStatus[item.status]}</span>
+                  {item.comment ? `. ${item.comment}` : ""}
+                </li>
+              )) : outputs.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
@@ -497,12 +508,16 @@ function RequiredDetailContent({
     );
   }
 
+  if (v6 && !detail.criteria.length) return null;
   return (
+    <>
+    {v6 ? <h4>{text.additionalStops}</h4> : null}
     <ul className="new-summary-appendix-list">
       {detail.criteria.map((item) => (
         <li key={item}>{item}</li>
       ))}
     </ul>
+    </>
   );
 }
 
@@ -621,6 +636,11 @@ function appendixTitle(content: NewSummaryContent, id: string, index: number): s
 }
 
 const newSummaryStyles = `
+.new-summary-shell a.new-summary-source-link { color: #0563C1; text-decoration: underline; }
+.new-summary-status-chip.launch-completed { color: #0FA36B; background: #e8f7ef; }
+.new-summary-status-chip.launch-partial { color: #C77800; background: #fff4e5; }
+.new-summary-status-chip.launch-not_completed { color: #D92D20; background: #fff0ee; }
+.new-summary-status-chip.launch-unknown { color: #5D6675; background: #f6f8fa; }
 .new-summary-shell {
   display: grid;
   width: min(1240px, 100%);

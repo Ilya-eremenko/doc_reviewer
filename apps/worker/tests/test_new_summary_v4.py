@@ -51,7 +51,7 @@ def test_empty_hypotheses_do_not_reuse_a_stale_fraction_or_green_checklist():
 
 
 def test_single_stop_criterion_in_evidence_does_not_need_a_duplicate_list():
-    for generated_status, expected in (("есть", "есть"), ("частично подтверждено", "частично подтверждено")):
+    for generated_status, expected in (("есть", "есть"), ("частично подтверждено", "есть")):
         assert _required_element_status(
             {"status": "red"}, item_id="progress_review_stop_criteria",
             generated_item={"status": generated_status, "evidence": "Stop if the pilot exceeds the cost limit."},
