@@ -19,6 +19,56 @@ _TOTAL_RANGE = re.compile(
 _TOBE = re.compile(r"\btobe\b", re.IGNORECASE)
 _REVENUE = re.compile(r"(?:revenue|выручк[а-я]*)", re.IGNORECASE)
 _BREAK_TAG = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_TABLE_PERIOD = re.compile(r"(?:^|\b)(?:20\d{2}|CY\s*['’]?\d{2}|Q[1-4])(?:\b|$)|\b(?:total|ttl|итого|всего)\b", re.IGNORECASE)
+_EXPENSE_SECTION = re.compile(
+    r"^(?:(?:total|incremental|increment|итого|всего)\s+)?"
+    r"(?:cos|cogs|cost\s+of\s+(?:sales|goods\s+sold|revenue)|"
+    r"(?:operating\s+)?(?:costs|expenses)|opex|себестоимость|расходы|затраты)"
+    r"(?:\b|$)", re.IGNORECASE,
+)
+_NON_EXPENSE_SECTION = re.compile(
+    r"(?:gross\s+profit|валовая\s+прибыль|ebitda|ebit|fcf)\s*(?:[,(:].*)?", re.IGNORECASE,
+)
+_REVENUE_HEADING = re.compile(r"(?:total\s+)?(?:revenues?|выручка|доходы)\s*:?", re.IGNORECASE)
+_TABLE_CONTEXT = re.compile(
+    r"\b(?:increment(?:al)?|to.?be|as.?is|baseline|previous|prior|diff|p&l|pnl|"
+    r"(?:input|output)\s+metrics|инкремент|предыдущ\w*)\b", re.IGNORECASE,
+)
+
+
+def is_financial_period_header(row: list[str]) -> bool:
+    if not row or sum(bool(_TABLE_PERIOD.search(cell)) for cell in row[1:]) < 2:
+        return False
+    # Amounts such as 2026 and 2027 alone are not proof of a new table header.
+    label = row[0].strip().strip("*_ ")
+    return bool(_TABLE_CONTEXT.search(label) or _EXPENSE_SECTION.search(label))
+
+
+def expense_row_indices(rows: list[list[str]]) -> set[int]:
+    """Identify explicit expense sections without treating all 'revenue' rows as income."""
+    excluded: set[int] = set()
+    in_expenses = False
+    last_header: tuple[str, ...] | None = None
+    for index, row in enumerate(rows):
+        if not row:
+            continue
+        label = row[0].strip().strip("*_ ")
+        is_header = is_financial_period_header(row)
+        if is_header:
+            header_key = tuple(cell.strip().casefold() for cell in row)
+            # Repeated PDF headers do not end the CoS section on the next page.
+            if header_key != last_header:
+                in_expenses = False
+            last_header = header_key
+        if _EXPENSE_SECTION.search(label):
+            in_expenses = True
+        elif _NON_EXPENSE_SECTION.fullmatch(label) or (
+            _REVENUE_HEADING.fullmatch(label) and not any(cell.strip() for cell in row[1:])
+        ):
+            in_expenses = False
+        if in_expenses:
+            excluded.add(index)
+    return excluded
 
 
 def clean_table_cell(value: Any) -> str:
@@ -95,6 +145,7 @@ def verified_revenue_total(
     matches: list[VerifiedRevenueTotal] = []
     for block in blocks:
         rows = block_rows(block)
+        expense_indices = expense_row_indices(rows)
         for header_index, header in enumerate(rows):
             if not header or not _TOBE.search(header[0]):
                 continue
@@ -108,7 +159,12 @@ def verified_revenue_total(
                 total_range = _total_range(total_period)
                 if total_range != (years[0], years[-1]):
                     continue
-                for row in rows[header_index + 1:]:
+                for row_index in range(header_index + 1, len(rows)):
+                    row = rows[row_index]
+                    if is_financial_period_header(row):
+                        break
+                    if row_index in expense_indices:
+                        continue
                     if not row or not _REVENUE.fullmatch(row[0].strip()):
                         continue
                     if total_index >= len(row) or _number(row[total_index]) is None:

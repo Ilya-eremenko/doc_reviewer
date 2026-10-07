@@ -128,6 +128,7 @@
     },
     "traction_table": {
       "type": "object",
+      "description": "Revenue rows and their Total must come from initiative revenue, never expense lines under CoS/COGS/Cost of Sales or other explicit expense sections. Partner revenue under CoS is a cost despite its name. Use source section context, not the word revenue or the sign alone; genuine partner revenue outside expenses and negative revenue uplift remain eligible.",
       "additionalProperties": false,
       "required": ["metric", "metric_label", "periods", "rows"],
       "properties": {
