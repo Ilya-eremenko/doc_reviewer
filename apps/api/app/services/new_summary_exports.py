@@ -766,7 +766,7 @@ def _append_pdf_provenance(
 
 def _safe_source_links(detail: dict[str, Any]) -> list[dict[str, str]]:
     return [item for item in _dict_list(detail.get("links"))
-            if isinstance(item.get("url"), str) and item["url"].startswith(("https://", "http://"))
+            if isinstance(item.get("url"), str) and item["url"].lower().startswith(("https://", "http://"))
             and isinstance(item.get("label"), str)]
 
 

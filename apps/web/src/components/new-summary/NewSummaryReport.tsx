@@ -435,7 +435,7 @@ function RequiredDetailContent({
   }
 
   if (detail.type === "source_links") {
-    const links = detail.links.filter((link) => /^https?:\/\//.test(link.url));
+    const links = detail.links.filter((link) => /^https?:\/\//i.test(link.url));
     return links.length ? <ul className="new-summary-appendix-list">{links.map((link) => (
       <li key={link.url}><a href={link.url} target="_blank" rel="noreferrer">{link.label}</a></li>
     ))}</ul> : <p>{detail.availability === "absent" ? text.linksAbsent : text.linksUnavailable}</p>;

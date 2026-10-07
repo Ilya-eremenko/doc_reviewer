@@ -28,6 +28,8 @@ def source_link_catalog(text: str, *, extra_links: list[dict[str, str]] | None =
     lines = text.splitlines()
     links: dict[str, dict[str, str]] = {}
     parser = MarkdownIt("commonmark", {"linkify": True}).enable("linkify")
+    # Bare domains are not exact URLs: never invent a scheme for them.
+    parser.linkify.set({"fuzzy_link": False, "fuzzy_email": False})
     # Do not percent-encode Unicode or otherwise rewrite the original destination.
     parser.normalizeLink = lambda url: url
     for token in parser.parse(text):

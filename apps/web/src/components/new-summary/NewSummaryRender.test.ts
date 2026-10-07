@@ -27,7 +27,7 @@ const content: NewSummaryContent = {
       metrics: [{ metric: "Пользователи", planned: "100", actual: "80" }],
     } },
     { id: "gate2_user_flow", label: "Mockups", status: "есть", detail: { type: "source_links", availability: "provided", links: [
-      { label: "Прототип", url: "https://example.com/mockup" }, { label: "Unsafe", url: "javascript:alert(1)" },
+      { label: "Прототип", url: "https://example.com/mockup" }, { label: "Design", url: "HTTPS://example.com/design" }, { label: "Unsafe", url: "javascript:alert(1)" },
     ] } },
   ],
 };
@@ -41,6 +41,7 @@ describe("new-summary-v4 rendering", () => {
     expect(html).toContain("Пилот — Частично выполнено. Один регион");
     expect(html).toContain("<th>Метрика</th><th>План</th><th>Факт</th>");
     expect(html).toContain('href="https://example.com/mockup"');
+    expect(html).toContain('href="HTTPS://example.com/design"');
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("<h2>Выявленные проблемы</h2>");
     expect(html).not.toContain("<span>Качество документа");

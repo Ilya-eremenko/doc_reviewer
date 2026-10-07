@@ -15,11 +15,12 @@ from skills.new_summary_generation import (
 from skills.source_links import pdf_source_links, provider_source_links, source_link_catalog
 
 
-def test_design_link_survives_anonymization_model_selection_and_bilingual_validation(monkeypatch):
+@pytest.mark.parametrize("scheme", ["https", "HTTPS"])
+def test_design_link_survives_anonymization_model_selection_and_bilingual_validation(monkeypatch, scheme):
     monkeypatch.setenv("DOCUMENT_ANONYMIZATION_ENABLED", "true")
     get_settings.cache_clear()
     try:
-        url = "https://design.example/prototype?node-id=12&mode=design#frame"
+        url = f"{scheme}://design.example/prototype?node-id=12&mode=design#frame"
         text = f"## FAQ 1\nSee full design [here]({url}).\n[Financial model](https://example.com/budget)"
         source = {"document_type": "gate_2", "document_stage": "Gate 2", "source_document": {
             "parsed_text_excerpt": text, "links": source_link_catalog(text),
@@ -79,6 +80,7 @@ def test_catalog_uses_full_markdown_link_syntax_and_deduplicates():
     unicode_url = "https://example.com/макет?view=видео"
     assert source_link_catalog(f"[Design]({unicode_url})")[0]["url"] == unicode_url
     assert source_link_catalog(f"See full design: {url}.")[0]["url"] == url
+    assert source_link_catalog("See full design www.example.com/mockup") == []
     assert _verified_source_links({"links": [{"label": "Design", "url": url}], "availability": "provided"},
                                   {"source_document": {"parsed_text_excerpt": f"See design: {url}."}})["links"] == [{"label": "Design", "url": url}]
 
