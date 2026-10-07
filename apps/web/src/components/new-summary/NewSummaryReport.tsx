@@ -119,7 +119,8 @@ export function NewSummaryReportView({
   const [language, setLanguage] = useState<NewSummaryLanguage>("ru");
   const content = report[language];
   const text = labels[language];
-  const newFormat = content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3" || content.schema_version === "new-summary-v4";
+  const currentFormat = content.schema_version === "new-summary-v5";
+  const newFormat = currentFormat || content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3" || content.schema_version === "new-summary-v4";
   const sourceUrl = `https://iseremenko.ru/doc-challanger/analyses/${report.analysis_id}`;
   const ShellTag = embedded ? "section" : "main";
 
@@ -199,7 +200,7 @@ export function NewSummaryReportView({
         <ul>
           {content.required_elements.map((item, index) => {
             const tone = requiredElementTone(item);
-            const hypothesisSummary = gate2HypothesisSummary(item, language, newFormat);
+            const hypothesisSummary = gate2HypothesisSummary(item, language, newFormat, currentFormat);
             return (
               <li className={tone} key={item.id}>
                 {newFormat ? (
@@ -209,7 +210,10 @@ export function NewSummaryReportView({
                 )}
                 <div>
                   <div className="new-summary-required__title">
-                    <strong style={content.schema_version === "new-summary-v4" && item.id === "gate2_hypothesis_results" && hypothesisSummary ? { fontWeight: 400 } : undefined}>
+                    {currentFormat && hypothesisSummary ? <>
+                      <strong>{hypothesisSummary.slice(0, hypothesisSummary.indexOf(":") + 1)}</strong>
+                      <span>{hypothesisSummary.slice(hypothesisSummary.indexOf(":") + 1)}</span>
+                    </> : <strong style={content.schema_version === "new-summary-v4" && item.id === "gate2_hypothesis_results" && hypothesisSummary ? { fontWeight: 400 } : undefined}>
                       {hypothesisSummary ?? <>
                         {leadingWords(item.label)}
                         <span className="new-summary-inline-tail">
@@ -217,12 +221,12 @@ export function NewSummaryReportView({
                           <span className="new-summary-required__status">{tone === "fraction" ? item.status : text[tone]}</span>
                         </span>
                       </>}
-                    </strong>
+                    </strong>}
                   </div>
                   {item.evidence ? <p>{item.evidence}</p> : null}
                   {item.detail ? (
                     <div className="new-summary-required__detail">
-                      <RequiredDetailContent detail={item.detail} labels={text} inlineItemId={item.id} />
+                      <RequiredDetailContent detail={item.detail} labels={text} inlineItemId={item.id} currentFormat={currentFormat} />
                     </div>
                   ) : null}
                 </div>
@@ -381,10 +385,12 @@ function RequiredDetailContent({
   detail,
   labels: text,
   inlineItemId,
+  currentFormat = false,
 }: {
   detail: NewSummaryRequiredDetails;
   labels: (typeof labels)[NewSummaryLanguage];
   inlineItemId?: string;
+  currentFormat?: boolean;
 }) {
   if (detail.type === "hypotheses_with_thresholds") {
     return (
@@ -422,8 +428,8 @@ function RequiredDetailContent({
   if (detail.type === "metric_binding") {
     return (
       <div className="new-summary-metric-binding">
-        <MetricBindingGroup items={detail.input_metrics} labels={text} title={text.inputMetrics} />
-        <MetricBindingGroup items={detail.output_metrics} labels={text} title={text.outputMetrics} />
+        <MetricBindingGroup items={detail.input_metrics} labels={text} title={text.inputMetrics} currentFormat={currentFormat} />
+        <MetricBindingGroup items={detail.output_metrics} labels={text} title={text.outputMetrics} currentFormat={currentFormat} />
       </div>
     );
   }
@@ -504,10 +510,12 @@ function MetricBindingGroup({
   items,
   labels: text,
   title,
+  currentFormat = false,
 }: {
   items: Array<{ metric: string; binding: "confirmed" | "insufficient"; evidence: string }>;
   labels: (typeof labels)[NewSummaryLanguage];
   title: string;
+  currentFormat?: boolean;
 }) {
   if (!items.length) {
     return null;
@@ -518,8 +526,13 @@ function MetricBindingGroup({
       <ul className="new-summary-appendix-list">
         {confirmedFirst(items, (item) => item.binding).map((item) => (
           <li key={`${item.metric}-${item.evidence}`}>
-            <InlineVerdict text={item.metric} status={item.binding} labels={text} />
-            {item.evidence ? <p className="new-summary-validation-evidence">{item.evidence}</p> : null}
+            {currentFormat ? <>
+              <strong>{item.metric}</strong>{" — "}
+              <InlineVerdict text={item.evidence} status={item.binding} labels={text} />
+            </> : <>
+              <InlineVerdict text={item.metric} status={item.binding} labels={text} />
+              {item.evidence ? <p className="new-summary-validation-evidence">{item.evidence}</p> : null}
+            </>}
           </li>
         ))}
       </ul>
@@ -893,6 +906,9 @@ const newSummaryStyles = `
 
 .new-summary-required__title {
   display: block;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--foreground);
 }
 
 .new-summary-inline-tail { display: inline-block; white-space: nowrap; }

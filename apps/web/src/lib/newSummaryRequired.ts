@@ -4,7 +4,7 @@ export function confirmedFirst<T>(items: T[], status: (item: T) => "confirmed" |
   return [...items].sort((a, b) => Number(status(b) === "confirmed") - Number(status(a) === "confirmed"));
 }
 
-export function gate2HypothesisSummary(item: NewSummaryRequiredElement, language: NewSummaryLanguage, newFormat = false): string | null {
+export function gate2HypothesisSummary(item: NewSummaryRequiredElement, language: NewSummaryLanguage, newFormat = false, currentFormat = false): string | null {
   const gate2 = item.id === "gate2_hypothesis_results";
   if ((!gate2 && !(newFormat && item.id === "stream_review_1_solution_validation")) || item.detail?.type !== "solution_validation" || !item.detail.items.length) {
     return null;
@@ -25,9 +25,9 @@ export function gate2HypothesisSummary(item: NewSummaryRequiredElement, language
   };
   if (language === "ru") {
     const forms: [string, string, string] = gate2 ? ["гипотеза", "гипотезы", "гипотез"] : ["проверка", "проверки", "проверок"];
-    const heading = gate2 ? "Результаты проверки гипотез из Gate 1" : "Подтвержденные решения";
+    const heading = gate2 ? "Результаты проверки гипотез из Gate 1" : currentFormat ? "Подтверждение решения через количественники, прототипы или фейкдоры" : "Подтвержденные решения";
     return `${heading}: ${confirmed} ${noun(confirmed, forms)} из ${total} ${confirmed === 1 ? "подтверждена" : "подтверждены"}, ${insufficient} ${noun(insufficient, forms)} из ${total} недостаточно ${insufficient === 1 ? "подтверждена" : "подтверждены"}.`;
   }
-  const label = gate2 ? "Gate 1 hypothesis validation" : "Solution validation";
+  const label = gate2 ? "Gate 1 hypothesis validation" : currentFormat ? "Solution validation through quantitative research, prototypes or fake doors" : "Solution validation";
   return `${label}: ${confirmed} of ${total} ${gate2 ? "hypotheses" : "checks"} confirmed, ${insufficient} of ${total} insufficiently confirmed.`;
 }

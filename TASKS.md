@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] 2026-10-07: Publish the user-edited New Summary as v5. Resolve selected
+  mockup/video/design links by document-local IDs after anonymization instead
+  of requiring the model to reconstruct hidden URLs. Read the full parsed
+  document link catalog and PDF URI annotations without following targets or
+  changing existing parsed artifacts. Preserve exact links, reject invented
+  IDs/URLs, and keep PDF recovery failures nonfatal with metadata-only logs.
+  Match mixed-weight hypothesis/solution headings and inline metric evidence
+  in web/PDF/Word. Historical v1-v4 reports retain their stored content/layout;
+  no automatic re-analysis. Verified locally: 297 API, 323 worker, 169 web tests,
+  Next production build, synthetic PDF visual check and exact PDF/Word hyperlink
+  assertions. Docker API/web rebuilt; local login HTTP 200. PR/CI/deploy pending.
 - [~] 2026-10-06: Publish the user's New Summary revision as v4. Align Revenue/DTB
   periods at the later common start, retain independent ending years, prefer
   shared annual columns, and use DTB H2 as an explicitly labeled yearly-column
