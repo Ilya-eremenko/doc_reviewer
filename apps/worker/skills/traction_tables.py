@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from app.services.new_summary_source_tables import (
     _number as source_number,
     block_rows as _block_rows,
+    expense_row_indices,
     verified_revenue_total,
     verified_table_blocks,
 )
@@ -84,7 +85,8 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
     found: list[tuple[int, dict[str, Any]]] = []
     active_header: list[str] = []
     active_context = ""
-    for row in rows:
+    expense_indices = expense_row_indices(rows)
+    for row_index, row in enumerate(rows):
         if not row:
             continue
         first = row[0].strip()
@@ -108,6 +110,8 @@ def _incremental_rows(rows: list[list[str]]) -> list[tuple[int, dict[str, Any]]]
             metric = next((name for name, pattern in _METRICS.items() if pattern.search(active_context)), None)
             if metric is None or not _TOTAL.search(first):
                 continue
+        if metric == "revenue" and row_index in expense_indices:
+            continue
         indices = [i for i, cell in enumerate(active_header[1:], 1) if _PERIOD.search(cell) or _TOTAL.search(cell)]
         if len(indices) < 2:
             continue

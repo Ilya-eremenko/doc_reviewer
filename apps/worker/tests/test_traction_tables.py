@@ -5,8 +5,78 @@ import json
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
 from skills.traction_tables import _block_rows, _incremental_rows, display_traction_tables, source_traction_tables
 from app.services.new_summary_source_tables import verified_revenue_total
+
+
+@pytest.mark.parametrize("section", ["CoS", "COGS", "Cost of Sales", "Себестоимость", "Operating expenses", "Total costs uplift"])
+def test_revenue_candidates_exclude_expense_section_even_with_revenue_in_name(section):
+    rows = [
+        ["Increment P&L, mR", "2026", "2027", "2026-27 total"],
+        ["Revenue uplift", "10", "20", "30"],
+        [section, "(4)", "(8)", "(12)"],
+        ["Subsidies", "(1)", "(2)", "(3)"],
+        ["Partner revenue", "(3)", "(6)", "(9)"],
+        ["Total partner revenue", "(3)", "(6)", "(9)"],
+    ]
+    candidates = _incremental_rows(rows)
+    assert len(candidates) == 1
+    assert candidates[0][1]["rows"] == [{"label": "Revenue uplift", "values": ["10", "20", "30"]}]
+
+
+def test_genuine_partner_revenue_and_negative_uplift_are_not_excluded():
+    rows = [
+        ["Increment P&L, mR", "2026", "2027", "Total"],
+        ["Partner revenue", "(10)", "20", "10"],
+        ["CoS", "1", "2", "3"],
+        ["Partner revenue", "1", "2", "3"],
+        ["Gross profit", "(11)", "18", "7"],
+        ["Revenue", "", "", ""],
+        ["Partner revenue uplift", "5", "6", "11"],
+    ]
+    candidates = _incremental_rows(rows)
+    assert [table["rows"][0]["values"] for _, table in candidates] == [["(10)", "20", "10"], ["5", "6", "11"]]
+
+
+def test_cost_context_survives_repeated_header_but_not_a_different_table():
+    rows = [
+        ["Increment P&L", "2026", "2027", "Total"],
+        ["CoS", "1", "2", "3"],
+        ["Increment P&L", "2026", "2027", "Total"],
+        ["Partner revenue", "1", "2", "3"],
+        ["Incremental revenue", "2026", "2027", "Total"],
+        ["Partner revenue", "10", "20", "30"],
+    ]
+    candidates = _incremental_rows(rows)
+    assert len(candidates) == 1
+    assert candidates[0][1]["rows"][0]["values"] == ["10", "20", "30"]
+
+
+def test_source_tables_do_not_merge_cos_into_revenue_and_keep_dtb(monkeypatch):
+    from copy import deepcopy
+    import skills.traction_tables as extraction
+
+    blocks = [{"id": "pnl", "page": 4, "metadata": {"rows": [
+        ["Increment P&L, mR", "2026", "2027", "Total"],
+        ["Revenue uplift", "10", "20", "30"],
+        ["CoS", "(1)", "(2)", "(3)"],
+        ["Partner revenue", "(1)", "(2)", "(3)"],
+    ]}}, {"id": "dtb", "page": 3, "metadata": {"rows": [
+        ["DTB cumulative, %", "2026", "2027", "Total"],
+        ["DTB cumulative", "1%", "3%", ""],
+    ]}}]
+    original = deepcopy(blocks)
+    monkeypatch.setattr(extraction, "verified_table_blocks", lambda document: blocks)
+    tables = source_traction_tables(SimpleNamespace())
+    assert [table["metric"] for table in tables] == ["revenue", "dtb"]
+    assert tables[0]["rows"] == [{"label": "Revenue uplift", "values": ["10", "20", "30"]}]
+    assert tables[0]["source_block_id"] == "pnl"
+    assert tables[1]["rows"][0]["values"][:2] == ["1%", "3%"]
+    for language in ("ru", "en"):
+        assert len(display_traction_tables(tables, language=language)["tables"][0]["rows"]) == 1
+    assert blocks == original
 
 
 def test_incremental_revenue_uses_full_source_horizon_and_excludes_tobe():

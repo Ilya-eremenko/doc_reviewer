@@ -21,6 +21,17 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] 2026-10-07: Exclude expense-section rows (e.g. Partner revenue under CoS)
+  from AI Summary Revenue tables and verified Total recovery. Production
+  source UI confirms the row is inside CoS; the selector previously matched
+  the word revenue without section context. Add a narrow Traction skill rule
+  and schema guidance, preserve genuine partner revenue/negative uplift and
+  DTB, and leave all other skill text and GC/DA/IC execution unchanged.
+  Baseline: deployed main e15ff4f (PR #98). Full API/worker suites: 651 passed;
+  focused regressions and diff check passed. Skill diff is one added bullet.
+  Saved reports are not rewritten; schema shape/version remains v6. PR/deploy
+  pending; exact deployed outcome is tracked in the local project handoff.
+
 - [~] Publish the user's next New Summary revision as v6: cumulative DTB with
   conservative source-row verification, deduplicated metric-linkage counts,
   verified mockup-link presence, primary/additional stop criteria and colored
