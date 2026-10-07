@@ -408,7 +408,7 @@
             "properties": {
               "label": { "$ref": "#/$defs/non_empty_string" },
               "source_link_id": { "type": "string", "pattern": "^source-link-[0-9]{4}$", "description": "Preferred model output: exact id from source_document.links for a relevant mockup, video, product design or user flow (often FAQ 1). The server resolves it to the exact original URL before saving. Hidden/anonymized URLs do not mean unavailable." },
-              "url": { "type": "string", "pattern": "^https?://", "description": "Exact URL copied from the source document. Never construct or guess URLs." }
+              "url": { "type": "string", "pattern": "^[hH][tT][tT][pP][sS]?://", "description": "Exact URL copied from the source document. Never construct or guess URLs." }
             }
           }
         }

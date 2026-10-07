@@ -21,6 +21,10 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] Follow-up to PR #96: preserve case-insensitive HTTP(S) schemes in exact
+  source links across schema, web, PDF/Word. Prevent uppercase PDF URI schemes
+  from failing Summary validation; add anonymization and export regressions.
+
 - [~] 2026-10-07: Publish the user-edited New Summary as v5. Resolve selected
   mockup/video/design links by document-local IDs after anonymization instead
   of requiring the model to reconstruct hidden URLs. Read the full parsed
