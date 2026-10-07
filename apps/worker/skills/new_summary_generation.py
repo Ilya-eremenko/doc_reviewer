@@ -697,6 +697,7 @@ def _generation_prompt(
             "Фрагменты `source_document.parsed_text_excerpt` взяты из разных частей исходного документа и не являются полным текстом. Отличай явно выбранный текущий сценарий и фокус инициативы от старых, расчётных и альтернативных вариантов; при неразрешённом противоречии не угадывай, какой вариант действует.",
             "В фоновом запуске нет MCP или браузера: не утверждай, что открыл внешнюю ссылку. Оценивай её содержимое только если оно уже присутствует во входных результатах.",
             "Для Mockups, видео, дизайна или пользовательского flow выбирай подходящие ссылки из source_document.links по label/context, включая FAQ 1 и подписи See full design here или MLP. Верни source_link_id, точно равный id выбранной ссылки, вместо url. Адреса скрыты анонимизатором: это НЕ означает, что ссылки невозможно скопировать; сервер восстановит их по id. Не выбирай финансовые модели, исследования и другие ссылки только потому, что они рядом. Наличие ссылки не доказывает содержимое файла по ней.",
+            "Для статуса пункта Mockups достаточно хотя бы одной такой исходной ссылки: поставь Есть, не проверяя содержимое по адресу.",
             "Если ни Revenue, ни DTB нельзя достоверно выделить из источников, верни `traction_summary: {\"tables\": []}`. Не создавай фиктивную строку или период.",
             "Не добавляй Markdown вокруг JSON. Не добавляй пояснения вне JSON.",
             "## JSON Schema",
@@ -868,9 +869,15 @@ def _validated_source_dependent_report(
         normalized_version.pop("required_details", None)
         source_tables = source_payload.get("source_traction_tables")
         if isinstance(source_tables, list) and source_tables:
-            normalized_version["traction_summary"] = display_traction_tables(
+            extracted = display_traction_tables(
                 source_tables, language=expected_language
             )
+            # A parser-confirmed Revenue table must not erase DTB found elsewhere by the skill.
+            tables_by_metric = {table["metric"]: table for table in normalized_version["traction_summary"]["tables"]}
+            tables_by_metric.update({table["metric"]: table for table in extracted["tables"]})
+            normalized_version["traction_summary"] = {"tables": [
+                tables_by_metric[metric] for metric in ("revenue", "dtb") if metric in tables_by_metric
+            ]}
         normalized_version = with_traction_totals(
             normalized_version,
             source_tables=source_tables if isinstance(source_tables, list) and source_tables else None,
@@ -892,7 +899,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized["schema_version"] = "new-summary-v5"
+    normalized["schema_version"] = "new-summary-v6"
     normalized.setdefault("language", "en")
     title = normalized.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -1090,6 +1097,11 @@ def _required_elements_from_source(
             detail = None
         if item_id == "gate2_user_flow":
             detail = _verified_source_links(detail, source_payload)
+        if item_id.endswith("_stop_criteria") and detail is not None:
+            primary = detail.get("primary_criterion", "")
+            evidence_text = str((generated_item or {}).get("evidence") or "")
+            detail["criteria"] = [criterion for criterion in detail["criteria"]
+                                  if _text_key(criterion) not in {_text_key(primary), _text_key(evidence_text)}]
         element: dict[str, Any] = {
             "id": item_id,
             "label": label,
@@ -1105,6 +1117,14 @@ def _required_elements_from_source(
             generated_item,
             target_language=target_language,
         )
+        if item_id.endswith("_stop_criteria"):
+            if evidence:
+                evidence = _stop_terminology(evidence, target_language)
+            if detail is not None:
+                detail["criteria"] = [_stop_terminology(value, target_language) for value in detail["criteria"]]
+                if detail.get("primary_criterion"):
+                    detail["primary_criterion"] = _stop_terminology(detail["primary_criterion"], target_language)
+                    evidence = evidence or detail["primary_criterion"]
         if item_id in {"gate2_hypothesis_results", "stream_review_1_solution_validation"} and detail is None:
             hypothesis = item_id == "gate2_hypothesis_results"
             evidence = (
@@ -1191,10 +1211,11 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
         items.sort(key=lambda item: item["verdict"] != "confirmed")
         return {"type": detail_type, "items": items} if items else None
     if detail_type == "metric_binding":
+        seen: set[str] = set()
         return {
             "type": detail_type,
-            "input_metrics": _normalized_metric_binding_items(detail.get("input_metrics")),
-            "output_metrics": _normalized_metric_binding_items(detail.get("output_metrics")),
+            "input_metrics": _normalized_metric_binding_items(detail.get("input_metrics"), seen=seen),
+            "output_metrics": _normalized_metric_binding_items(detail.get("output_metrics"), seen=seen),
         }
     if detail_type == "next_review_plan":
         outputs = _non_empty_strings(detail.get("outputs_until_next_review"))
@@ -1207,8 +1228,9 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
             "metrics_until_next_review": metrics,
         }
     if detail_type == "stop_criteria":
-        criteria = _non_empty_strings(detail.get("criteria"))
-        return {"type": detail_type, "criteria": criteria}
+        criteria = list({_text_key(value): value for value in _non_empty_strings(detail.get("criteria"))}.values())
+        primary = _non_empty_string(detail.get("primary_criterion"))
+        return {"type": detail_type, "criteria": criteria, **({"primary_criterion": primary} if primary else {})}
     if detail_type == "plan_fact":
         launches = [
             {"output": output, "status": status, **({"comment": comment} if comment else {})}
@@ -1265,7 +1287,7 @@ def _verified_source_links(detail: dict[str, Any] | None, source: dict[str, Any]
     return {"type": "source_links", "availability": availability, "links": links}
 
 
-def _normalized_metric_binding_items(value: Any) -> list[dict[str, str]]:
+def _normalized_metric_binding_items(value: Any, *, seen: set[str] | None = None) -> list[dict[str, str]]:
     if not isinstance(value, list):
         return []
     items = [
@@ -1277,8 +1299,24 @@ def _normalized_metric_binding_items(value: Any) -> list[dict[str, str]]:
         for evidence in [_non_empty_string(item.get("evidence"))]
         if metric is not None and binding is not None and evidence is not None
     ]
-    items.sort(key=lambda item: item["binding"] != "confirmed")
-    return items
+    seen = seen if seen is not None else set()
+    unique = []
+    for item in items:
+        key = _text_key(item["metric"])
+        if key not in seen:
+            unique.append(item)
+            seen.add(key)
+    unique.sort(key=lambda item: item["binding"] != "confirmed")
+    return unique
+
+
+def _text_key(value: str) -> str:
+    return " ".join(re.findall(r"\w+", value.casefold()))
+
+
+def _stop_terminology(value: str, language: str) -> str:
+    return re.sub(r"\b(?:stop[\s_\-–—]*loss(?:es)?|стоп[\s_\-–—]*лосс?\w*)\b",
+                  "stop criteria" if language == "en" else "stop-критерии", value, flags=re.IGNORECASE)
 
 
 def _normalized_metric_plan_rows(value: Any) -> list[dict[str, str]]:
@@ -1373,20 +1411,23 @@ def _required_element_status(
     required_details: dict[str, Any],
 ) -> str:
     generated_status = str((generated_item or {}).get("status") or "").strip().lower()
+    if item_id == "gate2_user_flow":
+        detail = required_details.get(item_id)
+        if isinstance(detail, dict) and detail.get("type") == "source_links" and detail.get("links"):
+            return "есть"
     if item_id == "gate2_value_proposition":
         generated_evidence = _non_empty_string((generated_item or {}).get("evidence"))
         if generated_status in {"есть", "present"} and generated_evidence:
             return "есть"
     if item_id.endswith("_stop_criteria"):
         detail = required_details.get(item_id)
-        if generated_status in {"частично подтверждено", "partially confirmed"} and _non_empty_string((generated_item or {}).get("evidence")):
-            return "частично подтверждено"
-        if generated_status in {"есть", "present"} and (
-            _non_empty_string((generated_item or {}).get("evidence")) or (
-                isinstance(detail, dict) and detail.get("type") == "stop_criteria" and detail.get("criteria")
-            )
-        ):
+        if isinstance(detail, dict) and (detail.get("primary_criterion") or detail.get("criteria")):
             return "есть"
+        if generated_status in {"есть", "present", "частично подтверждено", "partially confirmed"} and _non_empty_string((generated_item or {}).get("evidence")):
+            return "есть"
+        if str((item or {}).get("status") or "").lower() in {"green", "present", "yellow", "partial"}:
+            return "есть"
+        return "нет"
     if item_id in {"gate2_hypothesis_results", "stream_review_1_solution_validation"}:
         detail = required_details.get(item_id)
         if isinstance(detail, dict) and detail.get("type") == "solution_validation":
@@ -1416,10 +1457,6 @@ def _required_element_status(
         return "есть"
     if status in {"yellow", "partial", "partially_confirmed", "частично подтверждено"}:
         return "частично подтверждено"
-    if item_id.endswith("_stop_criteria"):
-        detail = required_details.get(item_id)
-        if isinstance(detail, dict) and detail.get("type") == "stop_criteria" and detail.get("criteria"):
-            return "частично подтверждено"
     return "нет"
 
 

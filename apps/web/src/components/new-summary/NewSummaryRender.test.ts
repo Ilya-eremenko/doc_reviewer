@@ -33,6 +33,35 @@ const content: NewSummaryContent = {
 };
 
 describe("new-summary-v4 rendering", () => {
+  it("renders v6 metric counts, blue links, additional stops and colored launches", () => {
+    const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v6", required_elements: [
+      ...content.required_elements,
+      { id: "gate2_metric_linkage", label: "Связь метрик.", status: "частично подтверждено", detail: {
+        type: "metric_binding", input_metrics: [{ metric: "Конверсия", binding: "confirmed", evidence: "Связана с целью." }],
+        output_metrics: [{ metric: "Объем", binding: "insufficient", evidence: "Связь не показана." }],
+      } },
+      { id: "gate2_stop_criteria", label: "Stop-критерии", status: "есть", evidence: "Основной критерий.", detail: {
+        type: "stop_criteria", primary_criterion: "Основной критерий", criteria: ["Дополнительный критерий."],
+      } },
+      { id: "gate3_stop_criteria", label: "Stop-критерии", status: "есть", detail: { type: "stop_criteria", criteria: [] } },
+    ] };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { embedded: true, report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain('<strong>Связь метрик:</strong><span> связь 1 метрики из 2 подтверждена, связь 1 метрики из 2 недостаточно подтверждена.</span>');
+    expect(html).toContain('class="new-summary-source-link" href="https://example.com/mockup"');
+    expect(html).toContain('class="new-summary-status-chip launch-partial">Частично выполнено</span>');
+    expect(html.match(/<h4>Дополнительные найденные Stop критерии<\/h4>/g)).toHaveLength(1);
+    expect(html).not.toContain("Качество документа</span>");
+  });
+
+  it("does not invent metric counts for an empty v6 list", () => {
+    const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v6", required_elements: [{
+      id: "gate2_metric_linkage", label: "Метрики", status: "нет", detail: { type: "metric_binding", input_metrics: [], output_metrics: [] },
+    }] };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: updated } }));
+    expect(html).not.toContain("0 из 0");
+    expect(html).not.toContain('class="new-summary-required__status"');
+  });
+
   it("renders source metrics in body rows, structured plan-fact and safe source links", () => {
     const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { embedded: true, report: { analysis_id: "test", ru: content, en: { ...content, language: "en" } } }));
     expect(html).toContain("<th>Output-метрики — uplifts</th>");

@@ -70,6 +70,7 @@ export type NewSummaryRequiredDetails =
     }
   | {
       type: "stop_criteria";
+      primary_criterion?: string;
       criteria: string[];
     }
   | {
@@ -80,7 +81,7 @@ export type NewSummaryRequiredDetails =
 export type NewSummaryRequiredDetailsById = Record<string, NewSummaryRequiredDetails>;
 
 export type NewSummaryContent = {
-  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3" | "new-summary-v4" | "new-summary-v5";
+  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3" | "new-summary-v4" | "new-summary-v5" | "new-summary-v6";
   language: NewSummaryLanguage;
   title: string;
   stage: NewSummaryStage;

@@ -426,8 +426,8 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["schema_version"] == "new-summary-v5"
-        assert state["en"]["payload"]["schema_version"] == "new-summary-v5"
+        assert state["ru"]["payload"]["schema_version"] == "new-summary-v6"
+        assert state["en"]["payload"]["schema_version"] == "new-summary-v6"
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
         assert state["en"]["payload"]["context"] == "The team is validating a new product."
         assert state["progress"]["stage"] == "completed"
@@ -566,7 +566,8 @@ def test_native_progress_review_summary_keeps_its_own_checklist_and_stage(tmp_pa
                 "progress_review_next_half_year_plan", "progress_review_plan_fact_last_half_year",
                 "progress_review_stop_criteria",
             ]
-            assert all(item["status"] == "частично подтверждено" for item in payload["required_elements"])
+            assert all(item["status"] == ("есть" if item["id"].endswith("_stop_criteria") else "частично подтверждено")
+                       for item in payload["required_elements"])
     finally:
         db.close()
         get_settings.cache_clear()
@@ -702,7 +703,7 @@ def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
 
 def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v5"
+    report["schema_version"] = "new-summary-v6"
     for version in report["versions"]:
         for legacy in ("confirmed", "insufficiently_confirmed", "other"):
             version.pop(legacy)
@@ -877,7 +878,7 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
 
 def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v5"
+    report["schema_version"] = "new-summary-v6"
     for version in report["versions"]:
         version.pop("confirmed")
         version.pop("insufficiently_confirmed")
@@ -957,7 +958,7 @@ def test_new_summary_v4_uses_concise_solution_checks_and_consistent_problem_stat
         payload=report, source_payload=source,
         response_schema=new_summary_generation._new_summary_schema(),
     )
-    assert result["schema_version"] == "new-summary-v5"
+    assert result["schema_version"] == "new-summary-v6"
     for version in result["versions"]:
         elements = {item["id"]: item for item in version["required_elements"]}
         assert elements["stream_review_1_confirmed_problem"]["status"] == "частично подтверждено"
@@ -982,7 +983,7 @@ def test_new_summary_required_elements_preserve_three_gate_checklist_statuses():
         ) == summary_status
 
 
-def test_explicit_stop_criterion_is_partial_when_gate_checklist_missed_it():
+def test_explicit_stop_criterion_is_present_even_when_gate_checklist_missed_it():
     assert new_summary_generation._required_element_status(
         {"status": "red"},
         item_id="progress_review_stop_criteria",
@@ -990,7 +991,7 @@ def test_explicit_stop_criterion_is_partial_when_gate_checklist_missed_it():
         required_details={"progress_review_stop_criteria": {
             "type": "stop_criteria", "criteria": ["Stop after failed pilot"],
         }},
-    ) == "частично подтверждено"
+    ) == "есть"
     assert new_summary_generation._required_element_status(
         {"status": "red"},
         item_id="progress_review_stop_criteria",

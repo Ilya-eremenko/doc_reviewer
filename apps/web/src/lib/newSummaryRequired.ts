@@ -1,5 +1,19 @@
 import type { NewSummaryLanguage, NewSummaryRequiredElement } from "./newSummary";
 
+export function metricBindingSummary(item: NewSummaryRequiredElement, language: NewSummaryLanguage): string | null {
+  if (!["gate2_metric_linkage", "stream_review_1_input_output_metric_link"].includes(item.id) || item.detail?.type !== "metric_binding") return null;
+  const metrics = [...item.detail.input_metrics, ...item.detail.output_metrics];
+  const total = metrics.length;
+  if (!total) return null;
+  const confirmed = metrics.filter((entry) => entry.binding === "confirmed").length;
+  const insufficient = total - confirmed;
+  const label = item.label.replace(/[.:]+$/, "");
+  const noun = (count: number) => count % 10 === 1 && count % 100 !== 11 ? "метрики" : "метрик";
+  return language === "ru"
+    ? `${label}: связь ${confirmed} ${noun(confirmed)} из ${total} подтверждена, связь ${insufficient} ${noun(insufficient)} из ${total} недостаточно подтверждена.`
+    : `${label}: binding of ${confirmed} of ${total} metrics confirmed, binding of ${insufficient} of ${total} insufficiently confirmed.`;
+}
+
 export function confirmedFirst<T>(items: T[], status: (item: T) => "confirmed" | "insufficient"): T[] {
   return [...items].sort((a, b) => Number(status(b) === "confirmed") - Number(status(a) === "confirmed"));
 }

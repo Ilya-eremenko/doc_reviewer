@@ -314,8 +314,10 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Inches(0.22)
         paragraph.paragraph_format.space_after = Pt(2)
-        current_format = content.get("schema_version") == "new-summary-v5"
-        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
+        v6 = content.get("schema_version") == "new-summary-v6"
+        current_format = v6 or content.get("schema_version") == "new-summary-v5"
+        counted_metrics = v6 and item.get("id") in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}
+        hypothesis_heading = (_metric_binding_heading(item, labels) if counted_metrics else None) or _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
         if current_format and hypothesis_heading:
             heading_label, separator, counts = hypothesis_heading.partition(":")
             paragraph.add_run((f"{index}. " if numbered else "") + heading_label + separator).bold = True
@@ -323,7 +325,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         else:
             title = paragraph.add_run((f"{index}. " if numbered else "") + (hypothesis_heading or _clean_text(item.get("label"))))
             title.bold = not (hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4")
-        if hypothesis_heading is None:
+        if hypothesis_heading is None and not counted_metrics:
             status = _localized_status(item, labels)
             status_run = paragraph.add_run(f"{_VERDICT_GAP}{status}")
             status_run.bold = True
@@ -342,7 +344,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
                 run.font.color.rgb = RGBColor(93, 102, 117)
         detail = item.get("detail")
         if isinstance(detail, dict):
-            _append_docx_detail(document, detail, labels, inline_item_id=item.get("id"), current_format=current_format)
+            _append_docx_detail(document, detail, labels, inline_item_id=item.get("id"), current_format=current_format, v6=v6)
 
 
 def _append_docx_details(document: DocxDocument, content: dict[str, Any], labels: dict[str, str]) -> None:
@@ -362,6 +364,7 @@ def _append_docx_detail(
     *,
     inline_item_id: str | None = None,
     current_format: bool = False,
+    v6: bool = False,
 ) -> None:
     detail_type = detail.get("type")
     if detail_type == "hypotheses_with_thresholds":
@@ -429,7 +432,18 @@ def _append_docx_detail(
         plan_fact = detail_type == "plan_fact"
         outputs_title = labels["outputs_until_gate3"] if inline_item_id == "gate2_commitments" else labels["outputs_until_next"]
         outputs, metrics = _plan_detail_rows(detail, labels)
-        _append_docx_list_section(document, labels["launches"] if plan_fact else outputs_title, outputs, RGBColor(17, 24, 39))
+        if plan_fact and v6 and outputs:
+            _append_docx_heading(document, labels["launches"])
+            for item in _dict_list(detail.get("launches")):
+                paragraph = document.add_paragraph(style="List Bullet")
+                paragraph.add_run(_clean_text(item.get("output")))
+                status = paragraph.add_run(_VERDICT_GAP + labels.get("launch_" + str(item.get("status")), labels["launch_unknown"]))
+                status.bold = True
+                status.font.color.rgb = RGBColor.from_string(_launch_color(item.get("status"))[1:])
+                if item.get("comment"):
+                    paragraph.add_run(f". {_clean_text(item['comment'])}")
+        else:
+            _append_docx_list_section(document, labels["launches"] if plan_fact else outputs_title, outputs, RGBColor(17, 24, 39))
         if metrics:
             if inline_item_id:
                 _append_docx_heading(document, labels["metrics_fact"] if plan_fact else labels["metrics_until_gate3"] if inline_item_id == "gate2_commitments" else labels["metrics_until_next"])
@@ -444,6 +458,11 @@ def _append_docx_detail(
                 table.rows[row_index].cells[2].text = _clean_text(row.get("next_review"))
             _style_docx_table(table)
         return
+    if v6 and detail_type == "stop_criteria" and detail.get("criteria"):
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_before = Pt(5)
+        paragraph.paragraph_format.keep_with_next = True
+        paragraph.add_run(labels["additional_stops"]).bold = True
     for item in _string_list(detail.get("criteria")):
         document.add_paragraph(item, style="List Number" if detail_type == "criteria_list" else "List Bullet")
 
@@ -623,8 +642,10 @@ def _append_pdf_required(
             "fraction": _TEXT,
         }[_required_status_kind(item)]
         status = _localized_status(item, labels)
-        current_format = content.get("schema_version") == "new-summary-v5"
-        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
+        v6 = content.get("schema_version") == "new-summary-v6"
+        current_format = v6 or content.get("schema_version") == "new-summary-v5"
+        counted_metrics = v6 and item.get("id") in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}
+        hypothesis_heading = (_metric_binding_heading(item, labels) if counted_metrics else None) or _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
         heading = (f"<b>{_xml(hypothesis_heading)}</b>" if hypothesis_heading else
                    f"<b>{_xml(item.get('label'))}</b>{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(status)}</b></font>")
         if hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4":
@@ -632,6 +653,8 @@ def _append_pdf_required(
         if current_format and hypothesis_heading:
             heading_label, separator, counts = hypothesis_heading.partition(":")
             heading = f"<b>{_xml(heading_label + separator)}</b> {_xml(counts)}"
+        elif counted_metrics:
+            heading = f"<b>{_xml(item.get('label'))}</b>"
         if numbered:
             heading = f"{index}. {heading}"
         story.append(Paragraph(heading, styles["required"]))
@@ -639,7 +662,7 @@ def _append_pdf_required(
             story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
         detail = item.get("detail")
         if isinstance(detail, dict):
-            _append_pdf_detail(story, detail, labels, styles, frame_width, inline_item_id=item.get("id"), current_format=current_format)
+            _append_pdf_detail(story, detail, labels, styles, frame_width, inline_item_id=item.get("id"), current_format=current_format, v6=v6)
 
 
 def _append_pdf_details(
@@ -667,6 +690,7 @@ def _append_pdf_detail(
     *,
     inline_item_id: str | None = None,
     current_format: bool = False,
+    v6: bool = False,
 ) -> None:
     detail_type = detail.get("type")
     if detail_type == "hypotheses_with_thresholds":
@@ -722,7 +746,18 @@ def _append_pdf_detail(
         plan_fact = detail_type == "plan_fact"
         outputs_title = labels["outputs_until_gate3"] if inline_item_id == "gate2_commitments" else labels["outputs_until_next"]
         outputs, metrics = _plan_detail_rows(detail, labels)
-        _append_pdf_list_section(story, labels["launches"] if plan_fact else outputs_title, outputs, _TEXT, styles)
+        if plan_fact and v6 and outputs:
+            story.append(Paragraph(_xml(labels["launches"]), styles["subheading"]))
+            entries = []
+            for item in _dict_list(detail.get("launches")):
+                status = labels.get("launch_" + str(item.get("status")), labels["launch_unknown"])
+                entry = f'{_xml(item.get("output"))}{_VERDICT_GAP}<font color="{_launch_color(item.get("status"))}"><b>{_xml(status)}</b></font>'
+                if item.get("comment"):
+                    entry += f'. {_xml(item["comment"])}'
+                entries.append(ListItem(Paragraph(entry, styles["body"])))
+            story.append(ListFlowable(entries, bulletType="bullet", leftIndent=15))
+        else:
+            _append_pdf_list_section(story, labels["launches"] if plan_fact else outputs_title, outputs, _TEXT, styles)
         if metrics:
             if inline_item_id:
                 story.append(Spacer(1, 10))
@@ -751,7 +786,13 @@ def _append_pdf_detail(
         if entries:
             story.append(ListFlowable([ListItem(item) for item in entries], bulletType="1", leftIndent=15))
         return
+    if v6 and detail.get("criteria"):
+        story.append(Paragraph(_xml(labels["additional_stops"]), styles["subheading"]))
     _append_pdf_list_section(story, "", _string_list(detail.get("criteria")), _TEXT, styles)
+
+
+def _launch_color(status: Any) -> str:
+    return {"completed": _SUCCESS, "partial": _WARNING, "not_completed": _DANGER}.get(status, _MUTED)
 
 
 def _append_pdf_provenance(
@@ -787,6 +828,7 @@ def _labels(language: str) -> dict[str, str]:
     if language == "en":
         return {
             "appendices": "Appendices",
+            "additional_stops": "Additional stop criteria",
             "binding_confirmed": "Binding is relevant",
             "binding_insufficient": "Binding seems irrelevant",
             "output_header": "Output metrics — uplifts",
@@ -831,6 +873,7 @@ def _labels(language: str) -> dict[str, str]:
         "binding_insufficient": "Связь кажется неподтвержденной",
         "output_header": "Output-метрики — uplifts",
         "launches": "План-факт по запускам",
+        "additional_stops": "Дополнительные найденные Stop критерии",
         "metrics_fact": "План-факт по метрикам",
         "planned": "План",
         "fact": "Факт",
@@ -938,6 +981,23 @@ def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str], *, n
     heading = "Результаты проверки гипотез из Gate 1" if gate2 else ("Подтверждение решения через количественники, прототипы или фейкдоры" if current_format else "Подтвержденные решения")
     return (f"{heading}: {confirmed} {_ru_count(confirmed, forms)} из {total} {'подтверждена' if confirmed == 1 else 'подтверждены'}, "
             f"{insufficient} {_ru_count(insufficient, forms)} из {total} недостаточно {'подтверждена' if insufficient == 1 else 'подтверждены'}.")
+
+
+def _metric_binding_heading(item: dict[str, Any], labels: dict[str, str]) -> str | None:
+    detail = item.get("detail")
+    if not isinstance(detail, dict) or detail.get("type") != "metric_binding":
+        return None
+    metrics = _dict_list(detail.get("input_metrics")) + _dict_list(detail.get("output_metrics"))
+    total = len(metrics)
+    if not total:
+        return None
+    confirmed = sum(entry.get("binding") == "confirmed" for entry in metrics)
+    insufficient = total - confirmed
+    label = _clean_text(item.get("label")).rstrip(".:")
+    if labels["required"] == "Required document elements":
+        return f"{label}: binding of {confirmed} of {total} metrics confirmed, binding of {insufficient} of {total} insufficiently confirmed."
+    noun = lambda count: "метрики" if count % 10 == 1 and count % 100 != 11 else "метрик"
+    return f"{label}: связь {confirmed} {noun(confirmed)} из {total} подтверждена, связь {insufficient} {noun(insufficient)} из {total} недостаточно подтверждена."
 
 
 def _ru_count(value: int, forms: tuple[str, str, str]) -> str:
