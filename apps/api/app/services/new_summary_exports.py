@@ -314,9 +314,15 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Inches(0.22)
         paragraph.paragraph_format.space_after = Pt(2)
-        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered)
-        title = paragraph.add_run((f"{index}. " if numbered else "") + (hypothesis_heading or _clean_text(item.get("label"))))
-        title.bold = not (hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4")
+        current_format = content.get("schema_version") == "new-summary-v5"
+        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
+        if current_format and hypothesis_heading:
+            heading_label, separator, counts = hypothesis_heading.partition(":")
+            paragraph.add_run((f"{index}. " if numbered else "") + heading_label + separator).bold = True
+            paragraph.add_run(counts).bold = False
+        else:
+            title = paragraph.add_run((f"{index}. " if numbered else "") + (hypothesis_heading or _clean_text(item.get("label"))))
+            title.bold = not (hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4")
         if hypothesis_heading is None:
             status = _localized_status(item, labels)
             status_run = paragraph.add_run(f"{_VERDICT_GAP}{status}")
@@ -336,7 +342,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
                 run.font.color.rgb = RGBColor(93, 102, 117)
         detail = item.get("detail")
         if isinstance(detail, dict):
-            _append_docx_detail(document, detail, labels, inline_item_id=item.get("id"))
+            _append_docx_detail(document, detail, labels, inline_item_id=item.get("id"), current_format=current_format)
 
 
 def _append_docx_details(document: DocxDocument, content: dict[str, Any], labels: dict[str, str]) -> None:
@@ -355,6 +361,7 @@ def _append_docx_detail(
     labels: dict[str, str],
     *,
     inline_item_id: str | None = None,
+    current_format: bool = False,
 ) -> None:
     detail_type = detail.get("type")
     if detail_type == "hypotheses_with_thresholds":
@@ -388,10 +395,12 @@ def _append_docx_detail(
             for item in metrics:
                 bullet = document.add_paragraph(style="List Bullet")
                 bullet.add_run(_clean_text(item.get("metric"))).bold = True
+                if current_format:
+                    bullet.add_run(f" — {_clean_text(item.get('evidence'))}").bold = False
                 status_run = bullet.add_run(f"{_VERDICT_GAP}{_detail_status(item.get('binding'), labels)}")
                 status_run.bold = True
                 status_run.font.color.rgb = RGBColor(15, 163, 107) if item.get("binding") == "confirmed" else RGBColor(199, 120, 0)
-                if item.get("evidence"):
+                if item.get("evidence") and not current_format:
                     evidence = bullet.add_run(f"\n{_clean_text(item.get('evidence'))}")
                     evidence.font.size = Pt(8)
                     evidence.font.color.rgb = RGBColor(93, 102, 117)
@@ -614,11 +623,15 @@ def _append_pdf_required(
             "fraction": _TEXT,
         }[_required_status_kind(item)]
         status = _localized_status(item, labels)
-        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered)
+        current_format = content.get("schema_version") == "new-summary-v5"
+        hypothesis_heading = _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
         heading = (f"<b>{_xml(hypothesis_heading)}</b>" if hypothesis_heading else
                    f"<b>{_xml(item.get('label'))}</b>{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(status)}</b></font>")
         if hypothesis_heading and item.get("id") == "gate2_hypothesis_results" and content.get("schema_version") == "new-summary-v4":
             heading = _xml(hypothesis_heading)
+        if current_format and hypothesis_heading:
+            heading_label, separator, counts = hypothesis_heading.partition(":")
+            heading = f"<b>{_xml(heading_label + separator)}</b> {_xml(counts)}"
         if numbered:
             heading = f"{index}. {heading}"
         story.append(Paragraph(heading, styles["required"]))
@@ -626,7 +639,7 @@ def _append_pdf_required(
             story.append(Paragraph(f'<font color="{_MUTED}">{_xml(item.get("evidence"))}</font>', styles["evidence"]))
         detail = item.get("detail")
         if isinstance(detail, dict):
-            _append_pdf_detail(story, detail, labels, styles, frame_width, inline_item_id=item.get("id"))
+            _append_pdf_detail(story, detail, labels, styles, frame_width, inline_item_id=item.get("id"), current_format=current_format)
 
 
 def _append_pdf_details(
@@ -653,6 +666,7 @@ def _append_pdf_detail(
     frame_width: float,
     *,
     inline_item_id: str | None = None,
+    current_format: bool = False,
 ) -> None:
     detail_type = detail.get("type")
     if detail_type == "hypotheses_with_thresholds":
@@ -684,11 +698,14 @@ def _append_pdf_detail(
             entries = []
             for item in metrics:
                 color = _SUCCESS if item.get("binding") == "confirmed" else _WARNING
+                metric = f"<b>{_xml(item.get('metric'))}</b>"
+                status = f"{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_detail_status(item.get('binding'), labels))}</b></font>"
+                evidence = _xml(item.get("evidence"))
+                entry = (f"{metric} — {evidence}{status}" if current_format else
+                         f'{metric}{status}<br/><font size="8" color="{_MUTED}">{evidence}</font>')
                 entries.append(
                     Paragraph(
-                        f"<b>{_xml(item.get('metric'))}</b>"
-                        f"{_VERDICT_GAP}<font color=\"{color}\"><b>{_xml(_detail_status(item.get('binding'), labels))}</b></font>"
-                        f"<br/><font size=\"8\" color=\"{_MUTED}\">{_xml(item.get('evidence'))}</font>",
+                        entry,
                         styles["body"],
                     )
                 )
@@ -899,7 +916,7 @@ def _confirmed_first(items: list[dict[str, Any]], key: str) -> list[dict[str, An
     return sorted(items, key=lambda item: item.get(key) != "confirmed")
 
 
-def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str], *, new_format: bool = False) -> str | None:
+def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str], *, new_format: bool = False, current_format: bool = False) -> str | None:
     detail = item.get("detail")
     gate2 = item.get("id") == "gate2_hypothesis_results"
     if not (gate2 or (new_format and item.get("id") == "stream_review_1_solution_validation")) or not isinstance(detail, dict) or detail.get("type") != "solution_validation":
@@ -915,9 +932,10 @@ def _gate2_hypothesis_heading(item: dict[str, Any], labels: dict[str, str], *, n
         return (f"Gate hypothesis validation: {confirmed} of {total} hypotheses confirmed, {insufficient} of {total} insufficiently confirmed." if english
                 else f"Результаты проверки гипотез из Gate: {confirmed} гипотез из {total} подтверждены, {insufficient} гипотез из {total} недостаточно подтверждены.")
     if english:
-        return f"{'Gate 1 hypothesis validation' if gate2 else 'Solution validation'}: {confirmed} of {total} {'hypotheses' if gate2 else 'checks'} confirmed, {insufficient} of {total} insufficiently confirmed."
+        heading = "Gate 1 hypothesis validation" if gate2 else ("Solution validation through quantitative research, prototypes or fake doors" if current_format else "Solution validation")
+        return f"{heading}: {confirmed} of {total} {'hypotheses' if gate2 else 'checks'} confirmed, {insufficient} of {total} insufficiently confirmed."
     forms = ("гипотеза", "гипотезы", "гипотез") if gate2 else ("проверка", "проверки", "проверок")
-    heading = "Результаты проверки гипотез из Gate 1" if gate2 else "Подтвержденные решения"
+    heading = "Результаты проверки гипотез из Gate 1" if gate2 else ("Подтверждение решения через количественники, прототипы или фейкдоры" if current_format else "Подтвержденные решения")
     return (f"{heading}: {confirmed} {_ru_count(confirmed, forms)} из {total} {'подтверждена' if confirmed == 1 else 'подтверждены'}, "
             f"{insufficient} {_ru_count(insufficient, forms)} из {total} недостаточно {'подтверждена' if insufficient == 1 else 'подтверждены'}.")
 

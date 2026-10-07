@@ -51,4 +51,24 @@ describe("new-summary-v4 rendering", () => {
     expect(tractionRowLabel(table, "Scenario A")).toBe("Revenue: Scenario A");
     expect(tractionRowLabel(table, "Incremental Revenue")).toBe("Incremental Revenue");
   });
+
+  it("renders v5 heading counts unbolded and metric evidence before its verdict", () => {
+    const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v5", required_elements: [
+      { id: "gate2_hypothesis_results", label: "Hypotheses", status: "1/1", detail: {
+        type: "solution_validation", items: [{ text: "Пилот подтвердил спрос.", verdict: "confirmed" }],
+      } },
+      { id: "stream_review_1_solution_validation", label: "Solutions", status: "1/1", detail: {
+        type: "solution_validation", items: [{ text: "Прототип подтвердил решение.", verdict: "confirmed" }],
+      } },
+      { id: "gate2_metric_linkage", label: "Метрики", status: "есть", detail: {
+        type: "metric_binding", input_metrics: [{ metric: "Конверсия", evidence: "Измеряет достижение цели.", binding: "confirmed" }], output_metrics: [],
+      } },
+    ] };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { embedded: true, report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain('<strong>Результаты проверки гипотез из Gate 1:</strong><span> 1 гипотеза');
+    expect(html).toContain('<strong>Подтверждение решения через количественники, прототипы или фейкдоры:</strong><span> 1 проверка');
+    expect(html).toContain('<strong>Конверсия</strong> — Измеряет достижение <span class="new-summary-inline-tail">цели.<span');
+    expect(html.indexOf("Измеряет достижение")).toBeLessThan(html.indexOf("Связь подтверждена"));
+    expect(html).not.toContain('<p class="new-summary-validation-evidence">');
+  });
 });

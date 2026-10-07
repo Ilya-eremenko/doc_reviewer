@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v4"
+      "const": "new-summary-v5"
     },
     "language": {
       "const": "en",
@@ -265,7 +265,7 @@
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/$defs/solution_validation_item" },
-          "description": "List confirmed items first, then insufficient items. The visible Gate 2 heading uses X confirmed, Y total and Z insufficient from this array."
+          "description": "List confirmed items first, then insufficient items. Gate 2 and Stream Review 1 visible headings count this array. The heading label before the colon is bold; the counts after the colon are regular weight."
         }
       }
     },
@@ -305,13 +305,13 @@
       "additionalProperties": false,
       "required": ["metric", "binding", "evidence"],
       "properties": {
-        "metric": { "$ref": "#/$defs/non_empty_string" },
+        "metric": { "$ref": "#/$defs/non_empty_string", "description": "Metric name without measurement units or Markdown. Rendered bold, followed by regular evidence and then the colored binding status on the same flowing line." },
         "binding": {
           "type": "string",
           "enum": ["confirmed", "insufficient"],
           "description": "Relevance to the product/problem/UTP, not empirical validation or attainment of the metric target. A theoretically relevant metric can have confirmed binding even without a completed test."
         },
-        "evidence": { "$ref": "#/$defs/non_empty_string" }
+        "evidence": { "$ref": "#/$defs/non_empty_string", "description": "One source-grounded sentence explaining relevance to the problem/UTP. Display after the metric name, before the binding status, without bold or a forced line break." }
       }
     },
     "next_review_plan_detail": {
@@ -403,9 +403,11 @@
         "links": {
           "type": "array",
           "items": {
-            "type": "object", "additionalProperties": false, "required": ["label", "url"],
+            "type": "object", "additionalProperties": false, "required": ["label"],
+            "oneOf": [{ "required": ["source_link_id"] }, { "required": ["url"] }],
             "properties": {
               "label": { "$ref": "#/$defs/non_empty_string" },
+              "source_link_id": { "type": "string", "pattern": "^source-link-[0-9]{4}$", "description": "Preferred model output: exact id from source_document.links for a relevant mockup, video, product design or user flow (often FAQ 1). The server resolves it to the exact original URL before saving. Hidden/anonymized URLs do not mean unavailable." },
               "url": { "type": "string", "pattern": "^https?://", "description": "Exact URL copied from the source document. Never construct or guess URLs." }
             }
           }

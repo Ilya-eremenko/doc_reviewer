@@ -48,7 +48,7 @@ describe("AI Summary required elements", () => {
   });
 
   it("counts Gate 2 hypotheses and separates verdicts while preserving their visual grouping", () => {
-    expect(source).toContain('gate2HypothesisSummary(item, language, newFormat)');
+    expect(source).toContain('gate2HypothesisSummary(item, language, newFormat, currentFormat)');
     const item = {
       id: "gate2_hypothesis_results", label: "Результаты проверки гипотез из Gate 1", status: "1/3" as const,
       detail: { type: "solution_validation" as const, items: [

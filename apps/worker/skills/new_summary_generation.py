@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.logging import worker_logger
+from app.core.config import get_settings
+from app.storage.local import LocalDocumentStorage
 from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun
 from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
@@ -55,6 +57,7 @@ from skills.result_synthesis_trace import (
     start_result_synthesis_step,
 )
 from skills.traction_tables import display_traction_tables, source_traction_tables
+from skills.source_links import pdf_source_links, provider_source_links, safe_source_url, source_link_catalog
 
 
 LANGUAGES = ("ru", "en")
@@ -137,9 +140,9 @@ def generate_and_persist_new_summary_report(
         existing_metadata=(check_run.run_parameters or {}).get(RUN_PARAMETER_KEY)
         or (analysis.run_parameters or {}).get(RUN_PARAMETER_KEY),
     )
-    anonymized_source_payload = (
+    anonymized_source_payload = provider_source_links(deepcopy(
         anonymization.value if isinstance(anonymization.value, dict) else source_payload
-    )
+    ))
     prompt = _generation_prompt(
         source_payload=anonymized_source_payload,
         response_schema=response_schema,
@@ -152,6 +155,7 @@ def generate_and_persist_new_summary_report(
             "schema_path": SCHEMA_PATH,
             "skill_path": SKILL_PATH,
             "source_sections": sorted(source_payload.keys()),
+            "source_link_count": len((source_payload.get("source_document") or {}).get("links") or []),
             "source_document_excerpt_chars": len(
                 str(((source_payload.get("source_document") or {}).get("parsed_text_excerpt") or ""))
             )
@@ -535,12 +539,27 @@ def _ic_review_source(value: dict[str, Any] | None) -> dict[str, Any]:
 
 def _source_document_payload(document: Document) -> dict[str, Any]:
     parsed_text = document.parsed_text.strip() if isinstance(document.parsed_text, str) else ""
+    extra_links = []
+    link_extraction = "parsed_text"
+    if str(document.original_filename or "").lower().endswith(".pdf") and document.storage_path:
+        try:
+            raw_path = LocalDocumentStorage(get_settings().storage_root).stored_path(document.storage_path)
+            extra_links = pdf_source_links(raw_path)
+            link_extraction = "parsed_text_and_pdf_annotations"
+        except Exception as exc:
+            # Optional link recovery must not fail a completed financial/product review.
+            link_extraction = "pdf_annotations_unavailable"
+            worker_logger.warning("new_summary_source_links_unavailable", extra={
+                "document_id": str(document.id), "error_class": type(exc).__name__,
+            })
     return {
         "title": document.title,
         "original_filename": document.original_filename,
         "detected_document_type": document.detected_document_type,
         "manual_document_type": document.manual_document_type,
         "parsed_text_excerpt": _bounded_source_text(parsed_text),
+        "links": source_link_catalog(parsed_text, extra_links=extra_links),
+        "link_extraction": link_extraction,
     }
 
 
@@ -677,6 +696,7 @@ def _generation_prompt(
             "`document_stage` — текущая стадия инициативы для заголовка и контекста; `document_type` задаёт только набор правил проверки. Если они отличаются, не называй текущую стадию по `document_type`.",
             "Фрагменты `source_document.parsed_text_excerpt` взяты из разных частей исходного документа и не являются полным текстом. Отличай явно выбранный текущий сценарий и фокус инициативы от старых, расчётных и альтернативных вариантов; при неразрешённом противоречии не угадывай, какой вариант действует.",
             "В фоновом запуске нет MCP или браузера: не утверждай, что открыл внешнюю ссылку. Оценивай её содержимое только если оно уже присутствует во входных результатах.",
+            "Для Mockups, видео, дизайна или пользовательского flow выбирай подходящие ссылки из source_document.links по label/context, включая FAQ 1 и подписи See full design here или MLP. Верни source_link_id, точно равный id выбранной ссылки, вместо url. Адреса скрыты анонимизатором: это НЕ означает, что ссылки невозможно скопировать; сервер восстановит их по id. Не выбирай финансовые модели, исследования и другие ссылки только потому, что они рядом. Наличие ссылки не доказывает содержимое файла по ней.",
             "Если ни Revenue, ни DTB нельзя достоверно выделить из источников, верни `traction_summary: {\"tables\": []}`. Не создавай фиктивную строку или период.",
             "Не добавляй Markdown вокруг JSON. Не добавляй пояснения вне JSON.",
             "## JSON Schema",
@@ -872,7 +892,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized["schema_version"] = "new-summary-v4"
+    normalized["schema_version"] = "new-summary-v5"
     normalized.setdefault("language", "en")
     title = normalized.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -1207,11 +1227,12 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
         return {"type": detail_type, "launches": launches, "metrics": metrics} if launches or metrics else None
     if detail_type == "source_links":
         links = [
-            {"label": label, "url": url}
+            {"label": label, **({"source_link_id": link_id} if link_id else {"url": url})}
             for item in detail.get("links", []) if isinstance(item, dict)
             for label in [_non_empty_string(item.get("label"))]
             for url in [_non_empty_string(item.get("url"))]
-            if label and url and re.match(r"^https?://[^\s<>]+$", url)
+            for link_id in [_non_empty_string(item.get("source_link_id"))]
+            if label and (link_id or safe_source_url(url))
         ] if isinstance(detail.get("links"), list) else []
         availability = _enum_value(detail.get("availability"), {"provided", "absent", "unavailable"})
         return {"type": detail_type, "availability": availability or "unavailable", "links": links}
@@ -1224,12 +1245,22 @@ def _normalized_required_detail(detail: Any) -> dict[str, Any] | None:
 def _verified_source_links(detail: dict[str, Any] | None, source: dict[str, Any]) -> dict[str, Any]:
     document = source.get("source_document")
     text = str(document.get("parsed_text_excerpt") or "") if isinstance(document, dict) else ""
-    source_urls = set(re.findall(r"https?://[^\s<>\"\]]+", text))
-    source_urls.update(url.rstrip(".,;:)") for url in list(source_urls))
+    catalog = document.get("links", []) if isinstance(document, dict) else []
+    catalog = [item for item in catalog if isinstance(item, dict) and safe_source_url(item.get("url"))]
+    by_id = {item.get("id"): item for item in catalog if item.get("id")}
+    source_urls = {item["url"] for item in source_link_catalog(text)} | {item["url"] for item in catalog}
     detail = detail or {"availability": "unavailable", "links": []}
-    links = [item for item in detail.get("links", []) if item["url"] in source_urls]
+    links = []
+    for item in detail.get("links", []):
+        selected = by_id.get(item.get("source_link_id"))
+        url = selected["url"] if selected else item.get("url")
+        if item.get("source_link_id") and selected is None:
+            continue
+        if url in source_urls and safe_source_url(url) and not any(link["url"] == url for link in links):
+            links.append({"label": item["label"], "url": url})
     availability = "provided" if links else (
-        "absent" if detail.get("availability") == "absent" and not detail.get("links") and text else "unavailable"
+        "absent" if detail.get("availability") == "absent" and not detail.get("links") and text
+        and (not isinstance(document, dict) or document.get("link_extraction") != "pdf_annotations_unavailable") else "unavailable"
     )
     return {"type": "source_links", "availability": availability, "links": links}
 
