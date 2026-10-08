@@ -21,6 +21,15 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] 2026-10-08: Publish the user's single-table Traction Summary skill update.
+  New v7 result has one shared-period table with DTB Uplift (Cumul), Revenue
+  from DTB, Revenue non-DTB, and Total Revenue. Keep v1-v6 stored reports
+  untouched; update worker/schema, API/web, PDF/Word and regression tests.
+  User skill prose is otherwise preserved; only stale two-table contract and
+  incomplete lines in its Traction section were repaired. Local verification:
+  654 API/worker tests, 172 web tests, Next.js build and Docker web rebuild
+  passed. PR/merge pending.
+
 - [~] 2026-10-07: Exclude expense-section rows (e.g. Partner revenue under CoS)
   from AI Summary Revenue tables and verified Total recovery. Production
   source UI confirms the row is inside CoS; the selector previously matched

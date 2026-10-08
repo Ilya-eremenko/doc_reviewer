@@ -56,7 +56,7 @@ from skills.result_synthesis_trace import (
     fail_result_synthesis_step,
     start_result_synthesis_step,
 )
-from skills.traction_tables import display_traction_tables, source_traction_tables
+from skills.traction_tables import source_traction_tables
 from skills.source_links import pdf_source_links, provider_source_links, safe_source_url, source_link_catalog
 
 
@@ -698,7 +698,7 @@ def _generation_prompt(
             "В фоновом запуске нет MCP или браузера: не утверждай, что открыл внешнюю ссылку. Оценивай её содержимое только если оно уже присутствует во входных результатах.",
             "Для Mockups, видео, дизайна или пользовательского flow выбирай подходящие ссылки из source_document.links по label/context, включая FAQ 1 и подписи See full design here или MLP. Верни source_link_id, точно равный id выбранной ссылки, вместо url. Адреса скрыты анонимизатором: это НЕ означает, что ссылки невозможно скопировать; сервер восстановит их по id. Не выбирай финансовые модели, исследования и другие ссылки только потому, что они рядом. Наличие ссылки не доказывает содержимое файла по ней.",
             "Для статуса пункта Mockups достаточно хотя бы одной такой исходной ссылки: поставь Есть, не проверяя содержимое по адресу.",
-            "Если ни Revenue, ни DTB нельзя достоверно выделить из источников, верни `traction_summary: {\"tables\": []}`. Не создавай фиктивную строку или период.",
+            "Для Traction Summary верни одну таблицу: `traction_summary` с `periods` и четырьмя строками `rows` в порядке схемы. Даже при отсутствии чисел оставь эти строки и `Total`, поставь прочерки; не выдумывай периоды и значения.",
             "Не добавляй Markdown вокруг JSON. Не добавляй пояснения вне JSON.",
             "## JSON Schema",
             json.dumps(response_schema, ensure_ascii=False, indent=2),
@@ -868,16 +868,8 @@ def _validated_source_dependent_report(
         # Historical reports are read from storage unchanged; new reports never create appendices.
         normalized_version.pop("required_details", None)
         source_tables = source_payload.get("source_traction_tables")
-        if isinstance(source_tables, list) and source_tables:
-            extracted = display_traction_tables(
-                source_tables, language=expected_language
-            )
-            # A parser-confirmed Revenue table must not erase DTB found elsewhere by the skill.
-            tables_by_metric = {table["metric"]: table for table in normalized_version["traction_summary"]["tables"]}
-            tables_by_metric.update({table["metric"]: table for table in extracted["tables"]})
-            normalized_version["traction_summary"] = {"tables": [
-                tables_by_metric[metric] for metric in ("revenue", "dtb") if metric in tables_by_metric
-            ]}
+        # The legacy extractor selects only two broad rows; replacing the four
+        # new metric rows with it would erase DTB-sourced and non-DTB revenue.
         normalized_version = with_traction_totals(
             normalized_version,
             source_tables=source_tables if isinstance(source_tables, list) and source_tables else None,
@@ -899,7 +891,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized["schema_version"] = "new-summary-v6"
+    normalized["schema_version"] = "new-summary-v7"
     normalized.setdefault("language", "en")
     title = normalized.get("title")
     if not isinstance(title, str) or not title.strip():
@@ -986,61 +978,36 @@ def _source_initiative_title(source_payload: dict[str, Any]) -> str:
 
 
 def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
-    if isinstance(value, dict) and isinstance(value.get("tables"), list):
-        tables = []
-        for table in value["tables"]:
-            if not isinstance(table, dict) or table.get("metric") not in {"revenue", "dtb"}:
-                continue
-            normalized = _normalize_single_traction_table(table, language=language)
-            if normalized is not None:
-                tables.append({"metric": table["metric"], **normalized})
-        return {"tables": tables}
-    normalized = _normalize_single_traction_table(value, language=language)
-    if normalized is not None:
-        metric_label = normalized["metric_label"].lower()
-        metric = "dtb" if "dtb" in metric_label else "revenue" if ("revenue" in metric_label or "выруч" in metric_label) else None
-        if metric is not None:
-            return {"tables": [{"metric": metric, **normalized}]}
-    return {"tables": []}
-
-
-def _normalize_single_traction_table(value: Any, *, language: str) -> dict[str, Any] | None:
-    if isinstance(value, dict):
-        metric_label = value.get("metric_label")
-        periods = value.get("periods")
-        rows = value.get("rows")
-        if isinstance(metric_label, str) and metric_label.strip() and isinstance(periods, list) and isinstance(rows, list):
-            period_pairs = [
-                (index, str(period).strip())
-                for index, period in enumerate(periods)
-                if str(period).strip()
-            ]
-            normalized_periods = [period for _, period in period_pairs]
-            normalized_rows = [
-                {
-                    "label": str(row.get("label") or "").strip(),
-                    "values": [
-                        _traction_cell(
-                            row["values"][index]
-                            if isinstance(row.get("values"), list) and index < len(row["values"])
-                            else None,
-                            language=language,
-                        )
-                        for index, _ in period_pairs
-                    ],
-                }
-                for row in rows
-                if isinstance(row, dict) and str(row.get("label") or "").strip()
-            ]
-            if normalized_periods and normalized_rows:
-                return {
-                    **({"metric": value["metric"]} if value.get("metric") in {"revenue", "dtb"} else {}),
-                    **({"cumulative": True} if value.get("cumulative") is True and value.get("metric") == "dtb" else {}),
-                    "metric_label": metric_label.strip(),
-                    "periods": normalized_periods,
-                    "rows": normalized_rows,
-                }
-    return None
+    if not isinstance(value, dict):
+        value = {}
+    if "tables" in value:
+        raise ValueError("new_summary_traction_format_mismatch")
+    raw_periods = value.get("periods")
+    periods = [str(period).strip() for period in raw_periods if str(period).strip()] if isinstance(raw_periods, list) else []
+    if not periods or not re.search(r"\b(?:total|итого|всего)\b", periods[-1], re.IGNORECASE):
+        periods.append("Total")
+    raw_rows = value.get("rows") if isinstance(value.get("rows"), list) else []
+    labels = ("DTB Uplift (Cumul)", "Revenue from DTB", "Revenue non-DTB", "Total Revenue")
+    if raw_rows and (len(raw_rows) != len(labels) or {row.get("label") for row in raw_rows if isinstance(row, dict)} != set(labels)):
+        raise ValueError("new_summary_traction_rows_mismatch")
+    by_label = {row.get("label"): row for row in raw_rows if isinstance(row, dict) and isinstance(row.get("label"), str)}
+    rows = []
+    for label in labels:
+        source = by_label.get(label) or {}
+        raw_values = source.get("values") if isinstance(source.get("values"), list) else []
+        values = [
+            _traction_cell(raw_values[index], language=language) if index < len(raw_values) else "—"
+            for index in range(len(periods))
+        ]
+        if label == labels[0]:
+            values[-1] = "—"
+        row = {"label": label, "values": values}
+        if label == labels[-1]:
+            mismatches = source.get("mismatch_periods")
+            if isinstance(mismatches, list):
+                row["mismatch_periods"] = [period for period in periods if period in mismatches]
+        rows.append(row)
+    return {"periods": periods, "rows": rows}
 
 
 def _traction_cell(value: Any, *, language: str) -> str:

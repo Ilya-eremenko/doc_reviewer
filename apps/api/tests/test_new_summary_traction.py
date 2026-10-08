@@ -7,6 +7,21 @@ from pypdf import PdfReader
 from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
 
 
+def test_v7_single_table_keeps_four_rows_and_mismatch_without_legacy_rewrite():
+    table = {"periods": ["2026", "Total"], "rows": [
+        {"label": "DTB Uplift (Cumul)", "values": ["2%", "—"]},
+        {"label": "Revenue from DTB", "values": ["10", "10"]},
+        {"label": "Revenue non-DTB", "values": ["20", "20"]},
+        {"label": "Total Revenue", "values": ["35", "35"], "mismatch_periods": ["2026", "Total"]},
+    ]}
+    payload = {"schema_version": "new-summary-v7", "language": "ru", "traction_summary": table}
+
+    result = with_traction_totals(payload)
+
+    assert result["traction_summary"] == table
+    assert result is not payload
+
+
 def test_historical_traction_break_marker_is_cleaned_without_changing_total():
     payload = {"language": "ru", "traction_summary": {"tables": [{
         "metric": "revenue", "metric_label": "Выручка (инкр.)",

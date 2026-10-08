@@ -137,6 +137,18 @@ def _table_metric(table: dict[str, Any]) -> str | None:
 
 
 def needs_verified_revenue_total(payload: dict[str, Any]) -> bool:
+    if payload.get("schema_version") == "new-summary-v7":
+        summary = payload.get("traction_summary")
+        if not isinstance(summary, dict):
+            return False
+        periods = summary.get("periods")
+        rows = summary.get("rows")
+        if not isinstance(periods, list) or not isinstance(rows, list):
+            return False
+        index = next((i for i, period in enumerate(periods) if _TOTAL_PERIOD.search(str(period))), None)
+        total_revenue = next((row for row in rows if isinstance(row, dict) and row.get("label") == "Total Revenue"), None)
+        values = total_revenue.get("values") if isinstance(total_revenue, dict) else None
+        return isinstance(values, list) and (index is None or index >= len(values) or _missing_total(values[index]))
     summary = payload.get("traction_summary")
     if not isinstance(summary, dict):
         return False
@@ -168,6 +180,23 @@ def with_traction_totals(
     summary = payload.get("traction_summary")
     if not isinstance(summary, dict):
         return payload
+    if payload.get("schema_version") == "new-summary-v7":
+        updated = deepcopy(payload)
+        table = updated["traction_summary"]
+        table["periods"] = [clean_table_cell(period) for period in table.get("periods", [])]
+        for row in table.get("rows", []):
+            if not isinstance(row, dict):
+                continue
+            row["label"] = clean_table_cell(row.get("label", ""))
+            row["values"] = [clean_table_cell(value) for value in row.get("values", [])]
+        total_index = next((i for i, period in enumerate(table["periods"]) if _TOTAL_PERIOD.search(str(period))), None)
+        if total_index is not None and source_blocks:
+            total_revenue = next((row for row in table.get("rows", []) if row.get("label") == "Total Revenue"), None)
+            if isinstance(total_revenue, dict) and total_index < len(total_revenue["values"]) and _missing_total(total_revenue["values"][total_index]):
+                verified = verified_revenue_total(table["periods"], total_revenue["values"], source_blocks)
+                if verified:
+                    total_revenue["values"][total_index] = verified.value
+        return updated
     tables = summary.get("tables") if isinstance(summary.get("tables"), list) else [summary]
     language = payload.get("language")
     absent = "отсутствуют данные в документе защиты" if language == "ru" else "no data in the defense document"
