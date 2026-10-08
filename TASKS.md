@@ -3000,3 +3000,11 @@ Exit criteria:
   worker tests pass (350); API tests pass except for the local CORS-origin test
   under the repository's current `.env`, and that test passes with explicit
   localhost test origins. Production rollout is not yet verified.
+- 2026-10-08: Gate Challenger checklist validation fix was merged as PR #102
+  (`1edd468`). A separate New Summary change removes trailing 3Sigma/Trisigma
+  source links from initiative titles in new generation and historical web/PDF/
+  Word display, and applies the skill's conditional Total Revenue -> Revenue
+  from DTB fallback before saving both language versions. Only the title,
+  Traction, and technical JSON contract clauses of `skills/new-summary/SKILL.md`
+  were adjusted. Verified locally: 354 worker tests, 310 API tests with explicit
+  localhost CORS origins, 175 web tests, and a Next.js production build.

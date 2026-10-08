@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -19,6 +20,7 @@ from app.models.skill import Skill
 from app.models.user import User
 from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus, Provider, Role, RunStatus, SkillSourceType, SkillType, UserStatus
 from app.security.secrets import encrypt_secret
+from app.services.new_summary_titles import clean_initiative_title, display_new_summary_title
 from jobs.run_summary_localizations import run_summary_localizations
 from providers.base import AnalysisProviderResult
 from skills import new_summary_generation
@@ -707,6 +709,78 @@ def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
         language="ru",
     )
     assert normalized["rows"][3]["values"] == ["10", "—", "—"]
+
+
+def test_new_summary_title_excludes_trisigma_link_annotations():
+    assert display_new_summary_title("From People to People (3sigma link)") == "From People to People - AI Summary"
+    assert display_new_summary_title("From People to People [3sigma link](https://example.com/case)") == "From People to People - AI Summary"
+    assert display_new_summary_title("AI Summary From People to People") == "From People to People - AI Summary"
+    assert clean_initiative_title("[From People to People](https://example.com/case)") == "From People to People"
+
+
+def test_new_summary_source_title_uses_filename_case_for_matching_name():
+    analysis = SimpleNamespace(structured_output={})
+    document = SimpleNamespace(
+        parsed_text="From people to people (3sigma link)\nCurrent Defense: Stream Review 1",
+        title="From People to People _ Stream Review #1",
+        original_filename="From People to People _ Stream Review #1.docx",
+    )
+    assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "From People to People"
+
+
+def test_new_summary_revenue_from_dtb_fallback_requires_dtb_and_missing_non_dtb():
+    def version(dtb: str, non_dtb: str, from_dtb: str = "—") -> dict:
+        return {"traction_summary": {"periods": ["2026", "2027", "Total"], "rows": [
+            {"label": "DTB Uplift (Cumul)", "values": [dtb, "2%" if dtb != "—" else "—", "—"]},
+            {"label": "Revenue from DTB", "values": [from_dtb, "—", "—"]},
+            {"label": "Revenue non-DTB", "values": [non_dtb, "—", "—"]},
+            {"label": "Total Revenue", "values": ["10", "20", "30"]},
+        ]}}
+
+    output = new_summary_generation._apply_revenue_from_dtb_fallback(version("1%", "—"))
+    assert output["traction_summary"]["rows"][1]["values"] == ["10", "20", "30"]
+
+    sourced = new_summary_generation._apply_revenue_from_dtb_fallback(version("1%", "—", "8"))
+    assert sourced["traction_summary"]["rows"][1]["values"] == ["8", "20", "30"]
+
+    no_dtb = new_summary_generation._apply_revenue_from_dtb_fallback(version("—", "—"))
+    assert no_dtb["traction_summary"]["rows"][1]["values"] == ["—", "—", "—"]
+
+    has_non_dtb = new_summary_generation._apply_revenue_from_dtb_fallback(version("1%", "5"))
+    assert has_non_dtb["traction_summary"]["rows"][1]["values"] == ["—", "—", "—"]
+
+
+def test_new_summary_persists_clean_title_and_revenue_fallback_in_both_languages():
+    checklist = new_summary_generation._new_summary_stage_checklists()["gate_2"]
+    report = _new_summary_report_payload(
+        ru_context="Контекст.", en_context="Context.", required_elements=checklist,
+    )
+    report["title"] = "AI Summary [3sigma link](https://example.com/case)"
+    for version in report["versions"]:
+        version["traction_summary"] = {"periods": ["2026", "Total"], "rows": [
+            {"label": "DTB Uplift (Cumul)", "values": ["1%", "—"]},
+            {"label": "Revenue from DTB", "values": ["—", "—"]},
+            {"label": "Revenue non-DTB", "values": ["—", "—"]},
+            {"label": "Total Revenue", "values": ["10", "10"]},
+        ]}
+    source = {
+        "initiative_title": "From People to People (3sigma link)",
+        "document_type": "gate_2",
+        "document_stage": "Gate 2",
+        "gate_challenger": {"stage_checklist": [
+            {"id": item["id"], "status": "green", "evidence": "Source evidence"} for item in checklist
+        ]},
+    }
+
+    normalized = new_summary_generation._validated_source_dependent_report(
+        payload=report,
+        source_payload=source,
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+
+    assert normalized["title"] == "From People to People - AI Summary"
+    for version in normalized["versions"]:
+        assert version["traction_summary"]["rows"][1]["values"] == ["10", "10"]
 
 
 def test_new_summary_retries_old_or_partial_traction_tables():

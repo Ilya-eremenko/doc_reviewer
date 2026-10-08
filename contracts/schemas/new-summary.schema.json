@@ -16,7 +16,7 @@
     "title": {
       "type": "string",
       "pattern": "^.+ - AI Summary$",
-      "description": "Document title: <initiative title> - AI Summary."
+      "description": "Document title: <initiative title> - AI Summary. The initiative title excludes 3Sigma/Trisigma links, URLs, and source-link annotations."
     },
     "versions": {
       "type": "array",
@@ -131,7 +131,7 @@
             { "allOf": [{ "$ref": "#/$defs/traction_row" }, { "properties": { "label": { "const": "Total Revenue" } } }] }
           ],
           "items": false,
-          "description": "Four rows in fixed order. Revenue rows must come from income, never CoS/COGS/Cost of Sales or another expense section, regardless of row name. Each values array follows periods exactly; missing metrics use dashes."
+          "description": "Four rows in fixed order. Revenue rows must come from income, never CoS/COGS/Cost of Sales or another expense section, regardless of row name. Each values array follows periods exactly; missing metrics use dashes. When DTB Uplift (Cumul) and Total Revenue have values but Revenue non-DTB is absent, copy Total Revenue values to empty Revenue from DTB cells for the same periods without replacing sourced values."
         }
       }
     },
