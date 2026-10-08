@@ -2990,3 +2990,13 @@ Exit criteria:
   history; existing per-run deletion remains there. Verification: 656 API/worker
   tests pass with explicit local CORS test origins, 174 web tests pass, and
   Next.js production build passes. Production PR/deploy remains pending.
+- 2026-10-08: Diagnosed two Gate Challenger validation failures: a Gate 2
+  model response did not match the selected stage's exact checklist IDs, and
+  another response left `stage_checklist[5].label` empty. The worker now fills
+  known checklist labels from the shared stage contract before schema validation
+  without changing status/evidence, and retries an ID/order mismatch once with
+  the exact stage-specific ID/label list. The first provider response is retained
+  in the retry trace; strict ID and schema validation remain in force. Focused
+  worker tests pass (350); API tests pass except for the local CORS-origin test
+  under the repository's current `.env`, and that test passes with explicit
+  localhost test origins. Production rollout is not yet verified.

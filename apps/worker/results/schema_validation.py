@@ -5,6 +5,7 @@ from typing import Any
 
 from jsonschema import validate
 
+from app.services.stage_checklists import canonicalize_stage_checklist_labels
 from skills.stage_checklists import validate_stage_checklist_for_document_type
 
 
@@ -39,6 +40,7 @@ def parse_and_validate_json_output(
     schema_path: str,
     document_type: str | None = None,
     enforce_stage_checklist: bool = False,
+    output_language: str = "ru",
 ) -> dict:
     schema_name = Path(schema_path).name
     try:
@@ -49,6 +51,8 @@ def parse_and_validate_json_output(
         payload = parse_json_output(structured_text, allow_trailing_comma_repair=True)
     schema = json.loads(_resolve_schema_path(schema_path).read_text(encoding="utf-8"))
     payload = _normalize_payload_for_schema(payload=payload, schema=schema, schema_path=schema_path)
+    if enforce_stage_checklist and schema_name in GATE_CHALLENGER_RESULT_SCHEMAS and isinstance(payload, dict):
+        payload = canonicalize_stage_checklist_labels(payload, output_language=output_language)
     validate(instance=payload, schema=schema)
     if enforce_stage_checklist and schema_name in GATE_CHALLENGER_RESULT_SCHEMAS:
         validate_stage_checklist_for_document_type(payload, document_type=document_type)

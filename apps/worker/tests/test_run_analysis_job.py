@@ -30,6 +30,7 @@ from app.schemas.enums import (
 )
 from app.security.passwords import hash_password
 from app.security.secrets import encrypt_secret
+from app.services.stage_checklists import stage_checklist_items
 from app.storage.local import LocalDocumentStorage
 from jobs.run_analysis import _should_use_responses_api, run_analysis
 from providers.base import AnalysisProviderResult
@@ -905,6 +906,74 @@ def test_run_analysis_retries_invalid_json_once_and_completes(tmp_path):
             "first malformed response"
         )
         assert analysis.run_parameters["gate_challenger_provider_metadata"]["finish_reason"] == "stop"
+    finally:
+        _close_session(db)
+
+
+def test_run_analysis_retries_wrong_stage_checklist_once_without_inventing_items(tmp_path):
+    db = _create_session()
+    try:
+        user = _create_user(db)
+        document = _create_document(db, tmp_path, user)
+        skill = _create_skill(db)
+        db.add(
+            ProviderKey(
+                owner_id=_create_user(db, role=Role.ADMIN).id,
+                provider=Provider.OPENAI_COMPATIBLE.value,
+                base_url=None,
+                default_model="gpt-test",
+                encrypted_api_key=encrypt_secret("sk-test"),
+                api_key_fingerprint="openai_compatible:...test",
+            )
+        )
+        first = json.loads(_main_analysis_summary_json())
+        first["stage_checklist"] = [
+            {"id": item_id, "label": label, "status": "red", "evidence": "Proof is missing."}
+            for item_id, label in stage_checklist_items("gate_2")
+        ]
+        first["stage_checklist"][4]["id"] = "gate2_mvp_or_user_flow_placeholder"
+        corrected = json.loads(_main_analysis_summary_json())
+        corrected["stage_checklist"] = [
+            {"id": item_id, "label": label, "status": "red", "evidence": "Proof is missing."}
+            for item_id, label in stage_checklist_items("gate_2")
+        ]
+        analysis = Analysis(
+            document_id=document.id,
+            user_id=user.id,
+            skill_id=skill.id,
+            skill_version=skill.version,
+            provider=Provider.OPENAI_COMPATIBLE.value,
+            model="gpt-test",
+            status=RunStatus.QUEUED.value,
+            run_parameters={
+                "document_type": "gate_2",
+                "mock_provider_result": {
+                    "structured_text": json.dumps(first),
+                    "raw_output": "first attempt",
+                    "latency_ms": 30,
+                },
+                "analysis_json_retry_mock_provider_result": {
+                    "structured_text": json.dumps(corrected),
+                    "raw_output": "corrected attempt",
+                    "latency_ms": 40,
+                },
+            },
+        )
+        db.add(analysis)
+        db.commit()
+
+        run_analysis(str(analysis.id), db=db)
+
+        db.refresh(analysis)
+        assert analysis.status == RunStatus.COMPLETED.value, analysis.error_message
+        assert [item["id"] for item in analysis.structured_output["stage_checklist"]] == [
+            item_id for item_id, _label in stage_checklist_items("gate_2")
+        ]
+        assert analysis.raw_output == "corrected attempt"
+        trace = analysis.run_parameters["analysis_checklist_retry"]
+        assert trace["attempts"] == 2
+        assert "stage_checklist must match" in trace["reason"]
+        assert Path(trace["first_attempt_raw_output_path"]).read_text(encoding="utf-8") == "first attempt"
     finally:
         _close_session(db)
 

@@ -304,6 +304,41 @@ def test_parse_and_validate_json_output_enforces_stage_checklist_for_document_ty
     ]
 
 
+def test_gate_checklist_restores_empty_label_from_canonical_contract():
+    payload = _main_analysis_result_payload()
+    original = payload["stage_checklist"][5].copy()
+    payload["stage_checklist"][5]["label"] = ""
+
+    parsed = schema_validation.parse_and_validate_json_output(
+        structured_text=json.dumps(payload),
+        schema_path="contracts/schemas/main-analysis-result.schema.json",
+        document_type="gate_2",
+        enforce_stage_checklist=True,
+        output_language="ru",
+    )
+
+    assert parsed["stage_checklist"][5]["label"] == stage_checklists.stage_checklist_items("gate_2")[5][1]
+    assert parsed["stage_checklist"][5]["status"] == original["status"]
+    assert parsed["stage_checklist"][5]["evidence"] == original["evidence"]
+
+
+def test_gate_checklist_restores_english_label_from_canonical_contract():
+    payload = _main_analysis_result_payload()
+    payload["stage_checklist"][5]["label"] = ""
+
+    parsed = schema_validation.parse_and_validate_json_output(
+        structured_text=json.dumps(payload),
+        schema_path="contracts/schemas/main-analysis-result.schema.json",
+        document_type="gate_2",
+        enforce_stage_checklist=True,
+        output_language="en",
+    )
+
+    assert parsed["stage_checklist"][5]["label"] == stage_checklists.stage_checklist_items(
+        "gate_2", output_language="en"
+    )[5][1]
+
+
 def test_parse_and_validate_json_output_rejects_partial_stage_checklist_for_document_type():
     payload = _main_analysis_result_payload()
     payload["stage_checklist"] = payload["stage_checklist"][:1]
