@@ -94,7 +94,7 @@
           "type": "array",
           "maxItems": 10,
           "items": { "$ref": "#/$defs/critical_problem" },
-          "description": "Zero to ten source-grounded problems not covered, even indirectly, by required elements. Do not paraphrase duplicate facts or report spreadsheet parsing errors such as REF/NAME. Each has one short issue sentence and one supporting fact; no recommendations."
+          "description": "Zero to ten source-grounded problems not covered, even indirectly, by required elements. Do not paraphrase duplicate facts or report spreadsheet parsing errors such as REF/NAME. Each has one short issue sentence and a concrete supporting fact or comparison with enough context to understand the figures; no recommendations."
         }
       }
     },
@@ -109,7 +109,7 @@
         },
         "fact": {
           "$ref": "#/$defs/non_empty_string",
-          "description": "One short, source-grounded sentence explaining the fact behind the problem."
+          "description": "One or two short source-grounded sentences explaining the fact behind the problem. Include the relevant before/after figures, periods, and source section when available in Gate Challenger or IC Review, rather than a vague claim or unexplained number. Do not infer a new finding from raw document text."
         }
       }
     },
@@ -203,7 +203,7 @@
             { "enum": ["есть", "частично подтверждено", "нет"] },
             { "pattern": "^[0-9]+/[0-9]+$" }
           ],
-          "description": "Use есть/частично подтверждено/нет. Gate 2 hypotheses and Stream Review 1 solution checks may use a technical numerator/denominator; visible headings always count detail.items verdicts instead of showing the fraction when items exist. Gate 2 and Stream Review 1 metric linkage is есть only when at least 80 percent of listed input/output metrics have confirmed binding."
+          "description": "Use есть/частично подтверждено/нет. Gate 2 hypotheses and Stream Review 1 solution checks may use a technical numerator/denominator; visible headings always count detail.items verdicts instead of showing the fraction when items exist. Gate 2 and Stream Review 1 metric linkage is есть only when at least 80 percent of listed input/output metrics have confirmed binding. For Progress Review next-half-year plan, outputs and metrics must both be nonempty for есть; one nonempty group means частично подтверждено, neither means нет. For Progress Review plan-vs-actual, apply the same rule to launches and metrics, regardless of whether individual launch targets were met. If the model omits structured detail, retain the Gate Challenger evidence status rather than treating extraction failure as absence."
         },
         "evidence": {
           "type": "string",
@@ -313,6 +313,7 @@
     "next_review_plan_detail": {
       "type": "object",
       "additionalProperties": false,
+      "description": "For Progress Review, at least one output and one metric plan make the required element present. Only one populated group is partial; neither is missing. This does not assess plan quality.",
       "required": ["type", "outputs_until_next_review", "metrics_until_next_review"],
       "properties": {
         "type": { "const": "next_review_plan" },
@@ -370,6 +371,7 @@
     },
     "plan_fact_detail": {
       "type": "object", "additionalProperties": false,
+      "description": "For Progress Review, nonempty launches and metrics groups make the required element present; one populated group is partial, neither is missing. A not_completed launch still counts as a documented plan-vs-actual row.",
       "required": ["type", "launches", "metrics"],
       "properties": {
         "type": { "const": "plan_fact" },

@@ -3008,3 +3008,13 @@ Exit criteria:
   Traction, and technical JSON contract clauses of `skills/new-summary/SKILL.md`
   were adjusted. Verified locally: 354 worker tests, 310 API tests with explicit
   localhost CORS origins, 175 web tests, and a Next.js production build.
+- 2026-10-08: Prepared user-authored New Summary skill update without editing
+  its prose. The new Progress Review status guidance maps the two displayed
+  groups (future outputs and metrics; past launches and metrics) to present,
+  partial, or missing in newly generated reports. When structured detail is
+  absent, the worker keeps the Gate Challenger status instead of confusing
+  extraction failure with a missing section. Updated only JSON Schema
+  descriptions for these status and more contextual critical-problem facts;
+  the payload shape and `new-summary-v8` version remain unchanged, so saved
+  reports keep their existing semantics. Focused worker, API export, and web
+  rendering tests pass. Production PR and deploy remain to be verified.

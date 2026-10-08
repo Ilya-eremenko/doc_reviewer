@@ -33,6 +33,20 @@ const content: NewSummaryContent = {
 };
 
 describe("new-summary-v4 rendering", () => {
+  it("shows the full source comparison in a critical problem", () => {
+    const fact = "Earlier review projected IRR 126%. FAQ 5 now reports 77%.";
+    const updated: NewSummaryContent = {
+      ...content,
+      schema_version: "new-summary-v8",
+      critical_problems: [{ issue: "The return estimate fell.", fact }],
+    };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, {
+      report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } },
+    }));
+    expect(html).toContain("<strong class=\"new-summary-problem__issue\">The return estimate fell.</strong>");
+    expect(html).toContain(fact);
+  });
+
   it("cleans a source link from an existing report title", () => {
     const updated = { ...content, title: "From People to People (3sigma link) - AI Summary" };
     const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));

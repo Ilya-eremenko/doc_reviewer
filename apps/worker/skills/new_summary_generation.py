@@ -1416,6 +1416,16 @@ def _required_element_status(
     required_details: dict[str, Any],
 ) -> str:
     generated_status = str((generated_item or {}).get("status") or "").strip().lower()
+    progress_groups = {
+        "progress_review_next_half_year_plan": ("next_review_plan", "outputs_until_next_review", "metrics_until_next_review"),
+        "progress_review_plan_fact_last_half_year": ("plan_fact", "launches", "metrics"),
+    }
+    if item_id in progress_groups:
+        detail_type, first_group, second_group = progress_groups[item_id]
+        detail = required_details.get(item_id)
+        if isinstance(detail, dict) and detail.get("type") == detail_type:
+            present_groups = bool(detail.get(first_group)) + bool(detail.get(second_group))
+            return ("нет", "частично подтверждено", "есть")[present_groups]
     if item_id == "gate2_user_flow":
         detail = required_details.get(item_id)
         if isinstance(detail, dict) and detail.get("type") == "source_links" and detail.get("links"):

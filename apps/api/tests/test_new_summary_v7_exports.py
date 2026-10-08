@@ -67,3 +67,25 @@ def test_v8_exports_title_and_em_dash_without_losing_revenue_warning():
     assert "Example - AI Summary" in pdf_text
     assert "невозможно извлечь данные" not in pdf_text
     assert "Не равно Rev. from DTB + Rev. non-DTB" in pdf_text
+
+
+def test_v8_exports_keep_contextual_problem_fact_in_word_and_pdf():
+    fact = "Earlier review projected IRR 126%. FAQ 5 now reports 77%."
+    table = {"periods": ["Total"], "rows": [
+        {"label": "DTB Uplift (Cumul)", "values": ["—"]},
+        {"label": "Revenue from DTB", "values": ["—"]},
+        {"label": "Revenue non-DTB", "values": ["—"]},
+        {"label": "Total Revenue", "values": ["—"]},
+    ]}
+    report = {language: {
+        "schema_version": "new-summary-v8", "language": language,
+        "title": "Example - AI Summary", "stage": "Progress Review", "context": "Context.",
+        "traction_summary": table, "required_elements": [],
+        "critical_problems": [{"issue": "The return estimate fell.", "fact": fact}],
+    } for language in ("ru", "en")}
+    provenance = NewSummaryExportProvenance("a", "d", "skill", "1", "test", "mock", None)
+
+    document = Document(BytesIO(_build_docx(report, provenance)))
+    assert any(fact in paragraph.text for paragraph in document.paragraphs)
+    pdf_text = " ".join(page.extract_text() for page in PdfReader(BytesIO(_build_pdf(report, provenance))).pages)
+    assert fact in pdf_text.replace("\n", " ")
