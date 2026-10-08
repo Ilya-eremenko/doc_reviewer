@@ -967,6 +967,91 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
         assert "insufficiently_confirmed" not in version
 
 
+@pytest.mark.parametrize(
+    ("item_id", "detail_type", "first_key", "second_key", "first_item", "second_item"),
+    [
+        (
+            "progress_review_next_half_year_plan", "next_review_plan",
+            "outputs_until_next_review", "metrics_until_next_review",
+            "Launch pilot", {"metric": "Activation", "current": "10%", "next_review": "20%"},
+        ),
+        (
+            "progress_review_plan_fact_last_half_year", "plan_fact",
+            "launches", "metrics",
+            {"output": "Launch pilot", "status": "not_completed"},
+            {"metric": "Activation", "planned": "20%", "actual": "10%"},
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("has_first", "has_second", "expected_status"),
+    [
+        (True, True, "есть"),
+        (True, False, "частично подтверждено"),
+        (False, True, "частично подтверждено"),
+        (False, False, "нет"),
+    ],
+)
+def test_progress_review_status_uses_the_two_visible_detail_groups(
+    item_id, detail_type, first_key, second_key, first_item, second_item,
+    has_first, has_second, expected_status,
+):
+    checklist = new_summary_generation._new_summary_stage_checklists()["progress_review"]
+    report = _new_summary_report_payload(
+        ru_context="Контекст.", en_context="Context.",
+        stage="Progress Review", required_elements=checklist,
+    )
+    detail = {
+        "type": detail_type,
+        first_key: [first_item] if has_first else [],
+        second_key: [second_item] if has_second else [],
+    }
+    for version in report["versions"]:
+        item = next(element for element in version["required_elements"] if element["id"] == item_id)
+        item["status"] = "есть"
+        if has_first or has_second:
+            item["detail"] = detail
+    source_payload = {
+        "document_type": "progress_review",
+        "document_stage": "Progress Review",
+        "gate_challenger": {"stage_checklist": [
+            {"id": item["id"], "status": "green" if has_first or has_second else "red", "evidence": "Source evidence"}
+            for item in checklist
+        ]},
+    }
+
+    normalized = new_summary_generation._validated_source_dependent_report(
+        payload=report, source_payload=source_payload,
+        response_schema=new_summary_generation._new_summary_schema(),
+    )
+
+    for version in normalized["versions"]:
+        element = next(item for item in version["required_elements"] if item["id"] == item_id)
+        assert element["status"] == expected_status
+        assert ("detail" in element) == (has_first or has_second)
+
+
+def test_progress_review_missing_detail_keeps_gate_challenger_evidence_status():
+    assert new_summary_generation._required_element_status(
+        {"status": "yellow", "evidence": "Plan partly documented"},
+        item_id="progress_review_plan_fact_last_half_year",
+        generated_item={"status": "нет"},
+        required_details={},
+    ) == "частично подтверждено"
+
+
+def test_stream_review_two_plus_keeps_its_existing_plan_status_policy():
+    assert new_summary_generation._required_element_status(
+        {"status": "green"},
+        item_id="stream_review_2_plus_next_half_year_plan",
+        generated_item={"status": "нет"},
+        required_details={"stream_review_2_plus_next_half_year_plan": {
+            "type": "next_review_plan", "outputs_until_next_review": ["Launch pilot"],
+            "metrics_until_next_review": [],
+        }},
+    ) == "есть"
+
+
 def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
     report["schema_version"] = "new-summary-v8"
@@ -985,6 +1070,7 @@ def test_new_summary_schema_allows_zero_to_ten_critical_problems():
         version["critical_problems"] = [
             {"issue": f"Problem {index}.", "fact": f"Source fact {index}."} for index in range(10)
         ]
+        version["critical_problems"][0]["fact"] = "Earlier review projected IRR 126%. FAQ 5 now reports 77%."
     validate(instance=report, schema=schema)
     report["versions"][0]["critical_problems"][0] = "Legacy plain-text problem"
     with pytest.raises(ValidationError):
