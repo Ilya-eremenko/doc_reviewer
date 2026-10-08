@@ -37,7 +37,6 @@ describe("base path routing", () => {
     const adminPage = webSource("src/app/admin/page.tsx");
     const documentsPage = webSource("src/app/documents/page.tsx");
     const documentDetailPage = webSource("src/app/documents/[documentId]/page.tsx");
-    const analysisPage = webSource("src/app/analyses/[analysisId]/page.tsx");
 
     expect(appShell).toContain('from "@/lib/routing"');
     expect(appShell).toContain('window.location.href = appPath("/login")');
@@ -48,8 +47,5 @@ describe("base path routing", () => {
     expect(documentsPage).not.toContain("window.location.href");
     expect(documentDetailPage).toContain('window.location.href = appPath("/documents")');
     expect(documentDetailPage).not.toContain("window.location.href = appPath(`/analyses/${analysis.id}`)");
-    expect(analysisPage).toContain(
-      "window.location.href = appPath(`/documents/${analysis.document_id}`)",
-    );
   });
 });

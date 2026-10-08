@@ -37,7 +37,7 @@ from app.models.analysis import Analysis
 from app.models.document import Document
 from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summary_source_tables import verified_table_blocks
-from app.services.new_summary_traction import needs_verified_revenue_total, traction_row_label, with_traction_totals
+from app.services.new_summary_traction import display_traction_cell, needs_verified_revenue_total, traction_row_label, with_traction_totals
 from app.services.new_summaries import NEW_SUMMARY_NUMBERED_SCHEMAS, with_summary_display_stage
 
 
@@ -103,7 +103,7 @@ def build_new_summary_export(
             "en": with_summary_display_stage(report["en"], display_stage),
         }
     provenance = _provenance(analysis=analysis, source_revision=report["source_revision"])
-    title = _clean_text(report["ru"].get("title") or report["en"].get("title") or "AI Summary")
+    title = _display_title(report["ru"])
     filename = f"{_safe_filename(title)}.{normalized_format}"
     if normalized_format == "docx":
         return NewSummaryExport(
@@ -153,7 +153,7 @@ def _provenance(*, analysis: Analysis, source_revision: str | None) -> NewSummar
 
 def _build_docx(report: dict[str, Any], provenance: NewSummaryExportProvenance) -> bytes:
     document = DocxDocument()
-    document.core_properties.title = _clean_text(report["ru"].get("title") or report["en"].get("title") or "AI Summary")
+    document.core_properties.title = _display_title(report["ru"])
     document.core_properties.subject = "Gate Challenger AI Summary export"
     document.core_properties.comments = _short_provenance_text(provenance)
     section = document.sections[0]
@@ -179,7 +179,7 @@ def _build_docx(report: dict[str, Any], provenance: NewSummaryExportProvenance) 
 
 def _append_docx_version(document: DocxDocument, content: dict[str, Any], language: str) -> None:
     labels = _labels(language)
-    title = _clean_text(content.get("title") or "AI Summary")
+    title = _display_title(content)
 
     title_paragraph = document.add_paragraph()
     title_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -276,7 +276,7 @@ def _append_docx_traction(document: DocxDocument, content: dict[str, Any], label
             cells[0].text = traction_row_label(traction, row)
             values = row.get("values") if isinstance(row.get("values"), list) else []
             for cell_index, _period in enumerate(periods, start=1):
-                cells[cell_index].text = _clean_text(values[cell_index - 1] if cell_index - 1 < len(values) else "")
+                cells[cell_index].text = display_traction_cell(values[cell_index - 1] if cell_index - 1 < len(values) else "", content.get("schema_version"))
                 if _period in row.get("mismatch_periods", []):
                     note = "Не равно Rev. from DTB + Rev. non-DTB" if content.get("language") == "ru" else "Does not equal Rev. from DTB + Rev. non-DTB"
                     cells[cell_index].add_paragraph(note)
@@ -320,7 +320,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Inches(0.22)
         paragraph.paragraph_format.space_after = Pt(2)
-        v6 = content.get("schema_version") in {"new-summary-v6", "new-summary-v7"}
+        v6 = content.get("schema_version") in {"new-summary-v6", "new-summary-v7", "new-summary-v8"}
         current_format = v6 or content.get("schema_version") == "new-summary-v5"
         counted_metrics = v6 and item.get("id") in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}
         hypothesis_heading = (_metric_binding_heading(item, labels) if counted_metrics else None) or _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
@@ -493,7 +493,7 @@ def _build_pdf(report: dict[str, Any], provenance: NewSummaryExportProvenance) -
         leftMargin=margin,
         topMargin=1.2 * cm,
         bottomMargin=1.2 * cm,
-        title=_clean_text(report["ru"].get("title") or report["en"].get("title") or "AI Summary"),
+        title=_display_title(report["ru"]),
         author="Gate Challenger",
         subject="Gate Challenger AI Summary export",
     )
@@ -516,7 +516,7 @@ def _append_pdf_version(
     frame_width: float,
 ) -> None:
     labels = _labels(language)
-    story.append(Paragraph(_xml(content.get("title") or "AI Summary"), styles["title"]))
+    story.append(Paragraph(_xml(_display_title(content)), styles["title"]))
     story.append(Paragraph(f"<b>{_xml(labels['stage'])}:</b> {_xml(content.get('stage') or 'Unknown')}", styles["body"]))
     quality = content.get("document_quality_percent") if content.get("schema_version") not in NEW_SUMMARY_NUMBERED_SCHEMAS else None
     if isinstance(quality, int) and not isinstance(quality, bool):
@@ -594,12 +594,12 @@ def _append_pdf_traction(
         return
     _append_pdf_heading(story, labels["traction"], styles)
     for traction in tables:
-        _append_pdf_traction_table(story, traction, styles, frame_width, _traction_output_header(content, labels), language=content.get("language", "en"))
+        _append_pdf_traction_table(story, traction, styles, frame_width, _traction_output_header(content, labels), language=content.get("language", "en"), schema_version=content.get("schema_version"))
 
 
 def _append_pdf_traction_table(
     story: list[Any], traction: dict[str, Any], styles: dict[str, ParagraphStyle], frame_width: float, output_header: str,
-    *, language: str = "en",
+    *, language: str = "en", schema_version: str | None = None,
 ) -> None:
     periods = [str(item) for item in traction["periods"]]
     data = [[Paragraph(_xml(output_header), styles["table_header"])] + [Paragraph(_xml(item), styles["table_header"]) for item in periods]]
@@ -607,7 +607,7 @@ def _append_pdf_traction_table(
         values = row.get("values") if isinstance(row.get("values"), list) else []
         cells = [Paragraph(_xml(traction_row_label(traction, row)), styles["table_header"])]
         for index, period in enumerate(periods):
-            value = _xml(values[index] if index < len(values) else "")
+            value = _xml(display_traction_cell(values[index] if index < len(values) else "", schema_version))
             if period in row.get("mismatch_periods", []):
                 note = "Не равно Rev. from DTB + Rev. non-DTB" if language == "ru" else "Does not equal Rev. from DTB + Rev. non-DTB"
                 value = f'<font color="#B91C1C">{value}<br/>{_xml(note)}</font>'
@@ -653,7 +653,7 @@ def _append_pdf_required(
             "fraction": _TEXT,
         }[_required_status_kind(item)]
         status = _localized_status(item, labels)
-        v6 = content.get("schema_version") in {"new-summary-v6", "new-summary-v7"}
+        v6 = content.get("schema_version") in {"new-summary-v6", "new-summary-v7", "new-summary-v8"}
         current_format = v6 or content.get("schema_version") == "new-summary-v5"
         counted_metrics = v6 and item.get("id") in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}
         hypothesis_heading = (_metric_binding_heading(item, labels) if counted_metrics else None) or _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
@@ -934,7 +934,7 @@ def _traction_tables(value: Any) -> list[dict[str, Any]]:
 
 
 def _traction_output_header(content: dict[str, Any], labels: dict[str, str]) -> str:
-    if content.get("schema_version") == "new-summary-v7":
+    if content.get("schema_version") in {"new-summary-v7", "new-summary-v8"}:
         return "Output-метрики" if content.get("language") == "ru" else "Output metrics"
     return labels["output_header"]
 
@@ -1067,6 +1067,13 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
 
 def _clean_text(value: Any) -> str:
     return " ".join(str(value or "").replace("\x00", "").split())
+
+
+def _display_title(content: dict[str, Any]) -> str:
+    title = _clean_text(content.get("title") or "AI Summary")
+    if title.startswith("AI Summary "):
+        return f"{title[len('AI Summary '):]} - AI Summary"
+    return title
 
 
 def _xml(value: Any) -> str:

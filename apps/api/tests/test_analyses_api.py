@@ -1679,7 +1679,7 @@ def test_new_summary_export_downloads_completed_summary_as_pdf_and_docx(client, 
     paragraph_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
     table_text = "\n".join(cell.text for table in document.tables for row in table.rows for cell in row.cells)
     text = f"{paragraph_text}\n{table_text}"
-    assert "AI Summary Test Initiative" in text
+    assert "Test Initiative - AI Summary" in text
     assert "Качество документа - 33%" in text
     assert "Document quality - 33%" in text
     assert "Total 2026–2027" in table_text

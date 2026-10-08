@@ -137,7 +137,7 @@ def _table_metric(table: dict[str, Any]) -> str | None:
 
 
 def needs_verified_revenue_total(payload: dict[str, Any]) -> bool:
-    if payload.get("schema_version") == "new-summary-v7":
+    if payload.get("schema_version") in {"new-summary-v7", "new-summary-v8"}:
         summary = payload.get("traction_summary")
         if not isinstance(summary, dict):
             return False
@@ -148,7 +148,7 @@ def needs_verified_revenue_total(payload: dict[str, Any]) -> bool:
         index = next((i for i, period in enumerate(periods) if _TOTAL_PERIOD.search(str(period))), None)
         total_revenue = next((row for row in rows if isinstance(row, dict) and row.get("label") == "Total Revenue"), None)
         values = total_revenue.get("values") if isinstance(total_revenue, dict) else None
-        return isinstance(values, list) and (index is None or index >= len(values) or _missing_total(values[index]))
+        return isinstance(values, list) and (index is None or index >= len(values) or _missing_total(values[index], include_dashes=payload.get("schema_version") == "new-summary-v8"))
     summary = payload.get("traction_summary")
     if not isinstance(summary, dict):
         return False
@@ -180,7 +180,7 @@ def with_traction_totals(
     summary = payload.get("traction_summary")
     if not isinstance(summary, dict):
         return payload
-    if payload.get("schema_version") == "new-summary-v7":
+    if payload.get("schema_version") in {"new-summary-v7", "new-summary-v8"}:
         updated = deepcopy(payload)
         table = updated["traction_summary"]
         table["periods"] = [clean_table_cell(period) for period in table.get("periods", [])]
@@ -188,11 +188,11 @@ def with_traction_totals(
             if not isinstance(row, dict):
                 continue
             row["label"] = clean_table_cell(row.get("label", ""))
-            row["values"] = [clean_table_cell(value) for value in row.get("values", [])]
+            row["values"] = [display_traction_cell(value, payload.get("schema_version")) for value in row.get("values", [])]
         total_index = next((i for i, period in enumerate(table["periods"]) if _TOTAL_PERIOD.search(str(period))), None)
         if total_index is not None and source_blocks:
             total_revenue = next((row for row in table.get("rows", []) if row.get("label") == "Total Revenue"), None)
-            if isinstance(total_revenue, dict) and total_index < len(total_revenue["values"]) and _missing_total(total_revenue["values"][total_index]):
+            if isinstance(total_revenue, dict) and total_index < len(total_revenue["values"]) and _missing_total(total_revenue["values"][total_index], include_dashes=payload.get("schema_version") == "new-summary-v8"):
                 verified = verified_revenue_total(table["periods"], total_revenue["values"], source_blocks)
                 if verified:
                     total_revenue["values"][total_index] = verified.value
@@ -291,8 +291,9 @@ def with_traction_totals(
     return updated
 
 
-def _missing_total(value: Any) -> bool:
-    return not str(value or "").strip() or str(value).strip().casefold() in {
+def _missing_total(value: Any, *, include_dashes: bool = False) -> bool:
+    text = str(value or "").strip().casefold()
+    return not text or (include_dashes and text in {"-", "–", "—"}) or text in {
         "отсутствуют данные в документе защиты",
         "невозможно извлечь данные",
         "no data in the defense document",
@@ -301,3 +302,17 @@ def _missing_total(value: Any) -> bool:
         "нет данных в документе",
         "no data in the document",
     }
+
+
+def display_traction_cell(value: Any, schema_version: str | None) -> str:
+    text = clean_table_cell(str(value if value is not None else ""))
+    if text in {"", "-", "–", "—"}:
+        return "—"
+    if schema_version == "new-summary-v8" and _missing_total(text):
+        return "—"
+    if schema_version == "new-summary-v8" and text.casefold() in {
+        "значение не найдено в документе",
+        "value not found in the document",
+    }:
+        return "—"
+    return text

@@ -27,7 +27,8 @@ def test_new_rules_survive_bilingual_validation_without_changing_source():
                        "criteria": ["Stop after pilot failure.", "Stop if funding ends", "Stop if funding ends."]}},
     ]} for language in ("en", "ru")]}
     result = _validated_source_dependent_report(payload=report, source_payload=source, response_schema=_new_summary_schema())
-    assert result["schema_version"] == "new-summary-v7"
+    assert result["schema_version"] == "new-summary-v8"
+    assert result["title"] == "Untitled initiative - AI Summary"
     for version in result["versions"]:
         items = {item["id"]: item for item in version["required_elements"]}
         assert items["gate2_user_flow"]["status"] == "есть"

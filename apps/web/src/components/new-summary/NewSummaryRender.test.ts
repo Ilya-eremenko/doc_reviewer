@@ -33,6 +33,22 @@ const content: NewSummaryContent = {
 };
 
 describe("new-summary-v4 rendering", () => {
+  it("renders v8 titles and all missing table cells with an em dash", () => {
+    const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v8", title: "Example - AI Summary", required_elements: [], traction_summary: {
+      periods: ["2026", "Total"], rows: [
+        { label: "DTB Uplift (Cumul)", values: ["-", "—"] },
+        { label: "Revenue from DTB", values: ["10", "невозможно извлечь данные"] },
+        { label: "Revenue non-DTB", values: ["–", "no data in the document"] },
+        { label: "Total Revenue", values: ["35", "35"], mismatch_periods: ["2026"] },
+      ],
+    } };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain("<h1>Example - AI Summary</h1>");
+    expect(html).toContain("<td>—</td>");
+    expect(html).not.toContain("невозможно извлечь данные");
+    expect(html).toContain("Не равно Rev. from DTB + Rev. non-DTB");
+  });
+
   it("renders v7 traction as one four-metric table and marks a mismatched total", () => {
     const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v7", required_elements: [], traction_summary: {
       periods: ["2026", "Total"], rows: [

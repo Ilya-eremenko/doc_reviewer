@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v7"
+      "const": "new-summary-v8"
     },
     "language": {
       "const": "en",
@@ -15,8 +15,8 @@
     },
     "title": {
       "type": "string",
-      "pattern": "^AI Summary .+",
-      "description": "Document title: AI Summary <initiative title>."
+      "pattern": "^.+ - AI Summary$",
+      "description": "Document title: <initiative title> - AI Summary."
     },
     "versions": {
       "type": "array",
@@ -147,7 +147,7 @@
         "values": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Values must be in the same order as periods. Total values must be explicitly sourced for the shown horizon, not recomputed."
+          "description": "Values must be in the same order as periods. Every missing or unextractable value is an em dash (—), never an explanatory phrase or a short hyphen. Total values must be explicitly sourced for the shown horizon, not recomputed."
         },
         "mismatch_periods": {
           "type": "array", "items": { "$ref": "#/$defs/non_empty_string" },

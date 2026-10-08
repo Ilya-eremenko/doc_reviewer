@@ -85,6 +85,15 @@ describe("document detail analysis controls", () => {
     expect(source).toContain('onClick={() => requestDeleteAnalysis(analysis)}');
   });
 
+  it("opens the selected run's details from analysis history", () => {
+    const source = readFileSync(join(__dirname, "page.tsx"), "utf8");
+
+    expect(source).toContain("getAnalysis(analysisId)");
+    expect(source).toContain("detail.document_id === documentId");
+    expect(source).toContain("onClick={() => openRunDetails(analysis.id)}");
+    expect(source).toContain("<RunDetailsDialog analysis={runDetailsAnalysis}");
+  });
+
   it("shows IC Review subagent progress while a full analysis is running", () => {
     const source = readFileSync(join(__dirname, "page.tsx"), "utf8");
 

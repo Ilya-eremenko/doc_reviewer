@@ -10,7 +10,6 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { me } from "@/lib/api/auth";
 import type { User } from "@/lib/api/types";
 import {
-  deleteAnalysis,
   ensureNewSummary,
   getAnalysis,
   getAnalysisStatus,
@@ -45,7 +44,6 @@ import {
   type ProviderModelOptions,
 } from "@/lib/api/provider-settings";
 import { formatDate, formatLabel } from "@/lib/format";
-import { appPath } from "@/lib/routing";
 import {
   analysisGateDetailsOutput,
   analysisStageChecklist,
@@ -119,9 +117,7 @@ export default function AnalysisDetailPage() {
   const [feedbackRating, setFeedbackRating] = useState<FeedbackRating>(4);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [activeTopTab, setActiveTopTab] = useState<AnalysisTopTab>("executiveSummary");
-  const [runDetailsOpen, setRunDetailsOpen] = useState(false);
   const [isRefreshingAnalysis, setIsRefreshingAnalysis] = useState(false);
-  const [isDeletingAnalysis, setIsDeletingAnalysis] = useState(false);
   const [providerModels, setProviderModels] = useState<ProviderModelOptions[]>([]);
   const [icReviewProvider, setIcReviewProvider] = useState<Provider>("openai_compatible");
   const [icReviewModel, setIcReviewModel] = useState("");
@@ -413,43 +409,9 @@ export default function AnalysisDetailPage() {
     }
   }
 
-  async function deleteCurrentAnalysis() {
-    if (!analysis) {
-      return;
-    }
-    if (!window.confirm(`Delete analysis for "${analysisDocument?.title || "this document"}"?`)) {
-      return;
-    }
-
-    setIsDeletingAnalysis(true);
-    setError("");
-    try {
-      await deleteAnalysis(analysis.id);
-      window.location.href = appPath(`/documents/${analysis.document_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete analysis");
-      setIsDeletingAnalysis(false);
-    }
-  }
-
   function chooseFeedbackRating(rating: FeedbackRating) {
     setFeedbackRating(rating);
   }
-
-  useEffect(() => {
-    if (!runDetailsOpen) {
-      return;
-    }
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setRunDetailsOpen(false);
-      }
-    }
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [runDetailsOpen]);
 
   useEffect(() => {
     if (!feedbackOpen) {
@@ -473,32 +435,6 @@ export default function AnalysisDetailPage() {
         {error ? <section className="analysis-alert">{error}</section> : null}
         {analysis ? (
           <>
-            <section className="analysis-hero">
-              <div className="analysis-hero__main">
-                <div className="analysis-hero__title-row">
-                  <div className="analysis-hero__title-copy">
-                    <h1>{analysisDocument?.title ? `Analysis: ${analysisDocument.title}` : "Analysis"}</h1>
-                    <p className="analysis-hero__date">{formatDate(analysis.created_at)}</p>
-                  </div>
-                  <div className="analysis-hero__actions">
-                    <button className="analysis-secondary-action analysis-run-details-action" type="button" onClick={() => setRunDetailsOpen(true)}>
-                      Run details
-                    </button>
-                    {canManageAnalysis ? <button
-                      className="analysis-danger-action"
-                      disabled={isDeletingAnalysis}
-                      type="button"
-                      onClick={deleteCurrentAnalysis}
-                    >
-                      {isDeletingAnalysis ? "Deleting" : "Delete"}
-                    </button> : null}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {runDetailsOpen ? <RunDetailsDialog analysis={analysis} onClose={() => setRunDetailsOpen(false)} /> : null}
-
             {analysis.error_message ? <section className="analysis-alert">{analysis.error_message}</section> : null}
 
             {shouldShowAnalysisWaitingPanel(analysis) ? (
@@ -716,57 +652,6 @@ function AnalysisWaitingPanel({
       </div>
       <StatusBadge status={activeStatus} />
     </section>
-  );
-}
-
-function RunDetailsDialog({ analysis, onClose }: { analysis: AnalysisRecord; onClose: () => void }) {
-  return (
-    <div className="analysis-modal-backdrop" role="presentation" onClick={onClose}>
-      <section
-        aria-labelledby="analysis-run-details-title"
-        aria-modal="true"
-        className="analysis-modal stack"
-        role="dialog"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="analysis-modal__header">
-          <div>
-            <div className="analysis-card__label">Run metadata</div>
-            <h2 id="analysis-run-details-title">Run details</h2>
-          </div>
-          <button className="analysis-secondary-action" type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-
-        <div className="analysis-modal__chips">
-          <TraceChip label="Provider" value={formatLabel(analysis.provider)} />
-          <TraceChip label="Model" value={analysis.model} />
-          <TraceChip label="Skill" value={`${analysis.skill_name} · ${analysis.skill_version}`} />
-          <TraceChip label="Created" value={formatDate(analysis.created_at)} />
-        </div>
-
-        <div className="analysis-score-grid analysis-score-grid--modal">
-          <Metric label="Input" value={formatNumber(analysis.input_tokens)} />
-          <Metric label="Output" value={formatNumber(analysis.output_tokens)} />
-          <Metric label="Latency" value={analysis.latency_ms ? `${analysis.latency_ms} ms` : "-"} />
-          <Metric label="Cost" value={analysis.estimated_cost ?? "-"} />
-        </div>
-
-        <TracePanel
-          title="Run trace"
-          sourceTrace={analysis.source_trace}
-          runParameters={analysis.run_parameters}
-          startedAt={analysis.started_at}
-          completedAt={analysis.completed_at}
-        />
-
-        <details className="analysis-details">
-          <summary>Run parameters</summary>
-          <JsonBlock value={analysis.run_parameters} />
-        </details>
-      </section>
-    </div>
   );
 }
 

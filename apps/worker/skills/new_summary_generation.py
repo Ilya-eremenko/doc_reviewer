@@ -871,9 +871,10 @@ def _validated_source_dependent_report(
         # The legacy extractor selects only two broad rows; replacing the four
         # new metric rows with it would erase DTB-sourced and non-DTB revenue.
         normalized_version = with_traction_totals(
-            normalized_version,
+            {**normalized_version, "schema_version": normalized["schema_version"]},
             source_tables=source_tables if isinstance(source_tables, list) and source_tables else None,
         )
+        normalized_version.pop("schema_version", None)
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
         normalized_versions.append(normalized_version)
@@ -891,11 +892,9 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
         payload,
         allowed={"schema_version", "language", "title", "versions"},
     )
-    normalized["schema_version"] = "new-summary-v7"
+    normalized["schema_version"] = "new-summary-v8"
     normalized.setdefault("language", "en")
-    title = normalized.get("title")
-    if not isinstance(title, str) or not title.strip():
-        normalized["title"] = f"AI Summary {_source_initiative_title(source_payload)}"
+    normalized["title"] = f"{_source_initiative_title(source_payload)} - AI Summary"
 
     versions = normalized.get("versions")
     if not isinstance(versions, list):
@@ -996,7 +995,7 @@ def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
         source = by_label.get(label) or {}
         raw_values = source.get("values") if isinstance(source.get("values"), list) else []
         values = [
-            _traction_cell(raw_values[index], language=language) if index < len(raw_values) else "—"
+            _traction_cell(raw_values[index]) if index < len(raw_values) else "—"
             for index in range(len(periods))
         ]
         if label == labels[0]:
@@ -1010,9 +1009,21 @@ def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:
     return {"periods": periods, "rows": rows}
 
 
-def _traction_cell(value: Any, *, language: str) -> str:
+def _traction_cell(value: Any) -> str:
     text = str(value).strip() if value is not None else ""
-    return text or ("Не смог получить данные" if language == "ru" else "Could not extract data")
+    if not text or text in {"-", "–", "—"} or text.casefold() in {
+        "значение не найдено в документе",
+        "отсутствуют данные в документе защиты",
+        "невозможно извлечь данные",
+        "нет данных в документе",
+        "не смог получить данные",
+        "no data in the defense document",
+        "could not extract data",
+        "no data in the document",
+        "value not found in the document",
+    }:
+        return "—"
+    return text
 
 
 def _missing_text(language: str, field: str) -> str:
