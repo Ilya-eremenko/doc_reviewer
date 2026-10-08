@@ -132,15 +132,12 @@ describe("analysis result page", () => {
     expect(pageSource).not.toContain("createEtalonDraft");
   });
 
-  it("renders a guarded delete action that returns to the source document", () => {
+  it("keeps result pages focused on analysis content without duplicate run actions", () => {
     const pageSource = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 
-    expect(pageSource).toContain("deleteAnalysis");
-    expect(pageSource).toContain("async function deleteCurrentAnalysis");
-    expect(pageSource).toContain('window.confirm(`Delete analysis for "${analysisDocument?.title || "this document"}"?`)');
-    expect(pageSource).toContain("await deleteAnalysis(analysis.id)");
-    expect(pageSource).toContain("window.location.href = appPath(`/documents/${analysis.document_id}`)");
-    expect(pageSource).toContain('className="analysis-danger-action"');
+    expect(pageSource).not.toContain('className="analysis-hero"');
+    expect(pageSource).not.toContain("deleteCurrentAnalysis");
+    expect(pageSource).not.toContain("runDetailsOpen");
   });
 
   it("collects feedback through a floating button and modal instead of a side card", () => {

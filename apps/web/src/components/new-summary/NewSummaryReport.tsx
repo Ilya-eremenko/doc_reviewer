@@ -121,7 +121,7 @@ export function NewSummaryReportView({
   const [language, setLanguage] = useState<NewSummaryLanguage>("ru");
   const content = report[language];
   const text = labels[language];
-  const v6 = content.schema_version === "new-summary-v6" || content.schema_version === "new-summary-v7";
+  const v6 = content.schema_version === "new-summary-v6" || content.schema_version === "new-summary-v7" || content.schema_version === "new-summary-v8";
   const currentFormat = v6 || content.schema_version === "new-summary-v5";
   const newFormat = currentFormat || content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3" || content.schema_version === "new-summary-v4";
   const sourceUrl = `https://iseremenko.ru/doc-challanger/analyses/${report.analysis_id}`;
@@ -170,7 +170,7 @@ export function NewSummaryReportView({
       </div>
 
       <header className="new-summary-header">
-        <h1>{content.title}</h1>
+        <h1>{displayTitle(content.title)}</h1>
         <div className="new-summary-stage">
           <span>{text.stage}</span>
           <strong>{content.stage}</strong>
@@ -286,7 +286,7 @@ function TractionSummaryTable({
           <table>
             <thead>
               <tr>
-                <th>{content.schema_version === "new-summary-v7" ? (content.language === "ru" ? "Output-метрики" : "Output metrics") : text.outputHeader}</th>
+                <th>{content.schema_version === "new-summary-v7" || content.schema_version === "new-summary-v8" ? (content.language === "ru" ? "Output-метрики" : "Output metrics") : text.outputHeader}</th>
                 {table.periods.map((period, index) => (
                   <th key={`${period}-${index}`}>{period}</th>
                 ))}
@@ -298,7 +298,7 @@ function TractionSummaryTable({
                   <th>{tractionRowLabel(table, row.label)}</th>
                   {table.periods.map((period, index) => (
                     <td key={`${rowIndex}-${period}-${index}`} className={row.mismatch_periods?.includes(period) ? "new-summary-traction-mismatch" : undefined}>
-                      {row.values[index] ?? ""}
+                      {displayTractionCell(row.values[index], content.schema_version)}
                       {row.mismatch_periods?.includes(period) ? <small>{languageMismatchNote(content.language)}</small> : null}
                     </td>
                   ))}
@@ -609,6 +609,17 @@ function InlineVerdict({
 
 function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value is NewSummaryTractionSummary {
   return tractionTables(value).some((table) => table.periods.length > 0 && table.rows.length > 0);
+}
+
+function displayTitle(title: string): string {
+  return title.startsWith("AI Summary ") ? `${title.slice("AI Summary ".length)} - AI Summary` : title;
+}
+
+function displayTractionCell(value: string | undefined, schemaVersion: NewSummaryContent["schema_version"]): string {
+  const text = (value ?? "").trim();
+  if (text === "" || text === "-" || text === "–" || text === "—") return "—";
+  if (schemaVersion === "new-summary-v8" && /^(?:отсутствуют данные в документе защиты|невозможно извлечь данные|нет данных в документе|не смог получить данные|значение не найдено в документе|no data in the defense document|could not extract data|no data in the document|value not found in the document)$/i.test(text)) return "—";
+  return text;
 }
 
 function tractionTables(value: NewSummaryTractionSummary | undefined): NewSummaryTractionTable[] {

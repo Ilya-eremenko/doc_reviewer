@@ -7,6 +7,20 @@ from pypdf import PdfReader
 from app.services.new_summary_traction import needs_verified_revenue_total, with_traction_totals
 
 
+def test_v8_missing_traction_cells_use_em_dash_without_touching_numbers_or_mismatch():
+    payload = {"schema_version": "new-summary-v8", "traction_summary": {
+        "periods": ["2026", "Total"], "rows": [
+            {"label": "DTB Uplift (Cumul)", "values": ["-", "—"]},
+            {"label": "Revenue from DTB", "values": ["10", "невозможно извлечь данные"]},
+            {"label": "Revenue non-DTB", "values": ["–", "no data in the document"]},
+            {"label": "Total Revenue", "values": ["12", "12"], "mismatch_periods": ["2026"]},
+        ],
+    }}
+    result = with_traction_totals(payload)["traction_summary"]["rows"]
+    assert [row["values"] for row in result] == [["—", "—"], ["10", "—"], ["—", "—"], ["12", "12"]]
+    assert result[-1]["mismatch_periods"] == ["2026"]
+
+
 def test_v7_single_table_keeps_four_rows_and_mismatch_without_legacy_rewrite():
     table = {"periods": ["2026", "Total"], "rows": [
         {"label": "DTB Uplift (Cumul)", "values": ["2%", "—"]},

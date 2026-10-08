@@ -2983,3 +2983,10 @@ Exit criteria:
   Focused Python and web tests cover both shapes, metric horizons, exports,
   authorization, and parser provenance. Production deployment and targeted
   regeneration remain to be verified after PR merge.
+- 2026-10-08: Prepared New Summary v8 presentation contract: initiative-first
+  title, em dashes for unavailable Traction cells, and v8-aware web/PDF/Word
+  rendering while retaining the Revenue mismatch annotation. Moved run metadata
+  access from the analysis result header to each row of document analysis
+  history; existing per-run deletion remains there. Verification: 656 API/worker
+  tests pass with explicit local CORS test origins, 174 web tests pass, and
+  Next.js production build passes. Production PR/deploy remains pending.

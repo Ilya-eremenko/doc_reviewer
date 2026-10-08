@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 
 import { AppShell } from "@/components/AppShell";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { RunDetailsDialog } from "@/components/RunDetailsDialog";
 import { me } from "@/lib/api/auth";
 import type { User } from "@/lib/api/types";
 import { MarkdownPreview } from "@/components/MarkdownPreview";
@@ -20,6 +21,7 @@ import {
   createAnalysis,
   deleteAnalysis,
   deleteDocument,
+  getAnalysis,
   getDocument,
   getDocumentProgress,
   getParsedText,
@@ -28,6 +30,7 @@ import {
   reparseDocument,
   type AnalysisCheckRunStatusRecord,
   type AnalysisStatusRecord,
+  type AnalysisRecord,
   type DocumentRecord,
   type OutputLanguage,
   type Provider,
@@ -442,6 +445,9 @@ export default function DocumentDetailPage() {
   const [cancellingAnalysisId, setCancellingAnalysisId] = useState("");
   const [deletingAnalysisId, setDeletingAnalysisId] = useState("");
   const [analysisPendingDelete, setAnalysisPendingDelete] = useState<AnalysisStatusRecord | null>(null);
+  const [runDetailsAnalysis, setRunDetailsAnalysis] = useState<AnalysisRecord | null>(null);
+  const [loadingRunDetailsId, setLoadingRunDetailsId] = useState("");
+  const runDetailsRequestRef = useRef(0);
   const parsedTextLoadedRef = useRef(false);
 
   const loadParsedText = useCallback(async () => {
@@ -703,6 +709,24 @@ export default function DocumentDetailPage() {
 
   function requestDeleteAnalysis(analysis: AnalysisStatusRecord) {
     setAnalysisPendingDelete(analysis);
+  }
+
+  async function openRunDetails(analysisId: string) {
+    const request = ++runDetailsRequestRef.current;
+    setLoadingRunDetailsId(analysisId);
+    setError("");
+    try {
+      const detail = await getAnalysis(analysisId);
+      if (request === runDetailsRequestRef.current && detail.document_id === documentId) {
+        setRunDetailsAnalysis(detail);
+      }
+    } catch (err) {
+      if (request === runDetailsRequestRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to load run details");
+      }
+    } finally {
+      if (request === runDetailsRequestRef.current) setLoadingRunDetailsId("");
+    }
   }
 
   async function confirmDeleteAnalysis() {
@@ -985,6 +1009,14 @@ export default function DocumentDetailPage() {
                                   <Link className="gc-compact-link" href={`/analyses/${analysis.id}`}>
                                     Open
                                   </Link>
+                                  <button
+                                    className="gc-compact-link"
+                                    disabled={loadingRunDetailsId === analysis.id}
+                                    type="button"
+                                    onClick={() => openRunDetails(analysis.id)}
+                                  >
+                                    {loadingRunDetailsId === analysis.id ? "Loading" : "Run details"}
+                                  </button>
                                   {canManageDocument ? <button
                                     className="gc-compact-danger"
                                     disabled={deletingAnalysisId === analysis.id}
@@ -1021,6 +1053,9 @@ export default function DocumentDetailPage() {
             onCancel={() => setAnalysisPendingDelete(null)}
             onDelete={confirmDeleteAnalysis}
           />
+        ) : null}
+        {runDetailsAnalysis ? (
+          <RunDetailsDialog analysis={runDetailsAnalysis} onClose={() => setRunDetailsAnalysis(null)} />
         ) : null}
       </main>
     </AppShell>
