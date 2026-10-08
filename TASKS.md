@@ -3017,4 +3017,12 @@ Exit criteria:
   descriptions for these status and more contextual critical-problem facts;
   the payload shape and `new-summary-v8` version remain unchanged, so saved
   reports keep their existing semantics. Focused worker, API export, and web
-  rendering tests pass. Production PR and deploy remain to be verified.
+  rendering tests pass. Merged as PR #104; the production deployment is being
+  verified separately.
+- 2026-10-08: Clarified the Progress Review prompt in
+  `skills/new-summary/SKILL.md` after user review: the future-plan status is
+  "Есть" only when both Outputs and Metrics have at least one entry; one
+  populated block is "Частично подтверждено", and neither is "Нет". This
+  changes one prose rule, not the JSON shape or already-implemented worker
+  logic. The eight focused Progress Review status tests pass. Follow-up PR
+  #105 awaits merge and deployment verification.
