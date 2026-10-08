@@ -488,6 +488,10 @@ def _is_plausible_initiative_title(value: str | None) -> bool:
     title = value.strip()
     if len(title) < 4 or len(title) > 160:
         return False
+    if re.fullmatch(r"\[?(?:page|страница)\s+\d+(?:\s+(?:of|из)\s+\d+)?\]?", title, flags=re.IGNORECASE):
+        return False
+    if re.fullmatch(r"\[image on page \d+:[^\]]+\]", title, flags=re.IGNORECASE):
+        return False
     lowered = title.lower()
     if lowered in {"gate 1", "gate 2", "gate 3", "stream review", "progress review"}:
         return False

@@ -3029,3 +3029,10 @@ Exit criteria:
   dependencies for a skill-only edit. Follow-up PR #105 moves the root skill
   copy after dependency installation in the worker Dockerfile and extends the
   deploy job limit to 90 minutes; merge and production verification are pending.
+- 2026-10-08: The Cars TRX PDF begins with a parser-generated `[Page 1]`
+  marker before its real initiative title. New Summary title extraction accepted
+  that marker as a plausible name, producing `Page 1 - AI Summary` on multiple
+  runs. Filter page and image markers only from title candidates, preserving
+  parsed evidence and the existing source/title contract. Added a focused
+  regression test for English and Russian page markers with an image placeholder.
+  Production PR and deployment verification are pending.
