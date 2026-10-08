@@ -3024,5 +3024,8 @@ Exit criteria:
   "Есть" only when both Outputs and Metrics have at least one entry; one
   populated block is "Частично подтверждено", and neither is "Нет". This
   changes one prose rule, not the JSON shape or already-implemented worker
-  logic. The eight focused Progress Review status tests pass. Follow-up PR
-  #105 awaits merge and deployment verification.
+  logic. The eight focused Progress Review status tests pass. The PR #104
+  production job timed out after 30 minutes while Docker reinstalled Python
+  dependencies for a skill-only edit. Follow-up PR #105 moves the root skill
+  copy after dependency installation in the worker Dockerfile and extends the
+  deploy job limit to 90 minutes; merge and production verification are pending.
