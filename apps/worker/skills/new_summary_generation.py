@@ -20,6 +20,7 @@ from app.models.analysis import Analysis, AnalysisCheckRun, AnalysisDetailRun
 from app.models.document import Document
 from app.schemas.enums import Provider, RunStatus
 from app.services.document_type_detector import progress_review_display_stage
+from app.services.new_summary_titles import clean_initiative_title, display_new_summary_title
 from app.services.new_summary_traction import with_traction_totals
 from app.services.new_summaries import (
     NEW_SUMMARY_GENERATION_MODE,
@@ -444,7 +445,11 @@ def _initiative_title(*, analysis: Analysis, document: Document) -> str:
         document.original_filename,
     ):
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            title = clean_initiative_title(value)
+            filename = document.original_filename or ""
+            if filename[:len(title)].casefold() == title.casefold():
+                return filename[:len(title)]
+            return title
     return "Untitled initiative"
 
 
@@ -874,6 +879,7 @@ def _validated_source_dependent_report(
             {**normalized_version, "schema_version": normalized["schema_version"]},
             source_tables=source_tables if isinstance(source_tables, list) and source_tables else None,
         )
+        normalized_version = _apply_revenue_from_dtb_fallback(normalized_version)
         normalized_version.pop("schema_version", None)
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
@@ -894,7 +900,7 @@ def _normalize_generated_report_shell(*, payload: dict[str, Any], source_payload
     )
     normalized["schema_version"] = "new-summary-v8"
     normalized.setdefault("language", "en")
-    normalized["title"] = f"{_source_initiative_title(source_payload)} - AI Summary"
+    normalized["title"] = display_new_summary_title(_source_initiative_title(source_payload))
 
     versions = normalized.get("versions")
     if not isinstance(versions, list):
@@ -972,8 +978,29 @@ def _filter_allowed_keys(value: dict[str, Any], *, allowed: set[str]) -> dict[st
 def _source_initiative_title(source_payload: dict[str, Any]) -> str:
     title = source_payload.get("initiative_title")
     if isinstance(title, str) and title.strip():
-        return title.strip()
+        return clean_initiative_title(title)
     return "Untitled initiative"
+
+
+def _apply_revenue_from_dtb_fallback(version: dict[str, Any]) -> dict[str, Any]:
+    summary = version.get("traction_summary")
+    if not isinstance(summary, dict) or not isinstance(summary.get("rows"), list):
+        return version
+    rows = {row.get("label"): row for row in summary["rows"] if isinstance(row, dict)}
+    dtb = rows.get("DTB Uplift (Cumul)")
+    from_dtb = rows.get("Revenue from DTB")
+    non_dtb = rows.get("Revenue non-DTB")
+    total = rows.get("Total Revenue")
+    if not all(isinstance(row, dict) and isinstance(row.get("values"), list) for row in (dtb, from_dtb, non_dtb, total)):
+        return version
+    if not any(_traction_cell(cell) != "—" for cell in dtb["values"][:-1]):
+        return version
+    if any(_traction_cell(cell) != "—" for cell in non_dtb["values"]):
+        return version
+    for index, cell in enumerate(total["values"]):
+        if index < len(from_dtb["values"]) and _traction_cell(cell) != "—" and _traction_cell(from_dtb["values"][index]) == "—":
+            from_dtb["values"][index] = cell
+    return version
 
 
 def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:

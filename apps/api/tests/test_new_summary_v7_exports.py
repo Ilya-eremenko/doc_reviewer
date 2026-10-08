@@ -3,7 +3,13 @@ from io import BytesIO
 from docx import Document
 from pypdf import PdfReader
 
-from app.services.new_summary_exports import NewSummaryExportProvenance, _build_docx, _build_pdf
+from app.services.new_summary_exports import NewSummaryExportProvenance, _build_docx, _build_pdf, _display_title
+
+
+def test_existing_summary_export_title_drops_source_link():
+    assert _display_title({"title": "From People to People (3sigma link) - AI Summary"}) == (
+        "From People to People - AI Summary"
+    )
 
 
 def test_v7_exports_one_table_with_four_rows_and_mismatch_note():

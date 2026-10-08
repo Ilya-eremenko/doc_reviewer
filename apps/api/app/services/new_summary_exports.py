@@ -35,6 +35,7 @@ from reportlab.platypus import (
 
 from app.models.analysis import Analysis
 from app.models.document import Document
+from app.services.new_summary_titles import display_new_summary_title
 from app.services.new_summary_quality import with_bilingual_document_quality
 from app.services.new_summary_source_tables import verified_table_blocks
 from app.services.new_summary_traction import display_traction_cell, needs_verified_revenue_total, traction_row_label, with_traction_totals
@@ -1071,9 +1072,7 @@ def _clean_text(value: Any) -> str:
 
 def _display_title(content: dict[str, Any]) -> str:
     title = _clean_text(content.get("title") or "AI Summary")
-    if title.startswith("AI Summary "):
-        return f"{title[len('AI Summary '):]} - AI Summary"
-    return title
+    return display_new_summary_title(title)
 
 
 def _xml(value: Any) -> str:

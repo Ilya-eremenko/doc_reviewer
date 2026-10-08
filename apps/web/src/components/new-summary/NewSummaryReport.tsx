@@ -612,7 +612,17 @@ function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value
 }
 
 function displayTitle(title: string): string {
-  return title.startsWith("AI Summary ") ? `${title.slice("AI Summary ".length)} - AI Summary` : title;
+  const initiative = title
+    .replace(/^AI Summary\s+/i, "")
+    .replace(/\s*[-–—]\s*AI Summary\s*$/i, "")
+    .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/gi, (_, label: string) =>
+      /(?:3\s*sigma|tri\s*sigma|три\s*сигм|ссылка|\blink\b)/i.test(label) ? "" : label,
+    )
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/(?:\s*\((?:3\s*sigma|tri\s*sigma|три\s*сигм|ссылка|link)[^)]*\)\s*)+$/i, "")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-–—,;:()[\]]+|[\s\-–—,;:()[\]]+$/g, "");
+  return `${initiative || "Untitled initiative"} - AI Summary`;
 }
 
 function displayTractionCell(value: string | undefined, schemaVersion: NewSummaryContent["schema_version"]): string {

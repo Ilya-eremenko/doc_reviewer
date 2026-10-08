@@ -33,6 +33,13 @@ const content: NewSummaryContent = {
 };
 
 describe("new-summary-v4 rendering", () => {
+  it("cleans a source link from an existing report title", () => {
+    const updated = { ...content, title: "From People to People (3sigma link) - AI Summary" };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain("<h1>From People to People - AI Summary</h1>");
+    expect(html).not.toContain("3sigma link");
+  });
+
   it("renders v8 titles and all missing table cells with an em dash", () => {
     const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v8", title: "Example - AI Summary", required_elements: [], traction_summary: {
       periods: ["2026", "Total"], rows: [
