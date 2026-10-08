@@ -41,6 +41,7 @@ from privacy.model_anonymization import (
     provider_safe_run_parameters,
 )
 from results.schema_validation import parse_and_validate_json_output
+from skills.stage_checklists import StageChecklistMismatchError, stage_checklist_items
 from skills.layer_4_synthesis import build_layer_4_synthesis, format_layer_4_synthesis_markdown
 from skills.prompt_renderer import render_prompt
 
@@ -141,8 +142,9 @@ def run_analysis(
                 schema_path=schema_path,
                 document_type=(analysis.run_parameters or {}).get("document_type"),
                 enforce_stage_checklist=skill.name == "gate2_challenger_main_analysis",
+                output_language=(analysis.run_parameters or {}).get("output_language") or "ru",
             )
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, StageChecklistMismatchError) as exc:
             retry_parameters = _analysis_json_retry_run_parameters(
                 run_parameters=analysis.run_parameters,
                 use_responses_api=use_responses_api,
@@ -153,23 +155,29 @@ def run_analysis(
                 attempt=1,
                 raw_output=result.raw_output or result.structured_text,
             )
+            retry_key = "analysis_json_retry" if isinstance(exc, json.JSONDecodeError) else "analysis_checklist_retry"
             retry_trace = {
                 "attempts": 1,
-                "reason": exc.msg,
-                "retry_step": "gate_challenger:json_retry",
+                "reason": exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc),
+                "retry_step": "gate_challenger:json_retry" if isinstance(exc, json.JSONDecodeError) else "gate_challenger:checklist_retry",
                 "first_attempt_raw_output_path": str(first_attempt_path),
                 "provider_attempts": [_provider_attempt_metadata(result=result, attempt=1)],
             }
-            _persist_analysis_json_retry_trace(session=session, analysis=analysis, trace=retry_trace)
+            _persist_analysis_retry_trace(session=session, analysis=analysis, key=retry_key, trace=retry_trace)
 
             result = _call_analysis_provider(
                 provider=provider,
                 model=analysis.model,
                 api_key=api_key,
                 base_url=provider_key.base_url if provider_key else None,
-                prompt=_analysis_json_retry_prompt(
-                    prompt="" if previous_response_id else prompt,
-                    error=exc,
+                prompt=(
+                    _analysis_json_retry_prompt(prompt="" if previous_response_id else prompt, error=exc)
+                    if isinstance(exc, json.JSONDecodeError)
+                    else _analysis_checklist_retry_prompt(
+                        prompt="" if previous_response_id else prompt,
+                        document_type=(analysis.run_parameters or {}).get("document_type"),
+                        output_language=(analysis.run_parameters or {}).get("output_language") or "ru",
+                    )
                 ),
                 response_schema=schema,
                 run_parameters=retry_parameters,
@@ -181,7 +189,7 @@ def run_analysis(
             provider_structured_text = result.structured_text
             retry_trace["attempts"] = 2
             retry_trace["provider_attempts"].append(_provider_attempt_metadata(result=result, attempt=2))
-            _persist_analysis_json_retry_trace(session=session, analysis=analysis, trace=retry_trace)
+            _persist_analysis_retry_trace(session=session, analysis=analysis, key=retry_key, trace=retry_trace)
             if _analysis_cancelled(session=session, analysis=analysis):
                 worker_logger.info(
                     "worker_job_cancelled",
@@ -194,6 +202,7 @@ def run_analysis(
                     schema_path=schema_path,
                     document_type=(analysis.run_parameters or {}).get("document_type"),
                     enforce_stage_checklist=skill.name == "gate2_challenger_main_analysis",
+                    output_language=(analysis.run_parameters or {}).get("output_language") or "ru",
                 )
             except json.JSONDecodeError as retry_exc:
                 raise RuntimeError(f"invalid_json_after_retry:{retry_exc.msg}") from retry_exc
@@ -322,12 +331,14 @@ def _parse_analysis_result(
     schema_path: str,
     document_type: str | None,
     enforce_stage_checklist: bool,
+    output_language: str,
 ) -> dict:
     return parse_and_validate_json_output(
         structured_text=result.structured_text,
         schema_path=schema_path,
         document_type=document_type,
         enforce_stage_checklist=enforce_stage_checklist,
+        output_language=output_language,
     )
 
 
@@ -360,6 +371,22 @@ def _analysis_json_retry_prompt(*, prompt: str, error: json.JSONDecodeError) -> 
     )
 
 
+def _analysis_checklist_retry_prompt(*, prompt: str, document_type: str | None, output_language: str) -> str:
+    original_prompt = f"{prompt.rstrip()}\n\n" if prompt.strip() else ""
+    expected_items = stage_checklist_items(document_type, output_language=output_language)
+    return (
+        original_prompt
+        + "## Stage Checklist Retry Instruction\n"
+        + "The previous Gate Challenger response used the wrong stage_checklist IDs or order. "
+        + f"The selected document type is {document_type}. "
+        + "Regenerate the complete JSON result. stage_checklist must contain exactly these ID/label pairs in this order:\n"
+        + "\n".join(f"- {item_id}: {label}" for item_id, label in expected_items)
+        + "\nPreserve the requested output language. "
+        + "Reassess each item against the source document. Do not copy a status or evidence from a different item, "
+        + "and do not invent proof for a missing criterion. Return JSON only."
+    )
+
+
 def _provider_attempt_metadata(*, result: AnalysisProviderResult, attempt: int) -> dict:
     metadata = {"attempt": attempt}
     for key in ("provider", "response_id", "finish_reason", "stop_reason", "response_status", "incomplete_reason"):
@@ -374,9 +401,9 @@ def _provider_attempt_metadata(*, result: AnalysisProviderResult, attempt: int) 
     return metadata
 
 
-def _persist_analysis_json_retry_trace(*, session: Session, analysis: Analysis, trace: dict) -> None:
+def _persist_analysis_retry_trace(*, session: Session, analysis: Analysis, key: str, trace: dict) -> None:
     run_parameters = dict(analysis.run_parameters or {})
-    run_parameters["analysis_json_retry"] = trace
+    run_parameters[key] = trace
     analysis.run_parameters = run_parameters
     flag_modified(analysis, "run_parameters")
     session.commit()
