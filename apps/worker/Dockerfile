@@ -10,7 +10,6 @@ WORKDIR /app
 COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
 COPY contracts ./contracts
-COPY skills ./skills
 
 RUN if [ "$INSTALL_DEV" = "true" ]; then \
       pip install --no-cache-dir -e "./apps/api[dev]" \
@@ -19,6 +18,8 @@ RUN if [ "$INSTALL_DEV" = "true" ]; then \
       pip install --no-cache-dir -e ./apps/api \
       && pip install --no-cache-dir -e ./apps/worker; \
     fi
+
+COPY skills ./skills
 
 WORKDIR /app/apps/worker
 
