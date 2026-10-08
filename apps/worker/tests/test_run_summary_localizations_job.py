@@ -728,6 +728,20 @@ def test_new_summary_source_title_uses_filename_case_for_matching_name():
     assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "From People to People"
 
 
+@pytest.mark.parametrize(
+    "page_marker",
+    ["[Page 1]", "Page 1", "[Page 1 of 34]", "[Страница 1]"],
+)
+def test_new_summary_source_title_skips_pdf_page_markers(page_marker):
+    analysis = SimpleNamespace(structured_output={})
+    document = SimpleNamespace(
+        parsed_text=f"{page_marker}\n[Image on page 1: 9 x 9]\nCars TRX - Progress Review\n",
+        title="1028159917_1cf4a5f876314a538184d6f2ee2b3b34",
+        original_filename="1028159917_1cf4a5f876314a538184d6f2ee2b3b34.pdf",
+    )
+    assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "Cars TRX - Progress Review"
+
+
 def test_new_summary_revenue_from_dtb_fallback_requires_dtb_and_missing_non_dtb():
     def version(dtb: str, non_dtb: str, from_dtb: str = "—") -> dict:
         return {"traction_summary": {"periods": ["2026", "2027", "Total"], "rows": [
