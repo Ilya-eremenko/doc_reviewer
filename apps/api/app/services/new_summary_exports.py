@@ -268,7 +268,7 @@ def _append_docx_traction(document: DocxDocument, content: dict[str, Any], label
         table.alignment = WD_TABLE_ALIGNMENT.LEFT
         table.style = "Table Grid"
         header = table.rows[0].cells
-        header[0].text = labels["output_header"]
+        header[0].text = _traction_output_header(content, labels)
         for index, period in enumerate(periods, start=1):
             header[index].text = period
         for row_index, row in enumerate(rows, start=1):
@@ -277,6 +277,12 @@ def _append_docx_traction(document: DocxDocument, content: dict[str, Any], label
             values = row.get("values") if isinstance(row.get("values"), list) else []
             for cell_index, _period in enumerate(periods, start=1):
                 cells[cell_index].text = _clean_text(values[cell_index - 1] if cell_index - 1 < len(values) else "")
+                if _period in row.get("mismatch_periods", []):
+                    note = "Не равно Rev. from DTB + Rev. non-DTB" if content.get("language") == "ru" else "Does not equal Rev. from DTB + Rev. non-DTB"
+                    cells[cell_index].add_paragraph(note)
+                    for paragraph in cells[cell_index].paragraphs:
+                        for run in paragraph.runs:
+                            run.font.color.rgb = RGBColor(185, 28, 28)
         _set_docx_traction_table_widths(table, document)
         _style_docx_table(table)
 
@@ -314,7 +320,7 @@ def _append_docx_required(document: DocxDocument, content: dict[str, Any], label
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.left_indent = Inches(0.22)
         paragraph.paragraph_format.space_after = Pt(2)
-        v6 = content.get("schema_version") == "new-summary-v6"
+        v6 = content.get("schema_version") in {"new-summary-v6", "new-summary-v7"}
         current_format = v6 or content.get("schema_version") == "new-summary-v5"
         counted_metrics = v6 and item.get("id") in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}
         hypothesis_heading = (_metric_binding_heading(item, labels) if counted_metrics else None) or _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
@@ -588,20 +594,25 @@ def _append_pdf_traction(
         return
     _append_pdf_heading(story, labels["traction"], styles)
     for traction in tables:
-        _append_pdf_traction_table(story, traction, styles, frame_width, labels["output_header"])
+        _append_pdf_traction_table(story, traction, styles, frame_width, _traction_output_header(content, labels), language=content.get("language", "en"))
 
 
 def _append_pdf_traction_table(
-    story: list[Any], traction: dict[str, Any], styles: dict[str, ParagraphStyle], frame_width: float, output_header: str
+    story: list[Any], traction: dict[str, Any], styles: dict[str, ParagraphStyle], frame_width: float, output_header: str,
+    *, language: str = "en",
 ) -> None:
     periods = [str(item) for item in traction["periods"]]
     data = [[Paragraph(_xml(output_header), styles["table_header"])] + [Paragraph(_xml(item), styles["table_header"]) for item in periods]]
     for row in traction["rows"]:
         values = row.get("values") if isinstance(row.get("values"), list) else []
-        data.append(
-            [Paragraph(_xml(traction_row_label(traction, row)), styles["table_header"])]
-            + [Paragraph(_xml(values[index] if index < len(values) else ""), styles["table_body"]) for index, _ in enumerate(periods)]
-        )
+        cells = [Paragraph(_xml(traction_row_label(traction, row)), styles["table_header"])]
+        for index, period in enumerate(periods):
+            value = _xml(values[index] if index < len(values) else "")
+            if period in row.get("mismatch_periods", []):
+                note = "Не равно Rev. from DTB + Rev. non-DTB" if language == "ru" else "Does not equal Rev. from DTB + Rev. non-DTB"
+                value = f'<font color="#B91C1C">{value}<br/>{_xml(note)}</font>'
+            cells.append(Paragraph(value, styles["table_body"]))
+        data.append(cells)
     table = Table(data, colWidths=_pdf_table_widths(len(data[0]), frame_width), repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -642,7 +653,7 @@ def _append_pdf_required(
             "fraction": _TEXT,
         }[_required_status_kind(item)]
         status = _localized_status(item, labels)
-        v6 = content.get("schema_version") == "new-summary-v6"
+        v6 = content.get("schema_version") in {"new-summary-v6", "new-summary-v7"}
         current_format = v6 or content.get("schema_version") == "new-summary-v5"
         counted_metrics = v6 and item.get("id") in {"gate2_metric_linkage", "stream_review_1_input_output_metric_link"}
         hypothesis_heading = (_metric_binding_heading(item, labels) if counted_metrics else None) or _gate2_hypothesis_heading(item, labels, new_format=numbered, current_format=current_format)
@@ -920,6 +931,12 @@ def _traction_tables(value: Any) -> list[dict[str, Any]]:
         and isinstance(table.get("periods"), list) and table["periods"]
         and isinstance(table.get("rows"), list) and table["rows"]
     ]
+
+
+def _traction_output_header(content: dict[str, Any], labels: dict[str, str]) -> str:
+    if content.get("schema_version") == "new-summary-v7":
+        return "Output-метрики" if content.get("language") == "ru" else "Output metrics"
+    return labels["output_header"]
 
 
 def _ordered_details(content: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:

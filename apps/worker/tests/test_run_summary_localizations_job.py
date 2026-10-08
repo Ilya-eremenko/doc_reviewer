@@ -426,8 +426,8 @@ def test_new_summary_variants_are_generated_from_repository_skill(tmp_path, monk
         state = analysis.structured_output["result"]["new_summary"]
         assert state["ru"]["status"] == "completed", state["ru"]
         assert state["en"]["status"] == "completed", state["en"]
-        assert state["ru"]["payload"]["schema_version"] == "new-summary-v6"
-        assert state["en"]["payload"]["schema_version"] == "new-summary-v6"
+        assert state["ru"]["payload"]["schema_version"] == "new-summary-v7"
+        assert state["en"]["payload"]["schema_version"] == "new-summary-v7"
         assert state["ru"]["payload"]["context"] == "Команда проверяет новый продукт."
         assert state["en"]["payload"]["context"] == "The team is validating a new product."
         assert state["progress"]["stage"] == "completed"
@@ -678,43 +678,59 @@ def test_new_summary_accepts_empty_critical_problems_without_retry(tmp_path, mon
 def test_new_summary_traction_summary_filters_blank_period_values_together():
     normalized = new_summary_generation._normalize_traction_summary(
         {
-            "metric_label": "DTB",
-            "periods": ["2025", "", "2027"],
-            "rows": [{"label": "Total", "values": ["1", "2", "3"]}],
+            "periods": ["2025", "2027", "Total"],
+            "rows": [
+                {"label": "DTB Uplift (Cumul)", "values": ["1", "3", "—"]},
+                {"label": "Revenue from DTB", "values": ["—", "—", "—"]},
+                {"label": "Revenue non-DTB", "values": ["—", "—", "—"]},
+                {"label": "Total Revenue", "values": ["—", "—", "—"]},
+            ],
         },
         language="en",
     )
 
-    assert normalized == {"tables": [{
-        "metric": "dtb", "metric_label": "DTB",
-        "periods": ["2025", "2027"],
-        "rows": [{"label": "Total", "values": ["1", "3"]}],
-    }]}
+    assert normalized["periods"] == ["2025", "2027", "Total"]
+    assert [row["label"] for row in normalized["rows"]] == [
+        "DTB Uplift (Cumul)", "Revenue from DTB", "Revenue non-DTB", "Total Revenue",
+    ]
+    assert normalized["rows"][0]["values"] == ["1", "3", "—"]
 
 
 def test_new_summary_generated_blank_cell_records_extraction_uncertainty():
     normalized = new_summary_generation._normalize_traction_summary(
-        {"metric_label": "Revenue", "periods": ["2026", "2027"],
-         "rows": [{"label": "Total", "values": ["10", ""]}]},
+        {"periods": ["2026", "2027", "Total"], "rows": [
+            {"label": "DTB Uplift (Cumul)", "values": ["—", "—", "—"]},
+            {"label": "Revenue from DTB", "values": ["—", "—", "—"]},
+            {"label": "Revenue non-DTB", "values": ["—", "—", "—"]},
+            {"label": "Total Revenue", "values": ["10", "", "—"]},
+         ]},
         language="ru",
     )
-    assert normalized["tables"][0]["rows"][0]["values"] == ["10", "Не смог получить данные"]
+    assert normalized["rows"][3]["values"] == ["10", "Не смог получить данные", "—"]
 
 
-def test_new_summary_schema_accepts_revenue_and_dtb_with_different_horizons():
+def test_new_summary_retries_old_or_partial_traction_tables():
+    with pytest.raises(ValueError, match="new_summary_traction_format_mismatch"):
+        new_summary_generation._normalize_traction_summary({"tables": []}, language="en")
+    with pytest.raises(ValueError, match="new_summary_traction_rows_mismatch"):
+        new_summary_generation._normalize_traction_summary(
+            {"periods": ["2026", "Total"], "rows": [{"label": "Total Revenue", "values": ["1", "1"]}]},
+            language="en",
+        )
+
+
+def test_new_summary_schema_accepts_one_table_with_four_metrics():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v6"
+    report["schema_version"] = "new-summary-v7"
     for version in report["versions"]:
         for legacy in ("confirmed", "insufficiently_confirmed", "other"):
             version.pop(legacy)
-        version["traction_summary"] = {
-            "tables": [
-                {"metric": "revenue", "metric_label": "Revenue", "periods": ["2026", "2027", "2026-27 total"],
-                 "rows": [{"label": "Total", "values": ["1", "2", "3"]}]},
-                {"metric": "dtb", "metric_label": "DTB", "periods": ["CY26", "CY27"],
-                 "rows": [{"label": "Total", "values": ["1%", "2%"]}]},
-            ]
-        }
+        version["traction_summary"] = {"periods": ["2026", "2027", "Total"], "rows": [
+            {"label": "DTB Uplift (Cumul)", "values": ["1%", "2%", "—"]},
+            {"label": "Revenue from DTB", "values": ["1", "2", "3"]},
+            {"label": "Revenue non-DTB", "values": ["4", "5", "9"]},
+            {"label": "Total Revenue", "values": ["5", "7", "12"]},
+        ]}
     validate(instance=report, schema=new_summary_generation._new_summary_schema())
 
 
@@ -878,7 +894,7 @@ def test_new_stage_details_are_saved_inline_without_generic_evidence(document_ty
 
 def test_new_summary_schema_allows_zero_to_ten_critical_problems():
     report = _new_summary_report_payload(ru_context="Контекст.", en_context="Context.")
-    report["schema_version"] = "new-summary-v6"
+    report["schema_version"] = "new-summary-v7"
     for version in report["versions"]:
         version.pop("confirmed")
         version.pop("insufficiently_confirmed")
@@ -886,7 +902,7 @@ def test_new_summary_schema_allows_zero_to_ten_critical_problems():
         version["critical_problems"] = []
         for element in version["required_elements"]:
             element.pop("evidence", None)
-        version["traction_summary"] = {"tables": []}
+        version["traction_summary"] = new_summary_generation._normalize_traction_summary(None, language=version["language"])
     schema = new_summary_generation._new_summary_schema()
     validate(instance=report, schema=schema)
     for version in report["versions"]:
@@ -958,7 +974,7 @@ def test_new_summary_v4_uses_concise_solution_checks_and_consistent_problem_stat
         payload=report, source_payload=source,
         response_schema=new_summary_generation._new_summary_schema(),
     )
-    assert result["schema_version"] == "new-summary-v6"
+    assert result["schema_version"] == "new-summary-v7"
     for version in result["versions"]:
         elements = {item["id"]: item for item in version["required_elements"]}
         assert elements["stream_review_1_confirmed_problem"]["status"] == "частично подтверждено"
@@ -1699,13 +1715,12 @@ def _new_summary_payload(
         "language": language,
         "stage": stage,
         "traction_summary": {
-            "metric_label": "Revenue" if language == "en" else "Revenue",
-            "periods": ["Not provided" if language == "en" else "Не указано"],
+            "periods": ["Total"],
             "rows": [
-                {
-                    "label": "Total incremental output uplifts",
-                    "values": [""],
-                }
+                {"label": "DTB Uplift (Cumul)", "values": ["—"]},
+                {"label": "Revenue from DTB", "values": ["—"]},
+                {"label": "Revenue non-DTB", "values": ["—"]},
+                {"label": "Total Revenue", "values": ["—"]},
             ],
         },
         "context": context,

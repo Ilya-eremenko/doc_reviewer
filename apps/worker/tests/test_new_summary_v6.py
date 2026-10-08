@@ -27,7 +27,7 @@ def test_new_rules_survive_bilingual_validation_without_changing_source():
                        "criteria": ["Stop after pilot failure.", "Stop if funding ends", "Stop if funding ends."]}},
     ]} for language in ("en", "ru")]}
     result = _validated_source_dependent_report(payload=report, source_payload=source, response_schema=_new_summary_schema())
-    assert result["schema_version"] == "new-summary-v6"
+    assert result["schema_version"] == "new-summary-v7"
     for version in result["versions"]:
         items = {item["id"]: item for item in version["required_elements"]}
         assert items["gate2_user_flow"]["status"] == "есть"
@@ -93,16 +93,20 @@ def test_cumulative_header_does_not_relabel_incremental_row():
     assert tables[0][1]["rows"][0]["values"] == ["1%", "2%"]
 
 
-def test_source_revenue_does_not_drop_cumulative_dtb_found_by_the_skill():
+def test_source_revenue_does_not_replace_new_metric_rows():
     source = {"document_type": "gate_2", "document_stage": "Gate 2", "source_traction_tables": [
         {"metric": "revenue", "periods": ["2026", "2027", "Total"],
          "rows": [{"label": "Revenue", "values": ["10", "20", "30"]}]},
     ]}
-    model_table = {"metric": "dtb", "metric_label": "DTB (cummul), %", "cumulative": True,
-                   "periods": ["2026", "2027", "Total"], "rows": [{"label": "DTB (cummul)", "values": ["1%", "2%", "—"]}]}
-    payload = {"versions": [{"language": language, "traction_summary": {"tables": [model_table]}} for language in ("en", "ru")]}
+    model_table = {"periods": ["2026", "2027", "Total"], "rows": [
+        {"label": "DTB Uplift (Cumul)", "values": ["1%", "2%", "—"]},
+        {"label": "Revenue from DTB", "values": ["4", "5", "9"]},
+        {"label": "Revenue non-DTB", "values": ["6", "15", "21"]},
+        {"label": "Total Revenue", "values": ["10", "20", "30"]},
+    ]}
+    payload = {"versions": [{"language": language, "traction_summary": model_table} for language in ("en", "ru")]}
     result = _validated_source_dependent_report(payload=payload, source_payload=source, response_schema=_new_summary_schema())
     for version in result["versions"]:
-        tables = version["traction_summary"]["tables"]
-        assert [table["metric"] for table in tables] == ["revenue", "dtb"]
-        assert tables[1]["rows"][0]["values"] == ["1%", "2%", "—"]
+        table = version["traction_summary"]
+        assert table["rows"][0]["values"] == ["1%", "2%", "—"]
+        assert table["rows"][1]["values"] == ["4", "5", "9"]

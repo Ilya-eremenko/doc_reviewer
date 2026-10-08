@@ -7,7 +7,7 @@
   "required": ["schema_version", "language", "title", "versions"],
   "properties": {
     "schema_version": {
-      "const": "new-summary-v6"
+      "const": "new-summary-v7"
     },
     "language": {
       "const": "en",
@@ -113,36 +113,26 @@
         }
       }
     },
-    "traction_summary": { "$ref": "#/$defs/traction_tables" },
-    "traction_tables": {
+    "traction_summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tables"],
+      "required": ["periods", "rows"],
       "properties": {
-        "tables": {
-          "type": "array",
-          "maxItems": 2,
-          "items": { "$ref": "#/$defs/traction_table" }
-        }
-      }
-    },
-    "traction_table": {
-      "type": "object",
-      "description": "Revenue rows and their Total must come from initiative revenue, never expense lines under CoS/COGS/Cost of Sales or other explicit expense sections. Partner revenue under CoS is a cost despite its name. Use source section context, not the word revenue or the sign alone; genuine partner revenue outside expenses and negative revenue uplift remain eligible.",
-      "additionalProperties": false,
-      "required": ["metric", "metric_label", "periods", "rows"],
-      "properties": {
-        "metric": { "type": "string", "enum": ["revenue", "dtb"] },
-        "metric_label": { "$ref": "#/$defs/non_empty_string" },
-        "cumulative": {
-          "type": "boolean",
-          "description": "True for explicitly cumulative DTB or a source DTB row verified by DTB[t] = DTB[t-1] + Incremental DTB[t] across comparable consecutive periods of the same scenario and units. Keep original cell values, label verified inferred DTB (cummul); Total is a dash, never a sum. Never relabel an incremental-only row as cumulative."
-        },
         "periods": {
           "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/non_empty_string" },
-          "description": "Align Revenue and DTB to common periods, starting at the later shared period and using the same granularity. Keep each table's own later ending periods. If only H2 is available for DTB, place its value under the matching year with an explicit (H2 YYYY) note in the cell. Otherwise never relabel partial-year values as annual or calculate annual values. Last column is Total for the displayed horizon. Plain text only."
+          "description": "Shared periods for all four metrics. Last column is always Total. Start at the later common year and use matching granularity, preserving later years with dashes for unavailable metrics. Label any DTB H2-only value explicitly in its annual cell."
         },
-        "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/traction_row" } }
+        "rows": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "prefixItems": [
+            { "allOf": [{ "$ref": "#/$defs/traction_row" }, { "properties": { "label": { "const": "DTB Uplift (Cumul)" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/traction_row" }, { "properties": { "label": { "const": "Revenue from DTB" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/traction_row" }, { "properties": { "label": { "const": "Revenue non-DTB" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/traction_row" }, { "properties": { "label": { "const": "Total Revenue" } } }] }
+          ],
+          "items": false,
+          "description": "Four rows in fixed order. Revenue rows must come from income, never CoS/COGS/Cost of Sales or another expense section, regardless of row name. Each values array follows periods exactly; missing metrics use dashes."
+        }
       }
     },
     "traction_row": {
@@ -157,7 +147,11 @@
         "values": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Values must be in the same order as periods. New reports explain missing source values in the corresponding cell; older reports may use an empty string."
+          "description": "Values must be in the same order as periods. Total values must be explicitly sourced for the shown horizon, not recomputed."
+        },
+        "mismatch_periods": {
+          "type": "array", "items": { "$ref": "#/$defs/non_empty_string" },
+          "description": "Only for Total Revenue: periods whose sourced total is proven unequal to the sum of sourced Revenue from DTB and Revenue non-DTB, in the same units and scenario. The renderer colors those total cells red."
         }
       }
     },

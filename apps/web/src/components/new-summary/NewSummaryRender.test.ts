@@ -33,6 +33,23 @@ const content: NewSummaryContent = {
 };
 
 describe("new-summary-v4 rendering", () => {
+  it("renders v7 traction as one four-metric table and marks a mismatched total", () => {
+    const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v7", required_elements: [], traction_summary: {
+      periods: ["2026", "Total"], rows: [
+        { label: "DTB Uplift (Cumul)", values: ["2%", "—"] },
+        { label: "Revenue from DTB", values: ["10", "10"] },
+        { label: "Revenue non-DTB", values: ["20", "20"] },
+        { label: "Total Revenue", values: ["35", "35"], mismatch_periods: ["2026"] },
+      ],
+    } };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html.match(/<table>/g)).toHaveLength(1);
+    expect(html).toContain("<th>DTB Uplift (Cumul)</th>");
+    expect(html).toContain("<th>Total Revenue</th>");
+    expect(html).toContain('class="new-summary-traction-mismatch"');
+    expect(html).toContain("Не равно Rev. from DTB + Rev. non-DTB");
+  });
+
   it("renders v6 metric counts, blue links, additional stops and colored launches", () => {
     const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v6", required_elements: [
       ...content.required_elements,

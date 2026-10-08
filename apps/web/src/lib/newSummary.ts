@@ -21,11 +21,12 @@ export type NewSummaryRequiredElement = {
 export type NewSummaryTractionTable = {
   metric?: "revenue" | "dtb";
   cumulative?: boolean;
-  metric_label: string;
+  metric_label?: string;
   periods: string[];
   rows: Array<{
     label: string;
     values: string[];
+    mismatch_periods?: string[];
   }>;
 };
 
@@ -81,7 +82,7 @@ export type NewSummaryRequiredDetails =
 export type NewSummaryRequiredDetailsById = Record<string, NewSummaryRequiredDetails>;
 
 export type NewSummaryContent = {
-  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3" | "new-summary-v4" | "new-summary-v5" | "new-summary-v6";
+  schema_version: "new-summary-v1" | "new-summary-v2" | "new-summary-v3" | "new-summary-v4" | "new-summary-v5" | "new-summary-v6" | "new-summary-v7";
   language: NewSummaryLanguage;
   title: string;
   stage: NewSummaryStage;

@@ -121,7 +121,7 @@ export function NewSummaryReportView({
   const [language, setLanguage] = useState<NewSummaryLanguage>("ru");
   const content = report[language];
   const text = labels[language];
-  const v6 = content.schema_version === "new-summary-v6";
+  const v6 = content.schema_version === "new-summary-v6" || content.schema_version === "new-summary-v7";
   const currentFormat = v6 || content.schema_version === "new-summary-v5";
   const newFormat = currentFormat || content.schema_version === "new-summary-v2" || content.schema_version === "new-summary-v3" || content.schema_version === "new-summary-v4";
   const sourceUrl = `https://iseremenko.ru/doc-challanger/analyses/${report.analysis_id}`;
@@ -282,11 +282,11 @@ function TractionSummaryTable({
     <section className="new-summary-panel new-summary-traction">
       <h2>{text.traction}</h2>
       {tractionTables(traction).map((table) => (
-        <div className="new-summary-table-scroll" key={table.metric ?? table.metric_label}>
+        <div className="new-summary-table-scroll" key={table.metric ?? table.metric_label ?? "combined"}>
           <table>
             <thead>
               <tr>
-                <th>{text.outputHeader}</th>
+                <th>{content.schema_version === "new-summary-v7" ? (content.language === "ru" ? "Output-метрики" : "Output metrics") : text.outputHeader}</th>
                 {table.periods.map((period, index) => (
                   <th key={`${period}-${index}`}>{period}</th>
                 ))}
@@ -297,7 +297,10 @@ function TractionSummaryTable({
                 <tr key={`${row.label}-${rowIndex}`}>
                   <th>{tractionRowLabel(table, row.label)}</th>
                   {table.periods.map((period, index) => (
-                    <td key={`${rowIndex}-${period}-${index}`}>{row.values[index] ?? ""}</td>
+                    <td key={`${rowIndex}-${period}-${index}`} className={row.mismatch_periods?.includes(period) ? "new-summary-traction-mismatch" : undefined}>
+                      {row.values[index] ?? ""}
+                      {row.mismatch_periods?.includes(period) ? <small>{languageMismatchNote(content.language)}</small> : null}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -310,12 +313,17 @@ function TractionSummaryTable({
 }
 
 export function tractionRowLabel(table: NewSummaryTractionTable, label: string): string {
+  if (!table.metric_label) return label;
   if (/revenue|выручк|\bDTB\b/i.test(label)) {
     const unit = table.metric_label.split(",").slice(1).join(",").trim();
     return unit && !label.includes(unit) ? `${label}, ${unit}` : label;
   }
   if (["total incremental output uplifts", "итоговый инкрементальный прирост", ""].includes(label.toLowerCase())) return table.metric_label;
   return table.metric_label ? `${table.metric_label}: ${label}` : label;
+}
+
+function languageMismatchNote(language: NewSummaryLanguage): string {
+  return language === "ru" ? "Не равно Rev. from DTB + Rev. non-DTB" : "Does not equal Rev. from DTB + Rev. non-DTB";
 }
 
 function SummarySection({
@@ -877,6 +885,8 @@ const newSummaryStyles = `
 }
 
 .new-summary-traction td { overflow-wrap: anywhere; }
+.new-summary-traction td.new-summary-traction-mismatch { color: #b91c1c; }
+.new-summary-traction-mismatch small { display: block; margin-top: 3px; font-size: 11px; }
 
 .new-summary-section-heading {
   display: grid;
