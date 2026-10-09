@@ -446,6 +446,8 @@ def _initiative_title(*, analysis: Analysis, document: Document) -> str:
     ):
         if isinstance(value, str) and value.strip():
             title = clean_initiative_title(value)
+            if title == "Untitled initiative" or re.fullmatch(r"(?:page|страница)\s+\d+(?:\s+(?:of|из)\s+\d+)?", title, flags=re.IGNORECASE):
+                continue
             filename = document.original_filename or ""
             if filename[:len(title)].casefold() == title.casefold():
                 return filename[:len(title)]
@@ -883,7 +885,6 @@ def _validated_source_dependent_report(
             {**normalized_version, "schema_version": normalized["schema_version"]},
             source_tables=source_tables if isinstance(source_tables, list) and source_tables else None,
         )
-        normalized_version = _apply_revenue_from_dtb_fallback(normalized_version)
         normalized_version.pop("schema_version", None)
         if isinstance(expected_stage, str):
             normalized_version = with_summary_display_stage(normalized_version, expected_stage)
@@ -984,27 +985,6 @@ def _source_initiative_title(source_payload: dict[str, Any]) -> str:
     if isinstance(title, str) and title.strip():
         return clean_initiative_title(title)
     return "Untitled initiative"
-
-
-def _apply_revenue_from_dtb_fallback(version: dict[str, Any]) -> dict[str, Any]:
-    summary = version.get("traction_summary")
-    if not isinstance(summary, dict) or not isinstance(summary.get("rows"), list):
-        return version
-    rows = {row.get("label"): row for row in summary["rows"] if isinstance(row, dict)}
-    dtb = rows.get("DTB Uplift (Cumul)")
-    from_dtb = rows.get("Revenue from DTB")
-    non_dtb = rows.get("Revenue non-DTB")
-    total = rows.get("Total Revenue")
-    if not all(isinstance(row, dict) and isinstance(row.get("values"), list) for row in (dtb, from_dtb, non_dtb, total)):
-        return version
-    if not any(_traction_cell(cell) != "—" for cell in dtb["values"][:-1]):
-        return version
-    if any(_traction_cell(cell) != "—" for cell in non_dtb["values"]):
-        return version
-    for index, cell in enumerate(total["values"]):
-        if index < len(from_dtb["values"]) and _traction_cell(cell) != "—" and _traction_cell(from_dtb["values"][index]) == "—":
-            from_dtb["values"][index] = cell
-    return version
 
 
 def _normalize_traction_summary(value: Any, *, language: str) -> dict[str, Any]:

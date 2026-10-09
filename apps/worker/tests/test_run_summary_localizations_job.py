@@ -21,6 +21,7 @@ from app.models.user import User
 from app.schemas.enums import DocumentParseStatus, DocumentType, EntityStatus, Provider, Role, RunStatus, SkillSourceType, SkillType, UserStatus
 from app.security.secrets import encrypt_secret
 from app.services.new_summary_titles import clean_initiative_title, display_new_summary_title
+from app.services.new_summary_traction import apply_revenue_from_dtb_fallback
 from jobs.run_summary_localizations import run_summary_localizations
 from providers.base import AnalysisProviderResult
 from skills import new_summary_generation
@@ -718,6 +719,24 @@ def test_new_summary_title_excludes_trisigma_link_annotations():
     assert clean_initiative_title("[From People to People](https://example.com/case)") == "From People to People"
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("Cars TRX — Progress review and IC update request", "Cars TRX"),
+        ("Gate 3 - Cars TRX - ENG", "Cars TRX"),
+        ("Cars TRX (Русский) - Дозапрос ресурсов", "Cars TRX"),
+        ("Cars TRX _ Stream Review #1 - RU", "Cars TRX"),
+        ("Gate Keeper - AI Summary", "Gate Keeper"),
+        ("English Garden - AI Summary", "English Garden"),
+        ("Learning English - AI Summary", "Learning English"),
+        ("Progress Review - AI Summary", "Untitled initiative"),
+    ],
+)
+def test_new_summary_title_excludes_stage_and_language_annotations(source, expected):
+    assert clean_initiative_title(source) == expected
+    assert display_new_summary_title(source) == f"{expected} - AI Summary"
+
+
 def test_new_summary_source_title_uses_filename_case_for_matching_name():
     analysis = SimpleNamespace(structured_output={})
     document = SimpleNamespace(
@@ -726,6 +745,16 @@ def test_new_summary_source_title_uses_filename_case_for_matching_name():
         original_filename="From People to People _ Stream Review #1.docx",
     )
     assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "From People to People"
+
+
+def test_new_summary_ignores_stage_only_model_title_when_document_has_real_name():
+    analysis = SimpleNamespace(structured_output={"result": {"initiative_title": "Progress Review"}})
+    document = SimpleNamespace(
+        parsed_text="Cars TRX - Progress Review\n",
+        title="Cars TRX - Progress Review",
+        original_filename="Cars TRX.pdf",
+    )
+    assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "Cars TRX"
 
 
 @pytest.mark.parametrize(
@@ -739,7 +768,7 @@ def test_new_summary_source_title_skips_pdf_page_markers(page_marker):
         title="1028159917_1cf4a5f876314a538184d6f2ee2b3b34",
         original_filename="1028159917_1cf4a5f876314a538184d6f2ee2b3b34.pdf",
     )
-    assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "Cars TRX - Progress Review"
+    assert new_summary_generation._initiative_title(analysis=analysis, document=document) == "Cars TRX"
 
 
 def test_new_summary_revenue_from_dtb_fallback_requires_dtb_and_missing_non_dtb():
@@ -751,17 +780,28 @@ def test_new_summary_revenue_from_dtb_fallback_requires_dtb_and_missing_non_dtb(
             {"label": "Total Revenue", "values": ["10", "20", "30"]},
         ]}}
 
-    output = new_summary_generation._apply_revenue_from_dtb_fallback(version("1%", "—"))
+    output = apply_revenue_from_dtb_fallback(version("1%", "—"))
     assert output["traction_summary"]["rows"][1]["values"] == ["10", "20", "30"]
 
-    sourced = new_summary_generation._apply_revenue_from_dtb_fallback(version("1%", "—", "8"))
+    sourced = apply_revenue_from_dtb_fallback(version("1%", "—", "8"))
     assert sourced["traction_summary"]["rows"][1]["values"] == ["8", "20", "30"]
 
-    no_dtb = new_summary_generation._apply_revenue_from_dtb_fallback(version("—", "—"))
+    no_dtb = apply_revenue_from_dtb_fallback(version("—", "—"))
     assert no_dtb["traction_summary"]["rows"][1]["values"] == ["—", "—", "—"]
 
-    has_non_dtb = new_summary_generation._apply_revenue_from_dtb_fallback(version("1%", "5"))
+    has_non_dtb = apply_revenue_from_dtb_fallback(version("1%", "5"))
     assert has_non_dtb["traction_summary"]["rows"][1]["values"] == ["—", "—", "—"]
+
+
+def test_new_summary_revenue_fallback_requires_dtb_for_each_period_and_total_horizon():
+    version = {"traction_summary": {"periods": ["2026", "2027", "Total"], "rows": [
+        {"label": "DTB Uplift (Cumul)", "values": ["1%", "—", "—"]},
+        {"label": "Revenue from DTB", "values": ["—", "—", "—"]},
+        {"label": "Revenue non-DTB", "values": ["—", "—", "—"]},
+        {"label": "Total Revenue", "values": ["10", "20", "30"]},
+    ]}}
+    result = apply_revenue_from_dtb_fallback(version)
+    assert result["traction_summary"]["rows"][1]["values"] == ["10", "—", "—"]
 
 
 def test_new_summary_persists_clean_title_and_revenue_fallback_in_both_languages():

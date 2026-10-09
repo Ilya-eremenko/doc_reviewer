@@ -12,6 +12,12 @@ def test_existing_summary_export_title_drops_source_link():
     )
 
 
+def test_summary_export_title_drops_stage_and_language_annotations():
+    assert _display_title({"title": "Cars TRX — Progress review and IC update request (ENG) - AI Summary"}) == (
+        "Cars TRX - AI Summary"
+    )
+
+
 def test_v7_exports_one_table_with_four_rows_and_mismatch_note():
     table = {"periods": ["2026", "Total"], "rows": [
         {"label": "DTB Uplift (Cumul)", "values": ["2%", "—"]},

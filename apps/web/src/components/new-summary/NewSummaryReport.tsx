@@ -612,16 +612,30 @@ function hasTractionSummary(value: NewSummaryTractionSummary | undefined): value
 }
 
 function displayTitle(title: string): string {
-  const initiative = title
+  const stage = "(?:gate\\s*[1-4]|progress\\s+review|stream\\s+review(?:\\s*#?\\s*(?:1|2\\+?))?|ic\\s+update\\s+request|дозапрос\\s+ресурс[а-яё]*)";
+  const shortLanguage = "(?:en|eng|ru|rus|рус)";
+  const language = `(?:${shortLanguage}|english|russian|рус(?:ский|ская|ское|ские)|англ(?:ийский|ийская|ийское)?)`;
+  const annotation = `(?:${stage}|${language})`;
+  const annotationGroup = `${annotation}(?:\\s*(?:and|и|&|,|/|\\+)\\s*${annotation})*`;
+  const trailingAnnotation = new RegExp(`(?:\\s*[-–—_|:]\\s*|\\s*\\()\\s*${annotationGroup}\\s*\\)?\\s*$|\\s+(?:${stage}|${shortLanguage})\\s*$`, "i");
+  const leadingAnnotation = new RegExp(`^\\s*(?:${annotationGroup}\\s*[-–—_|:]\\s*|${stage}\\s+)`, "i");
+  let initiative = title
     .replace(/^AI Summary\s+/i, "")
     .replace(/\s*[-–—]\s*AI Summary\s*$/i, "")
     .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/gi, (_, label: string) =>
       /(?:3\s*sigma|tri\s*sigma|три\s*сигм|ссылка|\blink\b)/i.test(label) ? "" : label,
     )
-    .replace(/https?:\/\/\S+/gi, "")
-    .replace(/(?:\s*\((?:3\s*sigma|tri\s*sigma|три\s*сигм|ссылка|link)[^)]*\)\s*)+$/i, "")
-    .replace(/\s+/g, " ")
-    .replace(/^[\s\-–—,;:()[\]]+|[\s\-–—,;:()[\]]+$/g, "");
+    .replace(/https?:\/\/\S+/gi, "");
+  for (let index = 0; index < 8; index += 1) {
+    const cleaned = initiative
+      .replace(/(?:\s*\((?:3\s*sigma|tri\s*sigma|три\s*сигм|ссылка|link)[^)]*\)\s*)+$/i, "")
+      .replace(trailingAnnotation, "")
+      .replace(leadingAnnotation, "");
+    if (cleaned === initiative) break;
+    initiative = cleaned;
+  }
+  initiative = initiative.replace(/\s+/g, " ").replace(/^[\s\-–—,;:()[\]]+|[\s\-–—,;:()[\]]+$/g, "");
+  if (new RegExp(`^${annotationGroup}$`, "i").test(initiative)) initiative = "";
   return `${initiative || "Untitled initiative"} - AI Summary`;
 }
 
