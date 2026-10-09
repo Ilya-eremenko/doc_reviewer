@@ -226,3 +226,27 @@ def test_legacy_single_revenue_table_without_metric_can_receive_verified_total()
     ]}}]
     assert needs_verified_revenue_total(payload)
     assert with_traction_totals(payload, source_blocks=source)["traction_summary"]["rows"][0]["values"][-1] == "30"
+
+
+def test_v8_verified_total_applies_dtb_revenue_rule_without_inventing_missing_dtb():
+    source = [{"metadata": {"rows": [
+        ["ToBe P&L", "2026", "2027", "2026-27 total"], ["Revenue", "10", "20", "30"],
+    ]}}]
+    payload = {"schema_version": "new-summary-v8", "traction_summary": {
+        "periods": ["2026", "2027", "Total"], "rows": [
+            {"label": "DTB Uplift (Cumul)", "values": ["1%", "2%", "—"]},
+            {"label": "Revenue from DTB", "values": ["—", "—", "—"]},
+            {"label": "Revenue non-DTB", "values": ["—", "—", "—"]},
+            {"label": "Total Revenue", "values": ["10", "20", "—"]},
+        ],
+    }}
+    enriched = with_traction_totals(payload, source_blocks=source)["traction_summary"]["rows"]
+    assert enriched[1]["values"] == ["10", "20", "30"]
+    assert enriched[3]["values"] == ["10", "20", "30"]
+    without_dtb = {**payload, "traction_summary": {
+        **payload["traction_summary"],
+        "rows": [{**payload["traction_summary"]["rows"][0], "values": ["—", "—", "—"]}, *payload["traction_summary"]["rows"][1:]],
+    }}
+    no_copy = with_traction_totals(without_dtb, source_blocks=source)["traction_summary"]["rows"]
+    assert no_copy[1]["values"] == ["—", "—", "—"]
+    assert no_copy[3]["values"] == ["10", "20", "30"]

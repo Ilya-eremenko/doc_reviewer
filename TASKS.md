@@ -21,6 +21,16 @@ Primary plan index:
 
 ## Current Focus
 
+- [~] 2026-10-09: Publish the user's local New Summary title and Traction
+  clarifications. Keep the authored prose, align the technical JSON guidance and
+  schema descriptions, remove stage/language annotations from generated and
+  displayed titles, and verify that Revenue from DTB is not filled from Total
+  Revenue when cumulative DTB is absent. The fallback now also runs after
+  source-verified totals are added for display/export and requires matching DTB
+  for each year. Local verification: 313 API, 378 worker, 179 web tests,
+  production web build, and diff check passed. PR, merge and production
+  verification pending.
+
 - [~] 2026-10-08: Publish the user's single-table Traction Summary skill update.
   New v7 result has one shared-period table with DTB Uplift (Cumul), Revenue
   from DTB, Revenue non-DTB, and Total Revenue. Keep v1-v6 stored reports

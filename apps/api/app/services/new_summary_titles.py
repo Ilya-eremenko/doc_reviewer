@@ -11,6 +11,23 @@ _TRAILING_SOURCE = re.compile(
 )
 _URL = re.compile(r"https?://\S+", re.IGNORECASE)
 _SUMMARY_SUFFIX = re.compile(r"\s*[-–—]\s*AI Summary\s*$", re.IGNORECASE)
+_TITLE_STAGE = (
+    r"(?:gate\s*[1-4]|progress\s+review|stream\s+review(?:\s*#?\s*(?:1|2\+?))?"
+    r"|ic\s+update\s+request|дозапрос\s+ресурс[а-яё]*)"
+)
+_TITLE_SHORT_LANGUAGE = r"(?:en|eng|ru|rus|рус)"
+_TITLE_LANGUAGE = rf"(?:{_TITLE_SHORT_LANGUAGE}|english|russian|рус(?:ский|ская|ское|ские)|англ(?:ийский|ийская|ийское)?)"
+_TITLE_ANNOTATION = rf"(?:{_TITLE_STAGE}|{_TITLE_LANGUAGE})"
+_TITLE_ANNOTATION_GROUP = rf"{_TITLE_ANNOTATION}(?:\s*(?:and|и|&|,|/|\+)\s*{_TITLE_ANNOTATION})*"
+_TRAILING_TITLE_ANNOTATION = re.compile(
+    rf"(?:\s*[-–—_|:]\s*|\s*\()\s*{_TITLE_ANNOTATION_GROUP}\s*\)?\s*$"
+    rf"|\s+(?:{_TITLE_STAGE}|{_TITLE_SHORT_LANGUAGE})\s*$",
+    re.IGNORECASE,
+)
+_LEADING_TITLE_ANNOTATION = re.compile(
+    rf"^\s*(?:{_TITLE_ANNOTATION_GROUP}\s*[-–—_|:]\s*|{_TITLE_STAGE}\s+)",
+    re.IGNORECASE,
+)
 
 
 def clean_initiative_title(value: str) -> str:
@@ -23,8 +40,16 @@ def clean_initiative_title(value: str) -> str:
         title,
     )
     title = _URL.sub("", title)
-    title = _TRAILING_SOURCE.sub("", title)
+    for _ in range(8):
+        cleaned = _TRAILING_SOURCE.sub("", title)
+        cleaned = _TRAILING_TITLE_ANNOTATION.sub("", cleaned)
+        cleaned = _LEADING_TITLE_ANNOTATION.sub("", cleaned)
+        if cleaned == title:
+            break
+        title = cleaned
     title = re.sub(r"\s+", " ", title).strip(" \t-–—,;:()[]")
+    if re.fullmatch(_TITLE_ANNOTATION_GROUP, title, flags=re.IGNORECASE):
+        title = ""
     return title or "Untitled initiative"
 
 

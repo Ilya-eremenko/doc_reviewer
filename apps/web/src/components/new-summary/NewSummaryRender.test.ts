@@ -54,6 +54,25 @@ describe("new-summary-v4 rendering", () => {
     expect(html).not.toContain("3sigma link");
   });
 
+  it("omits stage and language annotations from the visible initiative title", () => {
+    const updated = { ...content, title: "Cars TRX — Progress review and IC update request (ENG) - AI Summary" };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain("<h1>Cars TRX - AI Summary</h1>");
+    expect(html).not.toContain("IC update request");
+  });
+
+  it("keeps English when it is part of the initiative name", () => {
+    const updated = { ...content, title: "Learning English - AI Summary" };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain("<h1>Learning English - AI Summary</h1>");
+  });
+
+  it("does not use a stage-only title as an initiative name", () => {
+    const updated = { ...content, title: "Progress Review - AI Summary" };
+    const html = renderToStaticMarkup(React.createElement(NewSummaryReportView, { report: { analysis_id: "test", ru: updated, en: { ...updated, language: "en" } } }));
+    expect(html).toContain("<h1>Untitled initiative - AI Summary</h1>");
+  });
+
   it("renders v8 titles and all missing table cells with an em dash", () => {
     const updated: NewSummaryContent = { ...content, schema_version: "new-summary-v8", title: "Example - AI Summary", required_elements: [], traction_summary: {
       periods: ["2026", "Total"], rows: [

@@ -196,7 +196,7 @@ def with_traction_totals(
                 verified = verified_revenue_total(table["periods"], total_revenue["values"], source_blocks)
                 if verified:
                     total_revenue["values"][total_index] = verified.value
-        return updated
+        return apply_revenue_from_dtb_fallback(updated) if payload.get("schema_version") == "new-summary-v8" else updated
     tables = summary.get("tables") if isinstance(summary.get("tables"), list) else [summary]
     language = payload.get("language")
     absent = "отсутствуют данные в документе защиты" if language == "ru" else "no data in the defense document"
@@ -288,6 +288,47 @@ def with_traction_totals(
             if cumulative and total_index < len(row["values"]):
                 row["values"][total_index] = "—"
     updated["traction_summary"] = {**updated_summary, "tables": updated_tables} if "tables" in updated_summary else updated_tables[0]
+    return updated
+
+
+def apply_revenue_from_dtb_fallback(payload: dict[str, Any]) -> dict[str, Any]:
+    """Copy sourced Total Revenue only where cumulative DTB supports attribution."""
+    summary = payload.get("traction_summary")
+    if not isinstance(summary, dict) or not isinstance(summary.get("rows"), list) or not isinstance(summary.get("periods"), list):
+        return payload
+    rows = {row.get("label"): row for row in summary["rows"] if isinstance(row, dict)}
+    dtb = rows.get("DTB Uplift (Cumul)")
+    from_dtb = rows.get("Revenue from DTB")
+    non_dtb = rows.get("Revenue non-DTB")
+    total = rows.get("Total Revenue")
+    if not all(isinstance(row, dict) and isinstance(row.get("values"), list) for row in (dtb, from_dtb, non_dtb, total)):
+        return payload
+
+    def present(value: Any) -> bool:
+        return display_traction_cell(value, "new-summary-v8") != "—"
+
+    if any(present(value) for value in non_dtb["values"]):
+        return payload
+    period_indices = [index for index, period in enumerate(summary["periods"]) if not _TOTAL_PERIOD.search(str(period))]
+    if not any(index < len(dtb["values"]) and present(dtb["values"][index]) for index in period_indices):
+        return payload
+
+    updated = deepcopy(payload)
+    updated_rows = {row["label"]: row for row in updated["traction_summary"]["rows"]}
+    target = updated_rows["Revenue from DTB"]["values"]
+    for index in period_indices:
+        if (
+            index < len(target) and index < len(total["values"]) and index < len(dtb["values"])
+            and present(total["values"][index]) and present(dtb["values"][index]) and not present(target[index])
+        ):
+            target[index] = total["values"][index]
+
+    revenue_indices = [index for index in period_indices if index < len(total["values"]) and present(total["values"][index])]
+    if revenue_indices and all(index < len(dtb["values"]) and present(dtb["values"][index]) for index in revenue_indices):
+        for index, period in enumerate(summary["periods"]):
+            if _TOTAL_PERIOD.search(str(period)) and index < len(target) and index < len(total["values"]):
+                if present(total["values"][index]) and not present(target[index]):
+                    target[index] = total["values"][index]
     return updated
 
 
